@@ -160,3 +160,46 @@ func hasWarning(issues []Issue, entry, substr string) bool {
 	}
 	return false
 }
+
+func TestResolve(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":          "---\ntype: index\n---\nhome\n",
+		"finance/index.md":  "---\ntype: index\n---\n",
+		"finance/income.md": "---\ntype: note\n---\nbody\n",
+		"tech/index.md":     "---\ntype: index\n---\n",
+	})
+	// path (leading slash optional) and unique basename all reach the same entry
+	for _, arg := range []string{"/finance/income.md", "finance/income.md", "income.md"} {
+		if e, err := idx.Resolve(arg); err != nil || e.Path != "/finance/income.md" {
+			t.Errorf("Resolve(%q) = %v, %v", arg, e, err)
+		}
+	}
+	// ambiguous basename (3 index.md) and both missing forms error
+	for _, arg := range []string{"index.md", "/nope.md", "nope.md"} {
+		if _, err := idx.Resolve(arg); err == nil {
+			t.Errorf("Resolve(%q) should error", arg)
+		}
+	}
+}
+
+func TestBody(t *testing.T) {
+	idx := build(t, map[string]string{
+		"a.md": "---\ntype: note\ntitle: A\n---\n# Heading\nbody line\n",
+		"b.md": "no frontmatter here\njust text\n",
+	})
+	a, _ := idx.Resolve("a.md")
+	body, err := a.Body()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(body, "type: note") || strings.Contains(body, "---") {
+		t.Errorf("frontmatter not stripped: %q", body)
+	}
+	if !strings.Contains(body, "# Heading") || !strings.Contains(body, "body line") {
+		t.Errorf("body content missing: %q", body)
+	}
+	b, _ := idx.Resolve("b.md")
+	if bb, _ := b.Body(); !strings.Contains(bb, "no frontmatter here") {
+		t.Errorf("no-frontmatter body wrong: %q", bb)
+	}
+}

@@ -1,7 +1,7 @@
 ---
 type: task
 title: read & outline commands
-status: todo
+status: done
 priority: high
 tags: [feature, query]
 ---

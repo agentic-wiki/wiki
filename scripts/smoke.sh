@@ -114,6 +114,17 @@ contains "$DONE" "file the Q1 report"
 echo "--- json output ---"
 contains "$($BIN list --type concept --format json)" '"type": "concept"'
 
+echo "--- read strips frontmatter ---"
+READ="$($BIN read /finance/income.md)"
+contains "$READ" "Monthly income tracking"
+! contains "$READ" "type: concept"
+
+echo "--- outline lists headings ---"
+contains "$($BIN outline /index.md)" "Home"
+
+echo "--- read missing file => exit 2 ---"
+! $BIN read /nope.md 2>/dev/null
+
 echo "--- orphans (none => exit 1) ---"
 ! $BIN orphans >/dev/null
 

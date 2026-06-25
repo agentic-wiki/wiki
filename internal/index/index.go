@@ -2,6 +2,7 @@
 package index
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -29,6 +30,18 @@ type Entry struct {
 // Depth is the number of folders below the content root (a top-level file is 0).
 func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
+}
+
+// Body returns the entry's markdown body with the frontmatter block stripped,
+// read fresh from disk. The index never holds bodies in memory, so this re-reads
+// the one file on demand.
+func (e *Entry) Body() (string, error) {
+	data, err := os.ReadFile(e.abs)
+	if err != nil {
+		return "", err
+	}
+	_, body := parse.Frontmatter(string(data))
+	return body, nil
 }
 
 // Index is the built model of a bundle.
@@ -97,6 +110,39 @@ func (idx *Index) FileExists(target string) bool {
 	p := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(target, "/")))
 	fi, err := os.Stat(p)
 	return err == nil && !fi.IsDir()
+}
+
+// Resolve finds a single entry by a "/"-containing path (matched exactly,
+// root-absolute, leading slash optional) or a bare basename (matched across the
+// tree). It errors if nothing matches or a basename is ambiguous. This is the
+// shared resolver for commands that target one entry (read, outline, ...).
+func (idx *Index) Resolve(arg string) (*Entry, error) {
+	if strings.Contains(arg, "/") {
+		target := "/" + strings.TrimPrefix(arg, "/")
+		if e, ok := idx.byPath[target]; ok {
+			return e, nil
+		}
+		return nil, fmt.Errorf("no entry at %s", target)
+	}
+	var matches []*Entry
+	for _, e := range idx.Entries {
+		if e.Name == arg {
+			matches = append(matches, e)
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return nil, fmt.Errorf("no entry named %q", arg)
+	default:
+		paths := make([]string, len(matches))
+		for i, e := range matches {
+			paths[i] = e.Path
+		}
+		slices.Sort(paths)
+		return nil, fmt.Errorf("%q is ambiguous: %s", arg, strings.Join(paths, ", "))
+	}
 }
 
 // Filter returns entries matching the given type, tag, and path prefix (any of

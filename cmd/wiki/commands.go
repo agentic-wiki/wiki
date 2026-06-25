@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/agentic-wiki/wiki/internal/output"
+	"github.com/agentic-wiki/wiki/internal/parse"
 )
 
 func cmdStatus(args []string) int {
@@ -195,5 +196,71 @@ func cmdCheck(args []string) int {
 	if errs > 0 {
 		return 1
 	}
+	return 0
+}
+
+func cmdRead(args []string) int {
+	fs := flag.NewFlagSet("read", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: wiki read <file>")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	e, err := idx.Resolve(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	body, err := e.Body()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	out := struct {
+		Path  string `json:"path"`
+		Type  string `json:"type"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}{e.Path, e.Type, e.Title, body}
+	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
+	output.Emit(os.Stdout, *format, lines, out)
+	return 0
+}
+
+func cmdOutline(args []string) int {
+	fs := flag.NewFlagSet("outline", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	fs.Parse(args)
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "usage: wiki outline <file>")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	e, err := idx.Resolve(fs.Arg(0))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	var lines []string
+	for _, h := range e.Headings {
+		lines = append(lines, strings.Repeat("  ", h.Level-1)+h.Text)
+	}
+	heads := e.Headings
+	if heads == nil {
+		heads = []parse.Heading{}
+	}
+	out := struct {
+		Path     string          `json:"path"`
+		Headings []parse.Heading `json:"headings"`
+	}{e.Path, heads}
+	output.Emit(os.Stdout, *format, lines, out)
 	return 0
 }

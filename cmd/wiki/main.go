@@ -16,6 +16,8 @@ usage: wiki <command> [flags]
 commands:
   status        bundle + index summary
   list          list entries (--type --tag --path)
+  read          print an entry's body (frontmatter stripped)
+  outline       print an entry's heading hierarchy
   tasks         list checkbox tasks (--all --done --path)
   unresolved    broken internal links
   orphans       entries with no incoming links
@@ -46,6 +48,10 @@ func run(args []string) int {
 		return cmdStatus(args[1:])
 	case "list":
 		return cmdList(args[1:])
+	case "read":
+		return cmdRead(args[1:])
+	case "outline":
+		return cmdOutline(args[1:])
 	case "tasks":
 		return cmdTasks(args[1:])
 	case "unresolved":

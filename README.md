@@ -25,6 +25,8 @@ Run any command from inside a wiki bundle:
 ```sh
 wiki status                              # bundle + index summary
 wiki list --type dataset --tag accounts  # filter entries (--type, --tag, --path)
+wiki read /finance/expenses.md           # print an entry's body (frontmatter stripped)
+wiki outline /finance/expenses.md        # print its heading hierarchy
 wiki tasks                               # open checkbox tasks (--all, --done, --path)
 wiki unresolved                          # broken internal links
 wiki orphans                             # entries with no incoming links
