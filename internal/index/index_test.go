@@ -1,0 +1,136 @@
+package index
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/agentic-wiki/wiki/internal/project"
+)
+
+func build(t *testing.T, files map[string]string) *Index {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "wiki.toml"), []byte("spec=\"0.1\"\ntypes=[\"note\", \"concept\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for rel, content := range files {
+		p := filepath.Join(root, "wiki", filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proj, err := project.Discover(filepath.Join(root, "wiki"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Build(proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return idx
+}
+
+func TestBuildParsesEntry(t *testing.T) {
+	idx := build(t, map[string]string{
+		"a.md": "---\ntype: note\ntitle: A\ntags: [x, y]\n---\n# H\n[l](/b.md)\n- [ ] todo\n",
+	})
+	if len(idx.Entries) != 1 {
+		t.Fatalf("entries = %d", len(idx.Entries))
+	}
+	e := idx.Entries[0]
+	if e.Path != "/a.md" || e.Type != "note" || e.Title != "A" {
+		t.Errorf("entry = %+v", e)
+	}
+	if len(e.Tags) != 2 || len(e.Links) != 1 || len(e.Tasks) != 1 || len(e.Headings) != 1 {
+		t.Errorf("counts: tags=%v links=%v tasks=%v headings=%v", e.Tags, e.Links, e.Tasks, e.Headings)
+	}
+}
+
+func TestBrokenAndOrphans(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
+		"a.md":     "---\ntype: note\n---\n[missing](/nope.md)\n",
+		"b.md":     "---\ntype: note\n---\nlonely\n",
+	})
+	if got := idx.Broken(); len(got) != 1 || got[0].Target != "/nope.md" {
+		t.Errorf("broken = %+v", got)
+	}
+	if orph := idx.Orphans(); len(orph) != 1 || orph[0].Path != "/b.md" {
+		t.Errorf("orphans = %+v (b unlinked; index.md exempt; a linked)", orph)
+	}
+}
+
+func TestFilter(t *testing.T) {
+	idx := build(t, map[string]string{
+		"finance/income/a.md": "---\ntype: note\ntags: [eu]\n---\n",
+		"finance/b.md":        "---\ntype: concept\ntags: [eu]\n---\n",
+		"tech/c.md":           "---\ntype: note\ntags: [go]\n---\n",
+	})
+	if got := len(idx.Filter("note", "", "")); got != 2 {
+		t.Errorf("--type note = %d, want 2", got)
+	}
+	if got := len(idx.Filter("", "eu", "")); got != 2 {
+		t.Errorf("--tag eu = %d, want 2", got)
+	}
+	if got := len(idx.Filter("", "", "finance/")); got != 2 {
+		t.Errorf("--path finance/ = %d, want 2", got)
+	}
+	if got := idx.Filter("note", "eu", "finance/"); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
+		t.Errorf("combined filter = %+v", got)
+	}
+}
+
+func TestCheckClean(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
+		"a.md":     "---\ntype: note\n---\nok\n",
+	})
+	if got := idx.Check(); len(got) != 0 {
+		t.Errorf("clean bundle should report nothing, got %+v", got)
+	}
+}
+
+func TestCheckSeverity(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":     "---\ntype: index\n---\n[a](/a.md)\n",    // valid
+		"a.md":         "---\ntype: note\n---\nok\n",             // valid, linked
+		"notype.md":    "---\ntitle: x\n---\nbody\n",             // ERROR: missing type
+		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n", // WARNING unknown + ERROR broken link
+		"sub/index.md": "---\ntype: note\n---\nbody\n",           // WARNING: index.md should be type index
+		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",           // WARNING: depth > 3
+	})
+	errs, warns := 0, 0
+	for _, is := range idx.Check() {
+		switch is.Level {
+		case "error":
+			errs++
+		case "warning":
+			warns++
+		}
+	}
+	if errs != 2 {
+		t.Errorf("errors = %d, want 2 (missing type, broken link)", errs)
+	}
+	if warns != 3 {
+		t.Errorf("warnings = %d, want 3 (unknown type, index.md type, depth)", warns)
+	}
+}
+
+func TestDepth(t *testing.T) {
+	for p, want := range map[string]int{"/index.md": 0, "/a/x.md": 1, "/a/b/x.md": 2, "/a/b/c/x.md": 3} {
+		if got := (&Entry{Path: p}).Depth(); got != want {
+			t.Errorf("Depth(%q)=%d want %d", p, got, want)
+		}
+	}
+}
+
+func TestScalarTagCoercion(t *testing.T) {
+	idx := build(t, map[string]string{"a.md": "---\ntype: note\ntags: solo\n---\nbody\n"})
+	if got := idx.Entries[0].Tags; len(got) != 1 || got[0] != "solo" {
+		t.Errorf("tags = %#v, want [solo]", got)
+	}
+}

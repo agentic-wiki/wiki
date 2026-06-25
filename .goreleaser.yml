@@ -1,0 +1,30 @@
+version: 2
+
+project_name: wiki
+
+builds:
+    - main: ./cmd/wiki
+      binary: wiki
+      ldflags:
+          - -s -w -X main.Version={{.Version}}
+      goos:
+          - linux
+          - darwin
+      goarch:
+          - amd64
+          - arm64
+
+archives:
+    - formats: [tar.gz]
+      name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+    name_template: checksums.txt
+
+changelog:
+    sort: asc
+    filters:
+        exclude:
+            - "^docs:"
+            - "^ci:"
+            - "^chore:"

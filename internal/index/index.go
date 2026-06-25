@@ -1,0 +1,199 @@
+// Package index scans a project's content tree and builds a queryable model.
+package index
+
+import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/internal/project"
+)
+
+// Entry is one markdown file in the content tree.
+type Entry struct {
+	Path     string          `json:"path"` // root-absolute, e.g. /finance/income/index.md
+	Name     string          `json:"name"` // base name, e.g. index.md
+	Type     string          `json:"type"`
+	Title    string          `json:"title"`
+	Tags     []string        `json:"tags"`
+	Links    []parse.Link    `json:"-"`
+	Tasks    []parse.Task    `json:"-"`
+	Headings []parse.Heading `json:"-"`
+	abs      string
+	fm       map[string]any
+}
+
+// Depth is the number of folders below the content root (a top-level file is 0).
+func (e *Entry) Depth() int {
+	return strings.Count(strings.Trim(e.Path, "/"), "/")
+}
+
+// Index is the built model of a project.
+type Index struct {
+	Project *project.Project
+	Entries []*Entry
+	byPath  map[string]*Entry
+}
+
+// Build scans the content root and parses every .md file.
+func Build(p *project.Project) (*Index, error) {
+	idx := &Index{Project: p, byPath: map[string]*Entry{}}
+	err := filepath.WalkDir(p.ContentDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if path != p.ContentDir && strings.HasPrefix(d.Name(), ".") {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		e, err := parseEntry(p, path)
+		if err != nil {
+			return err
+		}
+		idx.Entries = append(idx.Entries, e)
+		idx.byPath[e.Path] = e
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return idx, nil
+}
+
+func parseEntry(p *project.Project, abs string) (*Entry, error) {
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return nil, err
+	}
+	rel, _ := filepath.Rel(p.ContentDir, abs)
+	fm, body := parse.Frontmatter(string(data))
+	return &Entry{
+		Path:     "/" + filepath.ToSlash(rel),
+		Name:     filepath.Base(abs),
+		Type:     parse.String(fm, "type"),
+		Title:    parse.String(fm, "title"),
+		Tags:     parse.Strings(fm, "tags"),
+		Links:    parse.InternalLinks(body),
+		Tasks:    parse.Tasks(body),
+		Headings: parse.Headings(body),
+		abs:      abs,
+		fm:       fm,
+	}, nil
+}
+
+// FileExists reports whether a root-absolute target resolves to a real file.
+func (idx *Index) FileExists(target string) bool {
+	if _, ok := idx.byPath[target]; ok {
+		return true
+	}
+	p := filepath.Join(idx.Project.ContentDir, filepath.FromSlash(strings.TrimPrefix(target, "/")))
+	fi, err := os.Stat(p)
+	return err == nil && !fi.IsDir()
+}
+
+// Filter returns entries matching the given type, tag, and path prefix (any of
+// which may be empty to skip).
+func (idx *Index) Filter(typ, tag, pathPrefix string) []*Entry {
+	var out []*Entry
+	for _, e := range idx.Entries {
+		if typ != "" && e.Type != typ {
+			continue
+		}
+		if tag != "" && !slices.Contains(e.Tags, tag) {
+			continue
+		}
+		if pathPrefix != "" && !hasPathPrefix(e.Path, pathPrefix) {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// BrokenLink is an internal link with no target file.
+type BrokenLink struct {
+	From   string `json:"from"`
+	Target string `json:"target"`
+	Line   int    `json:"line"`
+}
+
+// Broken returns all internal links that do not resolve.
+func (idx *Index) Broken() []BrokenLink {
+	var out []BrokenLink
+	for _, e := range idx.Entries {
+		for _, l := range e.Links {
+			if !idx.FileExists(l.Target) {
+				out = append(out, BrokenLink{From: e.Path, Target: l.Target, Line: l.Line})
+			}
+		}
+	}
+	return out
+}
+
+// Orphans returns entries with no incoming internal links, excluding index.md
+// (navigation entry points).
+func (idx *Index) Orphans() []*Entry {
+	incoming := map[string]int{}
+	for _, e := range idx.Entries {
+		for _, l := range e.Links {
+			incoming[l.Target]++
+		}
+	}
+	var out []*Entry
+	for _, e := range idx.Entries {
+		if e.Name == "index.md" {
+			continue
+		}
+		if incoming[e.Path] == 0 {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Issue is a validation finding.
+type Issue struct {
+	Level string `json:"level"` // error | warning
+	Entry string `json:"entry"`
+	Msg   string `json:"msg"`
+}
+
+// Check reports conformance and health issues. The one hard rule (a present
+// `type`) and broken links are errors; everything else (undeclared type,
+// reserved-file/type agreement, folder depth) is an advisory warning.
+func (idx *Index) Check() []Issue {
+	var issues []Issue
+	for _, e := range idx.Entries {
+		switch {
+		case e.Type == "":
+			issues = append(issues, Issue{"error", e.Path, "missing required `type`"})
+		case !idx.Project.KnownType(e.Type):
+			issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
+		}
+		if e.Name == "index.md" && e.Type != "" && e.Type != "index" {
+			issues = append(issues, Issue{"warning", e.Path, "index.md should be type: index"})
+		}
+		if e.Name == "log.md" && e.Type != "" && e.Type != "log" {
+			issues = append(issues, Issue{"warning", e.Path, "log.md should be type: log"})
+		}
+		if e.Depth() > 3 {
+			issues = append(issues, Issue{"warning", e.Path, "deeper than 3 folders"})
+		}
+	}
+	for _, b := range idx.Broken() {
+		issues = append(issues, Issue{"error", b.From, "broken link -> " + b.Target})
+	}
+	return issues
+}
+
+func hasPathPrefix(path, prefix string) bool {
+	return strings.HasPrefix(strings.TrimPrefix(path, "/"), strings.TrimPrefix(prefix, "/"))
+}

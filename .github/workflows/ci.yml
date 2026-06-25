@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      - name: Build
+        run: go build -ldflags "-s -w" -o bin/wiki ./cmd/wiki
+
+      - name: Smoke test
+        run: bash scripts/smoke.sh ./bin/wiki
+
+      - name: Cross-compile check
+        run: |
+          GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/wiki
+          GOOS=darwin GOARCH=amd64 go build -o /dev/null ./cmd/wiki
+          GOOS=linux  GOARCH=arm64 go build -o /dev/null ./cmd/wiki

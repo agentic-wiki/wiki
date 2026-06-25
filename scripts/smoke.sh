@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+# End-to-end smoke test for wiki: builds a tiny finance-themed bundle in a temp
+# dir and checks the core commands, filters, and exit codes, running from a deep
+# subdir to exercise upward discovery of wiki.toml.
+set -euo pipefail
+
+BIN="${1:-./bin/wiki}"
+BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
+
+TMP=$(mktemp -d)
+trap "rm -rf $TMP" EXIT
+
+mkdir -p "$TMP/wiki/finance" "$TMP/wiki/tasks"
+
+cat > "$TMP/wiki.toml" <<'TOML'
+spec = "0.1"
+types = ["note", "concept", "task", "dataset"]
+TOML
+
+cat > "$TMP/wiki/index.md" <<'MD'
+---
+type: index
+title: Home
+---
+# Home
+- [Finance](/finance/index.md)
+- [Tasks](/tasks/index.md)
+MD
+
+cat > "$TMP/wiki/finance/index.md" <<'MD'
+---
+type: index
+title: Finance
+---
+- [Income](/finance/income.md)
+- [Expenses](/finance/expenses.md)
+MD
+
+cat > "$TMP/wiki/finance/income.md" <<'MD'
+---
+type: concept
+title: Income
+tags: [finance, income]
+---
+Monthly income tracking. Backup: [Q1 receipts](/finance/q1-receipts.md).
+MD
+
+cat > "$TMP/wiki/finance/expenses.md" <<'MD'
+---
+type: dataset
+title: Expenses
+tags: [finance, out-of-pocket]
+---
+| month   | category  | amount_eur |
+|---------|-----------|------------|
+| 2026-01 | rent      | 900        |
+| 2026-01 | groceries | 220        |
+MD
+
+cat > "$TMP/wiki/tasks/index.md" <<'MD'
+---
+type: index
+title: Tasks
+---
+- [Reconcile accounts](/tasks/reconcile.md)
+MD
+
+cat > "$TMP/wiki/tasks/reconcile.md" <<'MD'
+---
+type: task
+title: Reconcile accounts
+status: open
+---
+- [ ] reconcile the bank statement
+- [x] file the Q1 report
+MD
+
+contains() { echo "$1" | grep -q "$2"; }
+cd "$TMP/wiki/finance"   # deep dir: discovery must walk up
+
+echo "--- status ---"
+contains "$($BIN status)" "Entries:  6"
+contains "$($BIN status)" "Broken:   1"
+
+echo "--- check (broken link => exit 1) ---"
+! $BIN check >/dev/null
+contains "$($BIN check)" "/finance/q1-receipts.md"
+
+echo "--- unresolved finds the broken link ---"
+contains "$($BIN unresolved)" "/finance/q1-receipts.md"
+
+echo "--- list --type concept / dataset ---"
+contains "$($BIN list --type concept)" "/finance/income.md"
+contains "$($BIN list --type dataset)" "/finance/expenses.md"
+
+echo "--- list --tag out-of-pocket ---"
+contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
+
+echo "--- list --path filters to a subtree ---"
+contains "$($BIN list --path finance/)" "/finance/income.md"
+
+echo "--- tasks default = open only ---"
+OPEN="$($BIN tasks)"
+contains "$OPEN" "reconcile the bank statement"
+! contains "$OPEN" "file the Q1 report"
+
+echo "--- tasks --done ---"
+DONE="$($BIN tasks --done)"
+contains "$DONE" "file the Q1 report"
+! contains "$DONE" "reconcile the bank statement"
+
+echo "--- json output ---"
+contains "$($BIN list --type concept --format json)" '"type": "concept"'
+
+echo "--- orphans (none => exit 1) ---"
+! $BIN orphans >/dev/null
+
+echo "--- no results => exit 1 ---"
+! $BIN list --type nonexistent >/dev/null
+
+echo "--- version ---"
+contains "$($BIN version)" "wiki"
+
+echo ""
+echo "All smoke tests passed!"
