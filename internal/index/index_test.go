@@ -3,6 +3,7 @@ package index
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/agentic-wiki/wiki/internal/bundle"
@@ -86,7 +87,7 @@ func TestFilter(t *testing.T) {
 
 func TestCheckClean(t *testing.T) {
 	idx := build(t, map[string]string{
-		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
+		"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
 		"a.md":     "---\ntype: note\n---\nok\n",
 	})
 	if got := idx.Check(); len(got) != 0 {
@@ -96,12 +97,12 @@ func TestCheckClean(t *testing.T) {
 
 func TestCheckSeverity(t *testing.T) {
 	idx := build(t, map[string]string{
-		"index.md":     "---\ntype: index\n---\n[a](/a.md)\n",    // valid
-		"a.md":         "---\ntype: note\n---\nok\n",             // valid, linked
-		"notype.md":    "---\ntitle: x\n---\nbody\n",             // ERROR: missing type
-		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n", // WARNING unknown + ERROR broken link
-		"sub/index.md": "---\ntype: note\n---\nbody\n",           // WARNING: index.md should be type index
-		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",           // WARNING: depth > 3
+		"index.md":     "---\ntype: index\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // valid
+		"a.md":         "---\ntype: note\n---\nok\n",                                // valid, linked
+		"notype.md":    "---\ntitle: x\n---\nbody\n",                                // ERROR: missing type
+		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",                    // WARNING unknown + ERROR broken link
+		"sub/index.md": "---\ntype: note\n---\nbody\n",                              // WARNING: index.md should be type index
+		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",                              // WARNING: depth > 3
 	})
 	errs, warns := 0, 0
 	for _, is := range idx.Check() {
@@ -133,4 +134,29 @@ func TestScalarTagCoercion(t *testing.T) {
 	if got := idx.Entries[0].Tags; len(got) != 1 || got[0] != "solo" {
 		t.Errorf("tags = %#v, want [solo]", got)
 	}
+}
+
+func TestCheckOKFVersionSync(t *testing.T) {
+	// build's wiki.toml declares spec 0.1, which embeds OKF 0.1.
+	missing := build(t, map[string]string{"index.md": "---\ntype: index\n---\nhome\n"})
+	if !hasWarning(missing.Check(), "/index.md", "okf_version") {
+		t.Errorf("missing okf_version should warn, got %+v", missing.Check())
+	}
+	stale := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	if !hasWarning(stale.Check(), "/index.md", "okf_version") {
+		t.Errorf("stale okf_version should warn, got %+v", stale.Check())
+	}
+	synced := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\nhome\n"})
+	if got := synced.Check(); len(got) != 0 {
+		t.Errorf("synced bundle should be clean, got %+v", got)
+	}
+}
+
+func hasWarning(issues []Issue, entry, substr string) bool {
+	for _, is := range issues {
+		if is.Level == "warning" && is.Entry == entry && strings.Contains(is.Msg, substr) {
+			return true
+		}
+	}
+	return false
 }

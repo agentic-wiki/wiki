@@ -65,6 +65,19 @@ func (b *Bundle) KnownType(t string) bool {
 	return slices.Contains(reservedTypes, t) || slices.Contains(b.Types, t)
 }
 
+// okfVersions maps an agentic-wiki spec version to the OKF version it embeds.
+// Our spec is its own thing; OKF is one ingredient, declared to OKF consumers
+// via okf_version in the bundle-root index.md. A future spec may embed a
+// different OKF version, or none.
+var okfVersionMap = map[string]string{"0.1": "0.1"}
+
+// OKFVersion returns the OKF version this bundle's spec embeds, and whether the
+// spec embeds OKF at all (false for an unknown or non-OKF spec).
+func (b *Bundle) OKFVersion() (string, bool) {
+	v, ok := okfVersionMap[b.Spec]
+	return v, ok
+}
+
 // parseConfig reads the tiny wiki.toml we define: a `spec` string and a
 // `types` array on one line. Deliberately minimal — no TOML dependency.
 func parseConfig(s string) (spec string, types []string) {

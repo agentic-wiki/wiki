@@ -22,6 +22,7 @@ cat > "$TMP/index.md" <<'MD'
 ---
 type: index
 title: Home
+okf_version: "0.1"
 ---
 # Home
 - [Finance](/finance/index.md)

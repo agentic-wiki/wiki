@@ -2,7 +2,7 @@
 
 A standalone CLI for [agentic-wiki](https://github.com/agentic-wiki/spec) bundles: plain-markdown knowledge bases on the Open Knowledge Format. It indexes a bundle and answers structured queries (by type, tag, path), reports the link graph (broken links, orphans), lists tasks, and checks conformance. No Obsidian, no daemon, no runtime dependencies, a single static Go binary.
 
-The **format** is defined in the spec repo ([agentic-wiki/spec](https://github.com/agentic-wiki/spec)); this repo is the **tool**.
+Three layers come together: the **format** (markdown bundles, defined in the [spec repo](https://github.com/agentic-wiki/spec)); the **tool** (this repo, `wiki`, built for agents to call, though a human can run every command); and the **skill** (the manual an agent follows to drive the tool). This repo is the tool.
 
 ## Install
 
@@ -38,7 +38,7 @@ Every command takes `--format text|json`. Exit codes are `0` results, `1` none, 
 wiki unresolved >/dev/null && echo "broken links found" || echo "clean"
 ```
 
-Creating a bundle with `wiki init` is planned; for now a bundle is just a `wiki.toml` beside a `wiki/` content folder (see the spec).
+Creating a bundle with `wiki init` is planned; for now a bundle is simply a `wiki.toml` file with your markdown content beside it (see the spec).
 
 ## Design
 

@@ -191,6 +191,20 @@ func (idx *Index) Check() []Issue {
 	for _, b := range idx.Broken() {
 		issues = append(issues, Issue{"error", b.From, "broken link -> " + b.Target})
 	}
+	// The bundle-root index.md carries OKF's okf_version badge; wiki.toml `spec`
+	// is the source of truth, and the tool flags any drift between them.
+	if root, ok := idx.byPath["/index.md"]; ok {
+		if want, embedsOKF := idx.Bundle.OKFVersion(); embedsOKF {
+			switch got := parse.String(root.fm, "okf_version"); got {
+			case want:
+				// in sync
+			case "":
+				issues = append(issues, Issue{"warning", root.Path, "missing okf_version (spec " + idx.Bundle.Spec + " embeds OKF " + want + ")"})
+			default:
+				issues = append(issues, Issue{"warning", root.Path, "okf_version " + got + " out of sync (spec " + idx.Bundle.Spec + " embeds OKF " + want + ")"})
+			}
+		}
+	}
 	return issues
 }
 
