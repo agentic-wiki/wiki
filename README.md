@@ -57,3 +57,14 @@ just test-all   # unit + smoke
 just smoke      # end-to-end smoke test against a temp bundle
 just build      # build the binary → ./bin/wiki
 ```
+
+## The backlog is a wiki
+
+No issue tracker, no `TASKS.md`: this repo's own backlog lives in [`tasks/`](tasks/index.md), and it is itself an agentic-wiki bundle, the exact format `wiki` operates. Each task is a markdown entry with frontmatter; the board links them together. So the tool runs on its own to-do list, with the same commands as above:
+
+```sh
+cd tasks
+wiki tasks                        # what's left to build
+wiki list --type task --tag debt  # known debt
+wiki check                        # the backlog stays conformant
+```
