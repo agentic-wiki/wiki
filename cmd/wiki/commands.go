@@ -29,8 +29,7 @@ func cmdStatus(args []string) int {
 		}
 	}
 	s := struct {
-		Root    string `json:"root"`
-		Content string `json:"content"`
+		Dir     string `json:"dir"`
 		Spec    string `json:"spec"`
 		Entries int    `json:"entries"`
 		Links   int    `json:"links"`
@@ -39,13 +38,12 @@ func cmdStatus(args []string) int {
 		Broken  int    `json:"broken"`
 		Orphans int    `json:"orphans"`
 	}{
-		idx.Project.RootDir, idx.Project.ContentDir, idx.Project.Spec,
+		idx.Bundle.Dir, idx.Bundle.Spec,
 		len(idx.Entries), links, len(tagset), tasks,
 		len(idx.Broken()), len(idx.Orphans()),
 	}
 	lines := []string{
-		"Root:     " + s.Root,
-		"Content:  " + s.Content,
+		"Dir:      " + s.Dir,
 		"Spec:     " + s.Spec,
 		fmt.Sprintf("Entries:  %d", s.Entries),
 		fmt.Sprintf("Links:    %d", s.Links),

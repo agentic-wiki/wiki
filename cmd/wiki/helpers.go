@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agentic-wiki/wiki/internal/bundle"
 	"github.com/agentic-wiki/wiki/internal/index"
-	"github.com/agentic-wiki/wiki/internal/project"
 )
 
 // loadIndex discovers the bundle from the current directory and builds the
@@ -16,12 +16,12 @@ func loadIndex() (*index.Index, int) {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return nil, 2
 	}
-	proj, err := project.Discover(cwd)
+	b, err := bundle.Discover(cwd)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return nil, 2
 	}
-	idx, err := index.Build(proj)
+	idx, err := index.Build(b)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return nil, 2

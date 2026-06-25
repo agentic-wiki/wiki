@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/agentic-wiki/wiki/internal/project"
+	"github.com/agentic-wiki/wiki/internal/bundle"
 )
 
 func build(t *testing.T, files map[string]string) *Index {
@@ -15,7 +15,7 @@ func build(t *testing.T, files map[string]string) *Index {
 		t.Fatal(err)
 	}
 	for rel, content := range files {
-		p := filepath.Join(root, "wiki", filepath.FromSlash(rel))
+		p := filepath.Join(root, filepath.FromSlash(rel))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -23,11 +23,11 @@ func build(t *testing.T, files map[string]string) *Index {
 			t.Fatal(err)
 		}
 	}
-	proj, err := project.Discover(filepath.Join(root, "wiki"))
+	b, err := bundle.Discover(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	idx, err := Build(proj)
+	idx, err := Build(b)
 	if err != nil {
 		t.Fatal(err)
 	}

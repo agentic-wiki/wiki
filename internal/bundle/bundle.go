@@ -1,8 +1,8 @@
-// Package project locates an agentic-wiki project and reads its config.
+// Package bundle locates an agentic-wiki bundle and reads its config.
 //
-// A project root holds wiki.toml plus scratch (.wiki/, inbox/); its wiki/
-// subfolder is the content root (the portable OKF bundle).
-package project
+// A bundle is a directory containing wiki.toml; the markdown content lives
+// directly in that directory, with .wiki/ as a hidden, disposable cache.
+package bundle
 
 import (
 	"errors"
@@ -14,22 +14,22 @@ import (
 	"github.com/agentic-wiki/wiki/internal/parse"
 )
 
-// Project is a located wiki project on disk.
-type Project struct {
-	RootDir    string   // project root (contains wiki.toml)
-	ContentDir string   // <RootDir>/wiki — the content tree
-	Spec       string   // spec version from wiki.toml
-	Types      []string // content types declared in wiki.toml
+// Bundle is a located agentic-wiki bundle: a directory containing wiki.toml,
+// with the markdown content living directly inside it.
+type Bundle struct {
+	Dir   string   // the bundle directory (holds wiki.toml); also the content root
+	Spec  string   // spec version the bundle conforms to (from wiki.toml)
+	Types []string // content types declared in wiki.toml
 }
 
 // reservedTypes are recognized regardless of wiki.toml.
 var reservedTypes = []string{"index", "log"}
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
-var ErrNotFound = errors.New("no wiki.toml found (not inside a wiki project)")
+var ErrNotFound = errors.New("no wiki.toml found (not inside a wiki bundle)")
 
 // Discover walks up from start until it finds a directory containing wiki.toml.
-func Discover(start string) (*Project, error) {
+func Discover(start string) (*Bundle, error) {
 	dir, err := filepath.Abs(start)
 	if err != nil {
 		return nil, err
@@ -47,23 +47,22 @@ func Discover(start string) (*Project, error) {
 	}
 }
 
-func load(root, cfg string) (*Project, error) {
+func load(root, cfg string) (*Bundle, error) {
 	data, err := os.ReadFile(cfg)
 	if err != nil {
 		return nil, err
 	}
 	spec, types := parseConfig(string(data))
-	return &Project{
-		RootDir:    root,
-		ContentDir: filepath.Join(root, "wiki"),
-		Spec:       spec,
-		Types:      types,
+	return &Bundle{
+		Dir:   root,
+		Spec:  spec,
+		Types: types,
 	}, nil
 }
 
 // KnownType reports whether t is a reserved or declared content type.
-func (p *Project) KnownType(t string) bool {
-	return slices.Contains(reservedTypes, t) || slices.Contains(p.Types, t)
+func (b *Bundle) KnownType(t string) bool {
+	return slices.Contains(reservedTypes, t) || slices.Contains(b.Types, t)
 }
 
 // parseConfig reads the tiny wiki.toml we define: a `spec` string and a

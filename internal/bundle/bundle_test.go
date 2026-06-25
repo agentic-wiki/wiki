@@ -1,4 +1,4 @@
-package project
+package bundle
 
 import (
 	"os"
@@ -28,13 +28,13 @@ func TestParseConfigMessy(t *testing.T) {
 }
 
 func TestKnownType(t *testing.T) {
-	p := &Project{Types: []string{"note"}}
+	b := &Bundle{Types: []string{"note"}}
 	for _, ty := range []string{"note", "index", "log"} {
-		if !p.KnownType(ty) {
+		if !b.KnownType(ty) {
 			t.Errorf("%q should be known", ty)
 		}
 	}
-	if p.KnownType("bogus") {
+	if b.KnownType("bogus") {
 		t.Errorf("bogus should be unknown")
 	}
 }
@@ -42,16 +42,13 @@ func TestKnownType(t *testing.T) {
 func TestDiscoverWalksUp(t *testing.T) {
 	root := t.TempDir()
 	writeTOML(t, root)
-	deep := filepath.Join(root, "wiki", "a", "b")
+	deep := filepath.Join(root, "a", "b") // content lives at the bundle root, no wiki/ subfolder
 	if err := os.MkdirAll(deep, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	p := mustDiscover(t, deep)
-	if realpath(t, p.RootDir) != realpath(t, root) {
-		t.Errorf("RootDir=%q want %q", p.RootDir, root)
-	}
-	if p.ContentDir != filepath.Join(p.RootDir, "wiki") {
-		t.Errorf("ContentDir=%q", p.ContentDir)
+	if realpath(t, p.Dir) != realpath(t, root) {
+		t.Errorf("Dir=%q want %q", p.Dir, root)
 	}
 	if p.Spec != "0.1" {
 		t.Errorf("spec=%q", p.Spec)
@@ -62,8 +59,8 @@ func TestDiscoverExactDir(t *testing.T) {
 	root := t.TempDir()
 	writeTOML(t, root)
 	p := mustDiscover(t, root) // wiki.toml is right here, no walking
-	if realpath(t, p.RootDir) != realpath(t, root) {
-		t.Errorf("RootDir=%q want %q", p.RootDir, root)
+	if realpath(t, p.Dir) != realpath(t, root) {
+		t.Errorf("Dir=%q want %q", p.Dir, root)
 	}
 }
 
@@ -80,7 +77,7 @@ func writeTOML(t *testing.T, dir string) {
 	}
 }
 
-func mustDiscover(t *testing.T, dir string) *Project {
+func mustDiscover(t *testing.T, dir string) *Bundle {
 	t.Helper()
 	p, err := Discover(dir)
 	if err != nil {

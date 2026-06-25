@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end smoke test for wiki: builds a tiny finance-themed bundle in a temp
-# dir and checks the core commands, filters, and exit codes, running from a deep
-# subdir to exercise upward discovery of wiki.toml.
+# dir (content at the bundle root, beside wiki.toml) and checks the core
+# commands, filters, and exit codes from a deep subdir to exercise upward
+# discovery of wiki.toml.
 set -euo pipefail
 
 BIN="${1:-./bin/wiki}"
@@ -10,14 +11,14 @@ BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")"
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
 
-mkdir -p "$TMP/wiki/finance" "$TMP/wiki/tasks"
+mkdir -p "$TMP/finance" "$TMP/tasks"
 
 cat > "$TMP/wiki.toml" <<'TOML'
 spec = "0.1"
 types = ["note", "concept", "task", "dataset"]
 TOML
 
-cat > "$TMP/wiki/index.md" <<'MD'
+cat > "$TMP/index.md" <<'MD'
 ---
 type: index
 title: Home
@@ -27,7 +28,7 @@ title: Home
 - [Tasks](/tasks/index.md)
 MD
 
-cat > "$TMP/wiki/finance/index.md" <<'MD'
+cat > "$TMP/finance/index.md" <<'MD'
 ---
 type: index
 title: Finance
@@ -36,7 +37,7 @@ title: Finance
 - [Expenses](/finance/expenses.md)
 MD
 
-cat > "$TMP/wiki/finance/income.md" <<'MD'
+cat > "$TMP/finance/income.md" <<'MD'
 ---
 type: concept
 title: Income
@@ -45,7 +46,7 @@ tags: [finance, income]
 Monthly income tracking. Backup: [Q1 receipts](/finance/q1-receipts.md).
 MD
 
-cat > "$TMP/wiki/finance/expenses.md" <<'MD'
+cat > "$TMP/finance/expenses.md" <<'MD'
 ---
 type: dataset
 title: Expenses
@@ -57,7 +58,7 @@ tags: [finance, out-of-pocket]
 | 2026-01 | groceries | 220        |
 MD
 
-cat > "$TMP/wiki/tasks/index.md" <<'MD'
+cat > "$TMP/tasks/index.md" <<'MD'
 ---
 type: index
 title: Tasks
@@ -65,7 +66,7 @@ title: Tasks
 - [Reconcile accounts](/tasks/reconcile.md)
 MD
 
-cat > "$TMP/wiki/tasks/reconcile.md" <<'MD'
+cat > "$TMP/tasks/reconcile.md" <<'MD'
 ---
 type: task
 title: Reconcile accounts
@@ -76,7 +77,7 @@ status: open
 MD
 
 contains() { echo "$1" | grep -q "$2"; }
-cd "$TMP/wiki/finance"   # deep dir: discovery must walk up
+cd "$TMP/finance"   # deep dir: discovery must walk up
 
 echo "--- status ---"
 contains "$($BIN status)" "Entries:  6"

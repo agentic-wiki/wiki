@@ -1,4 +1,4 @@
-// Package index scans a project's content tree and builds a queryable model.
+// Package index scans a bundle's content tree and builds a queryable model.
 package index
 
 import (
@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/agentic-wiki/wiki/internal/bundle"
 	"github.com/agentic-wiki/wiki/internal/parse"
-	"github.com/agentic-wiki/wiki/internal/project"
 )
 
 // Entry is one markdown file in the content tree.
@@ -31,22 +31,22 @@ func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
 }
 
-// Index is the built model of a project.
+// Index is the built model of a bundle.
 type Index struct {
-	Project *project.Project
+	Bundle  *bundle.Bundle
 	Entries []*Entry
 	byPath  map[string]*Entry
 }
 
-// Build scans the content root and parses every .md file.
-func Build(p *project.Project) (*Index, error) {
-	idx := &Index{Project: p, byPath: map[string]*Entry{}}
-	err := filepath.WalkDir(p.ContentDir, func(path string, d fs.DirEntry, err error) error {
+// Build scans the bundle directory and parses every .md file.
+func Build(b *bundle.Bundle) (*Index, error) {
+	idx := &Index{Bundle: b, byPath: map[string]*Entry{}}
+	err := filepath.WalkDir(b.Dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if path != p.ContentDir && strings.HasPrefix(d.Name(), ".") {
+			if path != b.Dir && strings.HasPrefix(d.Name(), ".") {
 				return fs.SkipDir
 			}
 			return nil
@@ -54,7 +54,7 @@ func Build(p *project.Project) (*Index, error) {
 		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
-		e, err := parseEntry(p, path)
+		e, err := parseEntry(b, path)
 		if err != nil {
 			return err
 		}
@@ -68,12 +68,12 @@ func Build(p *project.Project) (*Index, error) {
 	return idx, nil
 }
 
-func parseEntry(p *project.Project, abs string) (*Entry, error) {
+func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(p.ContentDir, abs)
+	rel, _ := filepath.Rel(b.Dir, abs)
 	fm, body := parse.Frontmatter(string(data))
 	return &Entry{
 		Path:     "/" + filepath.ToSlash(rel),
@@ -94,7 +94,7 @@ func (idx *Index) FileExists(target string) bool {
 	if _, ok := idx.byPath[target]; ok {
 		return true
 	}
-	p := filepath.Join(idx.Project.ContentDir, filepath.FromSlash(strings.TrimPrefix(target, "/")))
+	p := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(target, "/")))
 	fi, err := os.Stat(p)
 	return err == nil && !fi.IsDir()
 }
@@ -175,7 +175,7 @@ func (idx *Index) Check() []Issue {
 		switch {
 		case e.Type == "":
 			issues = append(issues, Issue{"error", e.Path, "missing required `type`"})
-		case !idx.Project.KnownType(e.Type):
+		case !idx.Bundle.KnownType(e.Type):
 			issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
 		}
 		if e.Name == "index.md" && e.Type != "" && e.Type != "index" {
