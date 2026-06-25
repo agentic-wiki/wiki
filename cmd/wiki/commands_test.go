@@ -72,6 +72,12 @@ func TestCmdRead(t *testing.T) {
 	if code != 0 || !strings.Contains(out, `"body"`) || !strings.Contains(out, `"path": "/guide.md"`) {
 		t.Errorf("json read: %q (code %d)", out, code)
 	}
+
+	// flag AFTER the positional must still take effect (parseWithArg)
+	out, code = capture(t, func() int { return cmdRead([]string{"guide.md", "--format", "json"}) })
+	if code != 0 || !strings.Contains(out, `"body"`) {
+		t.Errorf("flag-after-file read: %q (code %d)", out, code)
+	}
 }
 
 func TestCmdOutline(t *testing.T) {
@@ -100,5 +106,46 @@ func TestCmdOutline(t *testing.T) {
 
 	if _, code := capture(t, func() int { return cmdOutline([]string{"nope.md"}) }); code != 2 {
 		t.Errorf("outline missing exit=%d want 2", code)
+	}
+}
+
+func TestCmdSearch(t *testing.T) {
+	t.Chdir(writeBundle(t))
+
+	// default: lists matching entries
+	out, code := capture(t, func() int { return cmdSearch([]string{"setup"}) })
+	if code != 0 || !strings.Contains(out, "/guide.md") {
+		t.Errorf("search setup: %q (code %d)", out, code)
+	}
+
+	// --lines: grep-style line with a file-relative line number
+	out, code = capture(t, func() int { return cmdSearch([]string{"--lines", "step"}) })
+	if code != 0 || !strings.Contains(out, "/guide.md:8: step one") {
+		t.Errorf("search --lines: %q", out)
+	}
+
+	// flag AFTER the query must still take effect (parseWithArg)
+	out, code = capture(t, func() int { return cmdSearch([]string{"step", "--lines"}) })
+	if code != 0 || !strings.Contains(out, "step one") {
+		t.Errorf("flag-after-query search: %q", out)
+	}
+
+	// --type filter
+	if out, _ := capture(t, func() int { return cmdSearch([]string{"--type", "index", "Home"}) }); !strings.Contains(out, "/index.md") {
+		t.Errorf("type-filter search: %q", out)
+	}
+
+	// no match -> exit 1; no query -> exit 2
+	if _, code := capture(t, func() int { return cmdSearch([]string{"zzzznope"}) }); code != 1 {
+		t.Errorf("no-match exit=%d want 1", code)
+	}
+	if _, code := capture(t, func() int { return cmdSearch(nil) }); code != 2 {
+		t.Errorf("no-query exit=%d want 2", code)
+	}
+
+	// json carries the match count
+	out, _ = capture(t, func() int { return cmdSearch([]string{"--format", "json", "setup"}) })
+	if !strings.Contains(out, `"matches"`) {
+		t.Errorf("json search: %q", out)
 	}
 }

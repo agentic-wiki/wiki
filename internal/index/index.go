@@ -32,15 +32,23 @@ func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
 }
 
-// Body returns the entry's markdown body with the frontmatter block stripped,
-// read fresh from disk. The index never holds bodies in memory, so this re-reads
-// the one file on demand.
-func (e *Entry) Body() (string, error) {
+// Raw returns the entry's full file content, read fresh from disk. The index
+// holds only metadata, so bodies are re-read on demand.
+func (e *Entry) Raw() (string, error) {
 	data, err := os.ReadFile(e.abs)
 	if err != nil {
 		return "", err
 	}
-	_, body := parse.Frontmatter(string(data))
+	return string(data), nil
+}
+
+// Body returns the entry's markdown body with the frontmatter block stripped.
+func (e *Entry) Body() (string, error) {
+	raw, err := e.Raw()
+	if err != nil {
+		return "", err
+	}
+	_, body := parse.Frontmatter(raw)
 	return body, nil
 }
 
@@ -162,6 +170,46 @@ func (idx *Index) Filter(typ, tag, pathPrefix string) []*Entry {
 		out = append(out, e)
 	}
 	return out
+}
+
+// SearchLine is one matching line within an entry (1-indexed, file-relative).
+type SearchLine struct {
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
+// SearchHit is an entry with at least one line matching a search query.
+type SearchHit struct {
+	Path    string       `json:"path"`
+	Type    string       `json:"type"`
+	Title   string       `json:"title"`
+	Matches int          `json:"matches"`
+	Lines   []SearchLine `json:"lines,omitempty"`
+}
+
+// Search returns entries whose file (frontmatter + body) contains query,
+// case-insensitively, after applying the type/tag/path filters. Each hit carries
+// its matching lines, sorted by path. Unreadable files are skipped.
+func (idx *Index) Search(query, typ, tag, pathPrefix string) []SearchHit {
+	q := strings.ToLower(query)
+	var hits []SearchHit
+	for _, e := range idx.Filter(typ, tag, pathPrefix) {
+		raw, err := e.Raw()
+		if err != nil {
+			continue
+		}
+		var lines []SearchLine
+		for i, line := range strings.Split(raw, "\n") {
+			if strings.Contains(strings.ToLower(line), q) {
+				lines = append(lines, SearchLine{i + 1, line})
+			}
+		}
+		if len(lines) > 0 {
+			hits = append(hits, SearchHit{e.Path, e.Type, e.Title, len(lines), lines})
+		}
+	}
+	slices.SortFunc(hits, func(a, b SearchHit) int { return strings.Compare(a.Path, b.Path) })
+	return hits
 }
 
 // BrokenLink is an internal link with no target file.

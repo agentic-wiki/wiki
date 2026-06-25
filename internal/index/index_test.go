@@ -203,3 +203,41 @@ func TestBody(t *testing.T) {
 		t.Errorf("no-frontmatter body wrong: %q", bb)
 	}
 }
+
+func TestSearch(t *testing.T) {
+	idx := build(t, map[string]string{
+		"finance/income.md":   "---\ntype: note\ntitle: Income\ntags: [money]\n---\nmonthly income tracking\nINCOME spikes in Q4\n",
+		"finance/expenses.md": "---\ntype: concept\ntitle: Expenses\n---\nrent and groceries\n",
+		"tech/notes.md":       "---\ntype: note\n---\nincome is mentioned here\n",
+	})
+
+	// case-insensitive, across files, sorted by path
+	hits := idx.Search("income", "", "", "")
+	if len(hits) != 2 || hits[0].Path != "/finance/income.md" || hits[1].Path != "/tech/notes.md" {
+		t.Fatalf("hits = %+v", hits)
+	}
+	// income.md matches the title line + two body lines
+	if hits[0].Matches != 3 {
+		t.Errorf("income.md matches = %d want 3: %+v", hits[0].Matches, hits[0].Lines)
+	}
+
+	// filters narrow the candidate set
+	if got := idx.Search("income", "note", "", ""); len(got) != 2 {
+		t.Errorf("--type note = %d want 2", len(got))
+	}
+	if got := idx.Search("income", "concept", "", ""); len(got) != 0 {
+		t.Errorf("--type concept = %d want 0", len(got))
+	}
+	if got := idx.Search("income", "", "", "finance/"); len(got) != 1 {
+		t.Errorf("--path finance/ = %d want 1", len(got))
+	}
+
+	// frontmatter value (a tag) is searchable
+	if got := idx.Search("money", "", "", ""); len(got) != 1 || got[0].Path != "/finance/income.md" {
+		t.Errorf("tag-value search = %+v", got)
+	}
+	// no match
+	if got := idx.Search("zzzznope", "", "", ""); len(got) != 0 {
+		t.Errorf("no-match = %d want 0", len(got))
+	}
+}

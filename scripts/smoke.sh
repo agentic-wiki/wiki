@@ -125,6 +125,18 @@ contains "$($BIN outline /index.md)" "Home"
 echo "--- read missing file => exit 2 ---"
 ! $BIN read /nope.md 2>/dev/null
 
+echo "--- search finds content ---"
+contains "$($BIN search income)" "/finance/income.md"
+
+echo "--- search --lines shows file:line ---"
+contains "$($BIN search --lines income)" "/finance/income.md:"
+
+echo "--- search --type filters ---"
+contains "$($BIN search --type dataset rent)" "/finance/expenses.md"
+
+echo "--- search no match => exit 1 ---"
+! $BIN search zzzznope >/dev/null
+
 echo "--- orphans (none => exit 1) ---"
 ! $BIN orphans >/dev/null
 

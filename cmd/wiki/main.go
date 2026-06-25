@@ -18,12 +18,14 @@ commands:
   list          list entries (--type --tag --path)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
+  search        full-text search over entries (--type --tag --path --lines)
   tasks         list checkbox tasks (--all --done --path)
   unresolved    broken internal links
   orphans       entries with no incoming links
   check         report conformance + health issues
   version       print the version
 
+run 'wiki <command> -h' to see a command's flags
 every command accepts --format text|json (default text)
 exit codes: 0 results, 1 none, 2 error
 `
@@ -52,6 +54,8 @@ func run(args []string) int {
 		return cmdRead(args[1:])
 	case "outline":
 		return cmdOutline(args[1:])
+	case "search":
+		return cmdSearch(args[1:])
 	case "tasks":
 		return cmdTasks(args[1:])
 	case "unresolved":

@@ -202,8 +202,8 @@ func cmdCheck(args []string) int {
 func cmdRead(args []string) int {
 	fs := flag.NewFlagSet("read", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")
-	fs.Parse(args)
-	if fs.NArg() != 1 {
+	target, ok := parseWithArg(fs, args)
+	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki read <file>")
 		return 2
 	}
@@ -211,7 +211,7 @@ func cmdRead(args []string) int {
 	if code != 0 {
 		return code
 	}
-	e, err := idx.Resolve(fs.Arg(0))
+	e, err := idx.Resolve(target)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
@@ -235,8 +235,8 @@ func cmdRead(args []string) int {
 func cmdOutline(args []string) int {
 	fs := flag.NewFlagSet("outline", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")
-	fs.Parse(args)
-	if fs.NArg() != 1 {
+	target, ok := parseWithArg(fs, args)
+	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki outline <file>")
 		return 2
 	}
@@ -244,7 +244,7 @@ func cmdOutline(args []string) int {
 	if code != 0 {
 		return code
 	}
-	e, err := idx.Resolve(fs.Arg(0))
+	e, err := idx.Resolve(target)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
@@ -263,4 +263,59 @@ func cmdOutline(args []string) int {
 	}{e.Path, heads}
 	output.Emit(os.Stdout, *format, lines, out)
 	return 0
+}
+
+func cmdSearch(args []string) int {
+	fs := flag.NewFlagSet("search", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	typ := fs.String("type", "", "filter by type")
+	tag := fs.String("tag", "", "filter by tag")
+	path := fs.String("path", "", "filter by path prefix")
+	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
+	query, ok := parseWithArg(fs, args)
+	if !ok || strings.TrimSpace(query) == "" {
+		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--type --tag --path --lines]  (quote a multi-word query)")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+
+	hits := idx.Search(query, *typ, *tag, *path)
+	var lines []string
+	if *showLines {
+		for _, h := range hits {
+			for _, ln := range h.Lines {
+				lines = append(lines, fmt.Sprintf("%s:%d: %s", h.Path, ln.Line, strings.TrimRight(ln.Text, " \t\r")))
+			}
+		}
+	} else {
+		for _, h := range hits {
+			lines = append(lines, fmt.Sprintf("%-44s %-9s %s", h.Path, h.Type, h.Title))
+		}
+		for i := range hits {
+			hits[i].Lines = nil // json carries per-line detail only with --lines
+		}
+	}
+	output.Emit(os.Stdout, *format, lines, hits)
+	if len(hits) == 0 {
+		return 1
+	}
+	return 0
+}
+
+// parseWithArg parses fs allowing flags on either side of a single positional
+// argument, which it returns. ok is false unless there is exactly one positional.
+func parseWithArg(fs *flag.FlagSet, args []string) (string, bool) {
+	fs.Parse(args)
+	if fs.NArg() == 0 {
+		return "", false
+	}
+	arg := fs.Arg(0)
+	fs.Parse(fs.Args()[1:]) // pick up flags that followed the positional
+	if fs.NArg() != 0 {
+		return "", false
+	}
+	return arg, true
 }
