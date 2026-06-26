@@ -34,7 +34,7 @@ wiki orphans                               # entries with no incoming links
 wiki links /index.md                       # outgoing links (unique targets)
 wiki backlinks /finance/income.md          # every incoming link (one per occurrence)
 wiki move /a.md /archive/a.md --dry-run    # relocate/rename + rewrite links to it
-wiki consolidate --dry-run                 # rewrite relative links to root-absolute
+wiki tidy                                  # preview tidy-ups (--links, --slug, --all to apply)
 wiki check                                 # report conformance + health issues
 wiki check --fix                           # repair safe issues (e.g. sync okf_version)
 wiki version

@@ -318,39 +318,52 @@ func TestCmdCheckFix(t *testing.T) {
 	}
 }
 
-func TestCmdConsolidate(t *testing.T) {
+func TestCmdTidy(t *testing.T) {
 	dir := writeBundle(t)
-	// Make the root index.md link to guide.md relatively (guide.md exists).
+	// a relative link in index.md, and a spaced filename to slug
 	if err := os.WriteFile(filepath.Join(dir, "index.md"),
 		[]byte("---\nokf_version: \"0.1\"\n---\n# Home\n[g](guide.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "a note.md"), []byte("---\ntype: note\n---\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(dir)
 
-	// dry-run previews without writing
-	out, code := capture(t, func() int { return cmdConsolidate([]string{"--dry-run"}) })
-	if code != 0 || !strings.Contains(out, "would consolidate") || !strings.Contains(out, "/guide.md") {
-		t.Errorf("dry-run: exit=%d out=%q", code, out)
+	// bare = preview both categories, write nothing
+	out, code := capture(t, func() int { return cmdTidy(nil) })
+	if code != 0 || !strings.Contains(out, "would") || !strings.Contains(out, "/guide.md") || !strings.Contains(out, "a-note.md") {
+		t.Errorf("bare tidy preview: %q (code %d)", out, code)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); strings.Contains(string(b), "(/guide.md)") {
-		t.Errorf("dry-run must not write")
+		t.Errorf("bare tidy must not write")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a note.md")); err != nil {
+		t.Errorf("bare tidy must not rename")
 	}
 
-	// real run rewrites the link to root-absolute
-	if _, code := capture(t, func() int { return cmdConsolidate(nil) }); code != 0 {
-		t.Errorf("consolidate exit=%d", code)
+	// --slug applies the rename
+	if _, code := capture(t, func() int { return cmdTidy([]string{"--slug"}) }); code != 0 {
+		t.Errorf("tidy --slug exit=%d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a-note.md")); err != nil {
+		t.Errorf("--slug should rename a note.md -> a-note.md")
+	}
+
+	// --links applies link normalization
+	if _, code := capture(t, func() int { return cmdTidy([]string{"--links"}) }); code != 0 {
+		t.Errorf("tidy --links exit=%d", code)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); !strings.Contains(string(b), "[g](/guide.md)") {
-		t.Errorf("link not consolidated:\n%s", b)
+		t.Errorf("--links should normalize: %s", b)
 	}
 
-	// nothing left to consolidate → ok message, still exit 0
-	if out, code := capture(t, func() int { return cmdConsolidate(nil) }); code != 0 || !strings.Contains(out, "already root-absolute") {
-		t.Errorf("no-op consolidate: exit=%d out=%q", code, out)
+	// nothing left -> ok message; json is an array
+	if out, _ := capture(t, func() int { return cmdTidy(nil) }); !strings.Contains(out, "nothing to tidy") {
+		t.Errorf("no-op tidy: %q", out)
 	}
-	// json output is a (possibly empty) array, never null
-	if out, _ := capture(t, func() int { return cmdConsolidate([]string{"--format", "json"}) }); !strings.Contains(out, "[") {
-		t.Errorf("json consolidate missing array: %q", out)
+	if out, _ := capture(t, func() int { return cmdTidy([]string{"--format", "json"}) }); !strings.Contains(out, "[") {
+		t.Errorf("json tidy missing array: %q", out)
 	}
 }
 

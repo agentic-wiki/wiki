@@ -31,7 +31,7 @@ commands:
   links         an entry's outgoing links
   backlinks     every link that points to an entry
   move          relocate or rename an entry, rewriting links to it (--dry-run)
-  consolidate   rewrite relative links to root-absolute (--dry-run)
+  tidy          canonicalize the bundle: --links, --slug, --all (bare = preview)
   check         report conformance + health issues (--fix repairs safe ones)
   version       print the version
 
@@ -85,8 +85,8 @@ func run(args []string) int {
 		return cmdBacklinks(args[1:])
 	case "move":
 		return cmdMove(args[1:])
-	case "consolidate":
-		return cmdConsolidate(args[1:])
+	case "tidy":
+		return cmdTidy(args[1:])
 	case "check":
 		return cmdCheck(args[1:])
 	default:

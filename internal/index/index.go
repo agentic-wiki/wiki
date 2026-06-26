@@ -18,7 +18,7 @@ import (
 
 // Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
 // its resolved root-absolute graph key (Target, anchor stripped). Queries and
-// the graph match on Target; rewrites (move, consolidate) match Raw on disk.
+// the graph match on Target; rewrites (Move, NormalizeLinks) match Raw on disk.
 type Link struct {
 	Text   string
 	Raw    string
@@ -175,7 +175,7 @@ func resolveLinks(set parse.LinkSet, entryPath string, offset int) []Link {
 // representation of an internal link. Absolute targets pass through; relative
 // ones join against the entry's directory (path.Join cleans `.`/`..` and cannot
 // climb above the bundle root). The index uses it for the graph key (after
-// dropping the anchor) and consolidate uses it for the on-disk rewrite.
+// dropping the anchor) and NormalizeLinks uses it for the on-disk rewrite.
 func normalizeLink(fromPath, target string) string {
 	anchor := ""
 	if h := strings.IndexByte(target, '#'); h >= 0 {
@@ -434,10 +434,16 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 			if h := strings.IndexByte(l.Raw, '#'); h >= 0 {
 				anchor = l.Raw[h:]
 			}
-			re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(l.Raw) + `(\s[^)]*)?\)`)
+			// Match the on-disk form, which may be angle-bracketed (`<…>`) if the
+			// old target had a space. Re-wrap only if the new target still has one.
+			re := regexp.MustCompile(`\]\(<?` + regexp.QuoteMeta(l.Raw) + `>?(\s[^)]*)?\)`)
 			lines[l.Line-1] = re.ReplaceAllStringFunc(lines[l.Line-1], func(m string) string {
 				n++
-				return "](" + dest + anchor + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
+				nt := dest + anchor
+				if strings.ContainsAny(nt, " \t") {
+					nt = "<" + nt + ">"
+				}
+				return "](" + nt + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
 			})
 		}
 		if n == 0 {
@@ -545,7 +551,7 @@ func (idx *Index) Check() []Issue {
 	return issues
 }
 
-// Fix is a single change reported by `check --fix` or `consolidate`: an entry's
+// Fix is a single change reported by `check --fix` or `tidy`: an entry's
 // field (or a link) rewritten From -> To.
 type Fix struct {
 	Entry string `json:"entry"`
@@ -557,7 +563,7 @@ type Fix struct {
 // Fix applies the bundle's safe-to-write conformance repairs. Currently that is
 // syncing the bundle-root index.md okf_version badge; the change is validated
 // before any write, and written only when apply is true. (Relative-link
-// normalization is not a repair, see Consolidate.)
+// normalization is not a repair, see NormalizeLinks.)
 func (idx *Index) Fix(apply bool) ([]Fix, error) {
 	okf, err := idx.fixOKFVersion(apply)
 	if err != nil {
@@ -601,15 +607,15 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	return &Fix{root.Path, "okf_version", got, want}, nil
 }
 
-// Consolidate rewrites relative links to their canonical root-absolute form
+// NormalizeLinks rewrites relative links to their canonical root-absolute form
 // across the bundle. Relative links are valid per OKF, so this is an opt-in
 // normalization, not a repair: it canonicalizes their on-disk spelling and never
 // changes the graph (the resolved edge is already absolute in memory). With
 // apply=false it reports the changes without writing.
-func (idx *Index) Consolidate(apply bool) ([]Fix, error) {
+func (idx *Index) NormalizeLinks(apply bool) ([]Fix, error) {
 	var changes []Fix
 	for _, e := range idx.Entries {
-		c, err := idx.consolidateEntry(e, apply)
+		c, err := idx.normalizeEntryLinks(e, apply)
 		if err != nil {
 			return nil, err
 		}
@@ -618,11 +624,35 @@ func (idx *Index) Consolidate(apply bool) ([]Fix, error) {
 	return changes, nil
 }
 
-// consolidateEntry rewrites each relative link in one entry to its absolute form
-// (anchor and title preserved), writing the file once. The absolute form is
+// Slugify renames entry files whose basename contains a space to a hyphenated
+// slug (e.g. "a b.md" -> "a-b.md", case preserved), rewriting inbound links via
+// Move. Name collisions are skipped (Move refuses to clobber); spaced directories
+// are out of scope. Returns one Fix per renamed file.
+func (idx *Index) Slugify(apply bool) ([]Fix, error) {
+	var changes []Fix
+	for _, e := range idx.Entries {
+		if !strings.Contains(e.Name, " ") {
+			continue
+		}
+		dest := path.Join(path.Dir(e.Path), slugifyName(e.Name))
+		if _, err := idx.Move(e.Path, dest, !apply); err != nil {
+			continue // collision or unmovable: leave it (check still flags the space)
+		}
+		changes = append(changes, Fix{Entry: e.Path, Field: "rename", From: e.Path, To: dest})
+	}
+	return changes, nil
+}
+
+// slugifyName collapses whitespace runs in a filename to single hyphens.
+func slugifyName(name string) string {
+	return strings.Join(strings.Fields(name), "-")
+}
+
+// normalizeEntryLinks rewrites each relative link in one entry to its absolute
+// form (anchor and title preserved), writing the file once. The absolute form is
 // deterministic (path arithmetic), so it applies whether or not the target
 // exists. Returns one Fix per link.
-func (idx *Index) consolidateEntry(e *Entry, apply bool) ([]Fix, error) {
+func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	raw, err := e.Raw()
 	if err != nil {
 		return nil, err
@@ -638,7 +668,7 @@ func (idx *Index) consolidateEntry(e *Entry, apply bool) ([]Fix, error) {
 	for _, l := range rels {
 		abs := normalizeLink(e.Path, l.Target)
 		if strings.ContainsAny(abs, " \t") {
-			continue // a space target is flagged by check; the fix is renaming the file, not consolidating
+			continue // a space target is flagged by check; the fix is renaming the file, not normalizing the link
 		}
 		changes = append(changes, Fix{e.Path, "link", l.Target, abs})
 		ln := l.Line + offset - 1

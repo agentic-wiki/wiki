@@ -260,30 +260,63 @@ func cmdCheck(args []string) int {
 	return 0
 }
 
-func cmdConsolidate(args []string) int {
-	fs := flag.NewFlagSet("consolidate", flag.ExitOnError)
+// cmdTidy canonicalizes an already-valid bundle. Bare (no category flag) it
+// previews every category and writes nothing; a category flag applies just that
+// category. Non-interactive: no prompts, and no --dry-run since the bare command
+// is the preview.
+func cmdTidy(args []string) int {
+	fs := flag.NewFlagSet("tidy", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")
-	dry := fs.Bool("dry-run", false, "report changes without writing")
+	links := fs.Bool("links", false, "normalize relative links to root-absolute")
+	slug := fs.Bool("slug", false, "rename spaced filenames to hyphenated slugs (rewriting inbound links)")
+	all := fs.Bool("all", false, "apply every category")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
-	changes, err := idx.Consolidate(!*dry)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "wiki:", err)
-		return 2
+	noScope := !*links && !*slug && !*all // bare command previews every category, writes nothing
+	apply := !noScope
+	doLinks := *all || *links || noScope
+	doSlug := *all || *slug || noScope
+
+	var changes []index.Fix
+	if doLinks {
+		c, err := idx.NormalizeLinks(apply)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wiki:", err)
+			return 2
+		}
+		changes = append(changes, c...)
 	}
-	verb := "consolidate"
-	if *dry {
-		verb = "would consolidate"
+	if doSlug {
+		c, err := idx.Slugify(apply)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wiki:", err)
+			return 2
+		}
+		changes = append(changes, c...)
+	}
+
+	prefix := ""
+	if !apply {
+		prefix = "would "
 	}
 	var lines []string
 	for _, c := range changes {
-		lines = append(lines, fmt.Sprintf("%s %s: %q -> %q", verb, c.Entry, c.From, c.To))
+		if c.Field == "rename" {
+			lines = append(lines, fmt.Sprintf("%srename %q -> %q", prefix, c.From, c.To))
+		} else {
+			lines = append(lines, fmt.Sprintf("%slink %s: %q -> %q", prefix, c.Entry, c.From, c.To))
+		}
 	}
-	if len(changes) == 0 {
-		lines = []string{"ok: all links already root-absolute"}
+	switch {
+	case len(changes) == 0:
+		lines = []string{"ok: nothing to tidy"}
+	case apply:
+		// already applied; the lines above list what changed
+	default:
+		lines = append(lines, "run `wiki tidy --links --slug` (or --all) to apply")
 	}
 	output.Emit(os.Stdout, *format, lines, changes)
 	return 0

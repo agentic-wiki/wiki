@@ -202,10 +202,10 @@ func TestLinksToSameTargetAcrossForms(t *testing.T) {
 	if bl := idx.Backlinks("/hello.md"); len(bl) != 3 {
 		t.Fatalf("want 3 backlinks across forms, got %+v", bl)
 	}
-	// consolidate normalizes the two relatives; the absolute one is left as-is
-	changes, _ := idx.Consolidate(true)
+	// NormalizeLinks rewrites the two relatives; the absolute one is left as-is
+	changes, _ := idx.NormalizeLinks(true)
 	if len(changes) != 2 {
-		t.Errorf("want 2 consolidations (the relatives), got %+v", changes)
+		t.Errorf("want 2 normalized links (the relatives), got %+v", changes)
 	}
 	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/b.md"))
 	c, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/c.md"))
@@ -277,7 +277,7 @@ func TestCheckFilenameSpace(t *testing.T) {
 	}
 }
 
-func TestAngleBracketLinkResolvesButNotConsolidated(t *testing.T) {
+func TestAngleBracketLinkResolvesButNotNormalized(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\ntype: index\n---\n[s](<../a b.md>)\n",
 		"a b.md":   "---\ntype: note\n---\nx\n",
@@ -290,9 +290,9 @@ func TestAngleBracketLinkResolvesButNotConsolidated(t *testing.T) {
 	if !hasWarning(idx.Check(), "/a b.md", "space") {
 		t.Errorf("spaced filename should warn, got %+v", idx.Check())
 	}
-	// consolidate leaves space targets alone (rename the file instead)
-	if c, _ := idx.Consolidate(false); len(c) != 0 {
-		t.Errorf("consolidate should skip space targets, got %+v", c)
+	// NormalizeLinks leaves space targets alone (rename the file instead)
+	if c, _ := idx.NormalizeLinks(false); len(c) != 0 {
+		t.Errorf("NormalizeLinks should skip space targets, got %+v", c)
 	}
 }
 
@@ -581,6 +581,31 @@ func TestMoveRewritesRelativeLinks(t *testing.T) {
 	}
 }
 
+func TestSlugify(t *testing.T) {
+	idx := build(t, map[string]string{
+		"my note.md": "---\ntype: note\n---\nx\n",
+		"index.md":   "---\nokf_version: \"0.1\"\n---\n[n](</my note.md>)\n", // angle-bracketed inbound link
+	})
+	changes, err := idx.Slugify(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 1 || changes[0].To != "/my-note.md" {
+		t.Fatalf("slugify = %+v, want one rename to /my-note.md", changes)
+	}
+	if _, err := os.Stat(filepath.Join(idx.Bundle.Dir, "my-note.md")); err != nil {
+		t.Errorf("file not renamed to my-note.md: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(idx.Bundle.Dir, "my note.md")); err == nil {
+		t.Errorf("old spaced file should be gone")
+	}
+	// the angle-bracketed inbound link is rewritten to the slug (space gone -> bare)
+	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	if !strings.Contains(string(root), "[n](/my-note.md)") {
+		t.Errorf("inbound <…> link not rewritten:\n%s", root)
+	}
+}
+
 func TestMoveAcrossLinkForms(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\ntype: index\n---\n[a](/hello.md)\n",    // absolute
@@ -658,7 +683,7 @@ func TestMoveTitledLink(t *testing.T) {
 	}
 }
 
-func TestRelativeLinksResolveAndConsolidate(t *testing.T) {
+func TestRelativeLinksResolveAndNormalize(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md":    "---\ntype: index\nokf_version: \"0.1\"\n---\n[up](sub/page.md) [bad](nope.md)\n[anc](sub/page.md#sec) [tit](sub/page.md \"hi\")\n",
 		"sub/page.md": "---\ntype: note\n---\nhi\n",
@@ -683,14 +708,14 @@ func TestRelativeLinksResolveAndConsolidate(t *testing.T) {
 		t.Errorf("unresolvable relative link should be broken (-> /nope.md), got %+v", idx.Broken())
 	}
 
-	// Consolidate canonicalizes every relative link (anchor + title preserved),
+	// NormalizeLinks canonicalizes every relative link (anchor + title preserved),
 	// including the unresolvable one (the absolute form is deterministic).
-	changes, err := idx.Consolidate(true)
+	changes, err := idx.NormalizeLinks(true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(changes) != 4 { // up, bad, anc, tit
-		t.Errorf("expected 4 consolidations, got %+v", changes)
+		t.Errorf("expected 4 normalized links, got %+v", changes)
 	}
 	raw, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
 	if err != nil {
@@ -703,12 +728,12 @@ func TestRelativeLinksResolveAndConsolidate(t *testing.T) {
 		}
 	}
 
-	// Once everything is absolute, there is nothing left to consolidate.
+	// Once everything is absolute, there is nothing left to normalize.
 	rebuilt, err := Build(idx.Bundle)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dry, _ := rebuilt.Consolidate(false); len(dry) != 0 {
-		t.Errorf("nothing should remain to consolidate, got %+v", dry)
+	if dry, _ := rebuilt.NormalizeLinks(false); len(dry) != 0 {
+		t.Errorf("nothing should remain to normalize, got %+v", dry)
 	}
 }
