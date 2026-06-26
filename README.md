@@ -24,11 +24,11 @@ Run any command from inside a wiki bundle:
 
 ```sh
 wiki status                                # bundle + index summary
-wiki list --type dataset --tag accounts    # filter entries (--type, --tag, --path)
+wiki list --type dataset --tag accounts    # filter entries (--type, --tag, --prefix)
 wiki read /finance/expenses.md             # print an entry's body (frontmatter stripped)
 wiki outline /finance/expenses.md          # print its heading hierarchy
-wiki search "language model" --lines       # full-text search (--type, --tag, --path, --lines)
-wiki tasks                                 # open checkbox tasks (--all, --done, --path)
+wiki search "language model" --lines       # full-text search (--type, --tag, --prefix, --lines)
+wiki tasks                                 # open checkbox tasks (--all, --done, --prefix)
 wiki unresolved                            # broken internal links
 wiki orphans                               # entries with no incoming links
 wiki links /index.md                       # outgoing links (unique targets)
@@ -46,10 +46,16 @@ wiki unresolved >/dev/null && echo "broken links found" || echo "clean"
 
 Create a new bundle with `wiki init [dir]` (default: the current directory): it writes a small example, ready to use with `wiki`. Pass `--force` to write into a non-empty directory.
 
+File arguments are **bundle paths**, not OS paths:
+- Absolute path from the bundle's root: `/finance/income.md`
+- A bare `income.md` basename: resolved when it's unique. An ambiguous basename errors
+
+This is independent of `--root` and the working directory. `--prefix` takes the same root-absolute form to narrow a listing to a subtree.
+
 ## Design
 
-- **Standalone-first:** agents only call `wiki` directly. Git is recommended but optional.
-- **Minimal by design:** zero external dependencies.
+- **Standalone-first:** agents only call `wiki` directly.
+- **Minimal by design:** zero external dependencies. Git is recommended but optional.
 - **Files are truth:** the index is derived from disk and fully disposable.
 
 ## Development

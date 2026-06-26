@@ -4,23 +4,28 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Version is set at build time via -ldflags "-X main.Version=...".
 var Version = "dev"
 
+// rootDir is the bundle to operate on, set by a leading --root flag. Empty
+// means discover from the current directory.
+var rootDir string
+
 const usage = `wiki — query an agentic-wiki bundle
 
-usage: wiki <command> [flags]
+usage: wiki [--root <dir>] <command> [flags]
 
 commands:
   init          scaffold a new bundle (--force into a non-empty dir)
   status        bundle + index summary
-  list          list entries (--type --tag --path)
+  list          list entries (--type --tag --prefix)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
-  search        full-text search over entries (--type --tag --path --lines)
-  tasks         list checkbox tasks (--all --done --path)
+  search        full-text search over entries (--type --tag --prefix --lines)
+  tasks         list checkbox tasks (--all --done --prefix)
   unresolved    broken internal links
   orphans       entries with no incoming links
   links         an entry's outgoing links
@@ -30,6 +35,7 @@ commands:
   version       print the version
 
 run 'wiki <command> -h' to see a command's flags
+--root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 every command accepts --format text|json (default text)
 exit codes: 0 results, 1 none, 2 error
 `
@@ -39,6 +45,10 @@ func main() {
 }
 
 func run(args []string) int {
+	args, code := applyRoot(args)
+	if code != 0 {
+		return code
+	}
 	if len(args) == 0 {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
@@ -80,4 +90,27 @@ func run(args []string) int {
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n%s", cmd, usage)
 		return 2
 	}
+}
+
+// applyRoot consumes a leading --root <dir> option, recording the bundle to
+// operate on (no chdir), and returns the remaining args. Unlike git's -C it
+// does not change the working directory: it only redirects bundle discovery,
+// so commands that don't open a bundle (notably init) are unaffected.
+func applyRoot(args []string) ([]string, int) {
+	rootDir = ""
+	for len(args) > 0 {
+		switch {
+		case args[0] == "--root":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "wiki: --root needs a directory")
+				return nil, 2
+			}
+			rootDir, args = args[1], args[2:]
+		case strings.HasPrefix(args[0], "--root="):
+			rootDir, args = args[0][len("--root="):], args[1:]
+		default:
+			return args, 0
+		}
+	}
+	return args, 0
 }

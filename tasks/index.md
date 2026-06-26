@@ -11,7 +11,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## 2 — Query surface
 - [ ] [tags & properties](/2-query-surface/003-tags-and-properties.md)
 - [ ] [csv/tsv output](/2-query-surface/004-output-formats.md)
-- [ ] [path handling (-C / --path / positional)](/2-query-surface/005-path-handling.md)
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
@@ -28,8 +27,9 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] Bundle model finalized: root = content root (git-style), `bundle` package/type, `okf_version` badge synced by `check`; spec + READMEs modernized.
 - [x] [README — install + modernization](/4-release-and-docs/001-readme-and-install.md): curl one-liners, three-layer framing, dogfood roadmap (URL liveness verified at publish).
 - [x] [read & outline](/2-query-surface/001-read-and-outline.md): body (frontmatter stripped) + heading hierarchy, with a shared `Resolve` (path or basename).
-- [x] [search](/2-query-surface/002-search.md): case-insensitive full-text (frontmatter + body), `--type/--tag/--path` + grep-style `--lines`; also fixed flags-after-positional for read/outline.
+- [x] [search](/2-query-surface/002-search.md): case-insensitive full-text (frontmatter + body), `--type/--tag/--prefix` + grep-style `--lines`; also fixed flags-after-positional for read/outline.
 - [x] [link graph](/3-graph-and-mutation/001-link-graph.md): `links` (outgoing) + `backlinks` (incoming).
 - [x] [move](/3-graph-and-mutation/002-move-rename.md): relocate/rename an entry + rewrite every link to it (precise, anchor-preserving, `--dry-run`).
 - [x] [init](/3-graph-and-mutation/003-init-scaffold.md): scaffold a fresh check-clean bundle from an embedded starter (`go:embed`); `--force` for non-empty dirs.
 - [x] Hardening + coverage pass: fixed a `move` path-traversal (plus escaping link-targets, CRLF frontmatter, link titles, JSON `null`→`[]`).
+- [x] [path handling](/2-query-surface/005-path-handling.md): `--root` to operate on a bundle elsewhere (redirects discovery, no chdir) + `--path`→`--prefix`, settling the model: `--root` (which bundle, OS path) / positional subject + `--prefix` filter (bundle paths).

@@ -91,14 +91,14 @@ func cmdList(args []string) int {
 	format := fs.String("format", "text", "output format: text|json")
 	typ := fs.String("type", "", "filter by type")
 	tag := fs.String("tag", "", "filter by tag")
-	path := fs.String("path", "", "filter by path prefix")
+	prefix := fs.String("prefix", "", "filter to a path prefix")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
 
-	entries := idx.Filter(*typ, *tag, *path)
+	entries := idx.Filter(*typ, *tag, *prefix)
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
 	var lines []string
 	for _, e := range entries {
@@ -116,7 +116,7 @@ func cmdTasks(args []string) int {
 	format := fs.String("format", "text", "output format: text|json")
 	all := fs.Bool("all", false, "include done tasks")
 	done := fs.Bool("done", false, "only done tasks")
-	path := fs.String("path", "", "filter by path prefix")
+	prefix := fs.String("prefix", "", "filter to a path prefix")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -132,7 +132,7 @@ func cmdTasks(args []string) int {
 	var rows []row
 	var lines []string
 	for _, e := range idx.Entries {
-		if *path != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*path, "/")) {
+		if *prefix != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*prefix, "/")) {
 			continue
 		}
 		for _, t := range e.Tasks {
@@ -299,11 +299,11 @@ func cmdSearch(args []string) int {
 	format := fs.String("format", "text", "output format: text|json")
 	typ := fs.String("type", "", "filter by type")
 	tag := fs.String("tag", "", "filter by tag")
-	path := fs.String("path", "", "filter by path prefix")
+	prefix := fs.String("prefix", "", "filter to a path prefix")
 	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
 	query, ok := parseWithArg(fs, args)
 	if !ok || strings.TrimSpace(query) == "" {
-		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--type --tag --path --lines]  (quote a multi-word query)")
+		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--type --tag --prefix --lines]  (quote a multi-word query)")
 		return 2
 	}
 	idx, code := loadIndex()
@@ -311,7 +311,7 @@ func cmdSearch(args []string) int {
 		return code
 	}
 
-	hits := idx.Search(query, *typ, *tag, *path)
+	hits := idx.Search(query, *typ, *tag, *prefix)
 	var lines []string
 	if *showLines {
 		for _, h := range hits {

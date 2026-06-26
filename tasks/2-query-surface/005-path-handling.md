@@ -1,17 +1,20 @@
 ---
 type: task
-title: path handling — -C location, --path filter, positional targets
-status: todo
+title: path handling — --root location, --prefix filter, positional subject
+status: done
 priority: medium
 tags: [feature, dx]
 ---
 
-Three distinct "path" roles, each with exactly one mechanism (no duplicate ways to say the same thing):
+Two path namespaces, each role with exactly one mechanism (no duplicate ways to say the same thing):
 
-- **Bundle location** → global `-C <dir>` (git-style; `--root <dir>` alias), parsed before the subcommand, so any command runs against the bundle at or above `<dir>` without a `cd`. Default: cwd.
-- **Within-bundle filter** → `--path <prefix>` flag on commands that narrow results (`list`, `tasks`, future `search`/`property`), consistent with `--type`/`--tag`.
-- **Single-file target** → positional `<file>` on commands that act on one entry (`read`, `outline`, `links`, `backlinks`, `move`, `rename`).
+- **OS filesystem paths** — where bundles live on disk: global `--root <dir>` (which existing bundle to operate on; redirects discovery, **no chdir**) and `init [dir]` (where to create one).
+- **Bundle paths** (`/…` root-absolute, or a unique basename — the same form as links in content):
+  - **Subject** → positional `<file>` on commands acting on one entry (`read`, `outline`, `links`, `backlinks`, `move`).
+  - **Filter** → `--prefix <p>` on commands that narrow a listing (`list`, `tasks`, `search`), alongside `--type`/`--tag`.
 
-Rule of thumb: a path that *narrows* is a `--path` flag; a path that *is the subject* is positional; the bundle root is `-C`. (`wiki init [path]` is a fourth, distinct role: the creation target.)
+Rule of thumb: on disk → `--root` / `init [dir]`; within a bundle, a path that *is the subject* is positional, a path that *narrows* is `--prefix`. Because `--root` only redirects discovery (no chdir), `init` is unaffected — so there is no `--root` vs `init [dir]` overlap.
 
-Implement `-C`/`--root` (in `cmd/wiki/helpers.go`, threaded into `loadIndex`); keep `--path` a flag (do not also make it positional).
+Done: `--root` sets the discovery start dir in `loadIndex` (no chdir); `--path` renamed to `--prefix`; positionals are bundle-path subjects. The path-vs-basename resolution rules are documented in the README.
+
+Rejected: a git-style `-C` that `chdir`s — it entangles `init`'s relative `[path]` and models "cwd" rather than "the bundle," which was convoluted.

@@ -283,3 +283,29 @@ func TestRun(t *testing.T) {
 		}
 	}
 }
+
+func TestGlobalRoot(t *testing.T) {
+	t.Cleanup(func() { rootDir = "" }) // global flag state; keep other tests independent
+	t.Chdir(t.TempDir())               // cwd has no bundle
+	cwd, _ := os.Getwd()
+	b := writeBundle(t)
+
+	// --root operates on <dir> even though cwd has no bundle...
+	if _, code := capture(t, func() int { return run([]string{"--root", b, "status"}) }); code != 0 {
+		t.Errorf("--root status exit=%d want 0", code)
+	}
+	// ...and unlike git -C it does not change the working directory.
+	if now, _ := os.Getwd(); now != cwd {
+		t.Errorf("--root changed cwd to %q, want %q (no chdir)", now, cwd)
+	}
+	if _, code := capture(t, func() int { return run([]string{"--root=" + b, "check"}) }); code != 0 {
+		t.Errorf("--root= check exit=%d want 0", code)
+	}
+	// a dir with no bundle above it, and a missing arg, both error
+	if _, code := capture(t, func() int { return run([]string{"--root", t.TempDir(), "status"}) }); code != 2 {
+		t.Errorf("--root no-bundle exit=%d want 2", code)
+	}
+	if _, code := capture(t, func() int { return run([]string{"--root"}) }); code != 2 {
+		t.Errorf("--root no-arg exit=%d want 2", code)
+	}
+}

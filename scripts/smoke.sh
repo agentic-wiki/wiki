@@ -98,8 +98,8 @@ contains "$($BIN list --type dataset)" "/finance/expenses.md"
 echo "--- list --tag out-of-pocket ---"
 contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
 
-echo "--- list --path filters to a subtree ---"
-contains "$($BIN list --path finance/)" "/finance/income.md"
+echo "--- list --prefix filters to a subtree ---"
+contains "$($BIN list --prefix finance/)" "/finance/income.md"
 
 echo "--- tasks default = open only ---"
 OPEN="$($BIN tasks)"

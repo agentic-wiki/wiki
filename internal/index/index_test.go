@@ -94,7 +94,7 @@ func TestFilter(t *testing.T) {
 		t.Errorf("--tag eu = %d, want 2", got)
 	}
 	if got := len(idx.Filter("", "", "finance/")); got != 2 {
-		t.Errorf("--path finance/ = %d, want 2", got)
+		t.Errorf("--prefix finance/ = %d, want 2", got)
 	}
 	if got := idx.Filter("note", "eu", "finance/"); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
 		t.Errorf("combined filter = %+v", got)
@@ -245,7 +245,7 @@ func TestSearch(t *testing.T) {
 		t.Errorf("--type concept = %d want 0", len(got))
 	}
 	if got := idx.Search("income", "", "", "finance/"); len(got) != 1 {
-		t.Errorf("--path finance/ = %d want 1", len(got))
+		t.Errorf("--prefix finance/ = %d want 1", len(got))
 	}
 
 	// frontmatter value (a tag) is searchable
