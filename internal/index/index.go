@@ -96,16 +96,31 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		return nil, err
 	}
 	rel, _ := filepath.Rel(b.Dir, abs)
-	fm, body := parse.Frontmatter(string(data))
+	content := string(data)
+	fm, body := parse.Frontmatter(content)
+	// Links/tasks/headings are parsed from the frontmatter-stripped body, so
+	// their line numbers are body-relative; offset by the frontmatter's length
+	// to make them file-relative (what `unresolved`/`backlinks`/`tasks` report).
+	offset := strings.Count(content[:len(content)-len(body)], "\n")
+	links, tasks, heads := parse.InternalLinks(body), parse.Tasks(body), parse.Headings(body)
+	for i := range links {
+		links[i].Line += offset
+	}
+	for i := range tasks {
+		tasks[i].Line += offset
+	}
+	for i := range heads {
+		heads[i].Line += offset
+	}
 	return &Entry{
 		Path:     "/" + filepath.ToSlash(rel),
 		Name:     filepath.Base(abs),
 		Type:     parse.String(fm, "type"),
 		Title:    parse.String(fm, "title"),
 		Tags:     parse.Strings(fm, "tags"),
-		Links:    parse.InternalLinks(body),
-		Tasks:    parse.Tasks(body),
-		Headings: parse.Headings(body),
+		Links:    links,
+		Tasks:    tasks,
+		Headings: heads,
 		abs:      abs,
 		fm:       fm,
 	}, nil
@@ -117,6 +132,9 @@ func (idx *Index) FileExists(target string) bool {
 		return true
 	}
 	p := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(target, "/")))
+	if !withinDir(idx.Bundle.Dir, p) {
+		return false // a target that escapes the bundle is not a valid in-bundle file
+	}
 	fi, err := os.Stat(p)
 	return err == nil && !fi.IsDir()
 }
@@ -322,11 +340,14 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 		return nil, err
 	}
 	dest = "/" + filepath.ToSlash(strings.TrimPrefix(dest, "/"))
+	destAbs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(dest, "/")))
 	switch {
 	case !strings.HasSuffix(dest, ".md"):
 		return nil, fmt.Errorf("destination must be a .md path: %s", dest)
 	case dest == src.Path:
 		return nil, fmt.Errorf("destination equals source: %s", dest)
+	case !withinDir(idx.Bundle.Dir, destAbs):
+		return nil, fmt.Errorf("destination escapes the bundle: %s", dest)
 	case idx.FileExists(dest):
 		return nil, fmt.Errorf("destination already exists: %s", dest)
 	}
@@ -348,11 +369,8 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 		if err != nil {
 			return res, err
 		}
-		// Link line numbers are body-relative (parsed from the frontmatter-stripped
-		// body), so rewrite within the body and re-attach the frontmatter prefix.
-		_, body := parse.Frontmatter(raw)
-		prefix := raw[:len(raw)-len(body)]
-		lines := strings.Split(body, "\n")
+		// Link lines are file-relative, so match directly against the raw file.
+		lines := strings.Split(raw, "\n")
 		n := 0
 		for i := range lines {
 			if !onLine[i+1] {
@@ -369,14 +387,13 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 		}
 		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n})
 		if !dryRun {
-			if err := os.WriteFile(e.abs, []byte(prefix+strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 				return res, err
 			}
 		}
 	}
 
 	if !dryRun {
-		destAbs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(dest, "/")))
 		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
 			return res, err
 		}
@@ -385,6 +402,13 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// withinDir reports whether p is dir itself or lexically inside it, guarding
+// against `..` escapes.
+func withinDir(dir, p string) bool {
+	rel, err := filepath.Rel(dir, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // Issue is a validation finding.

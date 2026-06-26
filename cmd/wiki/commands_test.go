@@ -217,3 +217,30 @@ func TestCmdMove(t *testing.T) {
 		t.Errorf("move onto existing dest exit=%d want 2", code)
 	}
 }
+
+func TestCmdInit(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	if _, code := capture(t, func() int { return cmdInit(nil) }); code != 0 {
+		t.Fatalf("init exit %d", code)
+	}
+	for _, f := range []string{"wiki.toml", ".gitignore", "index.md", "notes/welcome.md"} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("missing %s: %v", f, err)
+		}
+	}
+	if _, err := os.Stat("gitignore"); !os.IsNotExist(err) {
+		t.Errorf("scaffold leaked a bare 'gitignore'")
+	}
+	// a freshly-init'd bundle must pass check
+	if _, code := capture(t, func() int { return cmdCheck(nil) }); code != 0 {
+		t.Errorf("fresh bundle should pass check, exit=%d", code)
+	}
+	// re-init into the now-non-empty dir is refused without --force
+	if _, code := capture(t, func() int { return cmdInit(nil) }); code != 2 {
+		t.Errorf("re-init without --force exit=%d want 2", code)
+	}
+	if _, code := capture(t, func() int { return cmdInit([]string{"--force"}) }); code != 0 {
+		t.Errorf("init --force exit=%d want 0", code)
+	}
+}

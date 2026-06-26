@@ -14,7 +14,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [path handling (-C / --path / positional)](/2-query-surface/005-path-handling.md)
 
 ## 3 — Graph & mutation
-- [ ] [init scaffold](/3-graph-and-mutation/003-init-scaffold.md)
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [scaffold registry (--template / --from / skill install)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [lint + normalize non-root-absolute links](/3-graph-and-mutation/006-relative-link-lint.md)
@@ -32,3 +31,4 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [search](/2-query-surface/002-search.md): case-insensitive full-text (frontmatter + body), `--type/--tag/--path` + grep-style `--lines`; also fixed flags-after-positional for read/outline.
 - [x] [link graph](/3-graph-and-mutation/001-link-graph.md): `links` (outgoing) + `backlinks` (incoming).
 - [x] [move](/3-graph-and-mutation/002-move-rename.md): relocate/rename an entry + rewrite every link to it (precise, anchor-preserving, `--dry-run`).
+- [x] [init](/3-graph-and-mutation/003-init-scaffold.md): scaffold a fresh check-clean bundle from an embedded starter (`go:embed`); `--force` for non-empty dirs.

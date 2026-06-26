@@ -14,6 +14,7 @@ const usage = `wiki — query an agentic-wiki bundle
 usage: wiki <command> [flags]
 
 commands:
+  init          scaffold a new bundle (--force into a non-empty dir)
   status        bundle + index summary
   list          list entries (--type --tag --path)
   read          print an entry's body (frontmatter stripped)
@@ -46,6 +47,8 @@ func run(args []string) int {
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 		return 0
+	case "init":
+		return cmdInit(args[1:])
 	case "version", "--version", "-v":
 		fmt.Println("wiki", Version)
 		return 0

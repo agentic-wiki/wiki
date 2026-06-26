@@ -10,7 +10,35 @@ import (
 	"github.com/agentic-wiki/wiki/internal/index"
 	"github.com/agentic-wiki/wiki/internal/output"
 	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/internal/scaffold"
 )
+
+func cmdInit(args []string) int {
+	fs := flag.NewFlagSet("init", flag.ExitOnError)
+	force := fs.Bool("force", false, "write into a non-empty directory")
+	format := fs.String("format", "text", "output format: text|json")
+	fs.Parse(args)
+	dir := "."
+	if fs.NArg() >= 1 {
+		dir = fs.Arg(0)
+		fs.Parse(fs.Args()[1:]) // pick up flags that followed the path
+	}
+	written, err := scaffold.Write(dir, *force)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	out := struct {
+		Dir   string   `json:"dir"`
+		Files []string `json:"files"`
+	}{dir, written}
+	lines := []string{"initialized agentic-wiki bundle in " + dir}
+	for _, f := range written {
+		lines = append(lines, "  "+f)
+	}
+	output.Emit(os.Stdout, *format, lines, out)
+	return 0
+}
 
 func cmdStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)

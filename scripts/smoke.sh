@@ -152,6 +152,12 @@ echo "--- no results => exit 1 ---"
 echo "--- version ---"
 contains "$($BIN version)" "wiki"
 
+echo "--- init scaffolds a check-clean bundle ---"
+mkdir -p "$TMP/fresh"
+( cd "$TMP/fresh" && $BIN init >/dev/null && $BIN check >/dev/null )
+test -f "$TMP/fresh/wiki.toml"
+test -f "$TMP/fresh/.gitignore"
+
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"
 test -f "$TMP/finance/expenses.md"

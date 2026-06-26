@@ -44,7 +44,7 @@ Every command takes `--format text|json`. Exit codes are `0` results, `1` none, 
 wiki unresolved >/dev/null && echo "broken links found" || echo "clean"
 ```
 
-Creating a bundle with `wiki init` is planned; for now a bundle is simply a `wiki.toml` file with your markdown content beside it (see the spec).
+Create a new bundle with `wiki init [dir]` (default: the current directory): it writes a small example, ready to use with `wiki`. Pass `--force` to write into a non-empty directory.
 
 ## Design
 

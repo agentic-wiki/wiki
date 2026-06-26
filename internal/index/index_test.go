@@ -49,6 +49,10 @@ func TestBuildParsesEntry(t *testing.T) {
 	if len(e.Tags) != 2 || len(e.Links) != 1 || len(e.Tasks) != 1 || len(e.Headings) != 1 {
 		t.Errorf("counts: tags=%v links=%v tasks=%v headings=%v", e.Tags, e.Links, e.Tasks, e.Headings)
 	}
+	// line numbers are file-relative: 5 frontmatter lines, then # H, link, task
+	if e.Headings[0].Line != 6 || e.Links[0].Line != 7 || e.Tasks[0].Line != 8 {
+		t.Errorf("file-relative lines: heading=%d link=%d task=%d (want 6/7/8)", e.Headings[0].Line, e.Links[0].Line, e.Tasks[0].Line)
+	}
 }
 
 func TestBrokenAndOrphans(t *testing.T) {
@@ -62,6 +66,18 @@ func TestBrokenAndOrphans(t *testing.T) {
 	}
 	if orph := idx.Orphans(); len(orph) != 1 || orph[0].Path != "/b.md" {
 		t.Errorf("orphans = %+v (b unlinked; index.md exempt; a linked)", orph)
+	}
+}
+
+func TestEscapingLinkIsBroken(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[esc](/../../../../../../../../etc/hosts)\n",
+	})
+	if idx.FileExists("/../../../../../../../../etc/hosts") {
+		t.Errorf("a target escaping the bundle must not resolve, even if it exists on the host")
+	}
+	if got := idx.Broken(); len(got) != 1 {
+		t.Errorf("escaping link should be reported broken, got %+v", got)
 	}
 }
 
@@ -343,6 +359,8 @@ func TestMoveValidate(t *testing.T) {
 		{"non-md dest", "/a.md", "/c"},
 		{"missing src", "/nope.md", "/x.md"},
 		{"dest equals src", "/a.md", "/a.md"},
+		{"escapes bundle", "/a.md", "/../escape.md"},
+		{"escapes via subdir", "/a.md", "/sub/../../escape.md"},
 	} {
 		if _, err := idx.Move(tc.src, tc.dest, false); err == nil {
 			t.Errorf("%s: expected error", tc.name)
