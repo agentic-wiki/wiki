@@ -83,6 +83,43 @@ func TestFrontmatterTagsTrimmed(t *testing.T) {
 	}
 }
 
+func TestFrontmatterComments(t *testing.T) {
+	fm, _ := Frontmatter("---\ntype: note  # trailing comment\ntitle: \"a # b\"  # real comment\nurl: http://x/p#frag\ntags: [a, b]  # list comment\n---\nbody\n")
+	if fm["type"] != "note" {
+		t.Errorf("inline comment not stripped: type=%q", fm["type"])
+	}
+	if fm["title"] != "a # b" {
+		t.Errorf("# inside quotes must survive: title=%q", fm["title"])
+	}
+	if fm["url"] != "http://x/p#frag" {
+		t.Errorf("# glued to text (no preceding space) must survive: url=%q", fm["url"])
+	}
+	if got, ok := fm["tags"].([]string); !ok || len(got) != 2 || got[0] != "a" || got[1] != "b" {
+		t.Errorf("flow list with trailing comment: tags=%v", fm["tags"])
+	}
+}
+
+func TestFrontmatterBlockScalar(t *testing.T) {
+	fm, body := Frontmatter("---\ntype: note\ndescription: |\n  line one\n  line two\ntitle: After\n---\nbody\n")
+	if fm["description"] != "line one\nline two" {
+		t.Errorf("block scalar = %q", fm["description"])
+	}
+	if fm["title"] != "After" {
+		t.Errorf("key after block scalar lost: title=%q", fm["title"])
+	}
+	if body != "body\n" {
+		t.Errorf("body = %q", body)
+	}
+}
+
+func TestFrontmatterNestedMapGraceful(t *testing.T) {
+	// A nested map is not interpreted, but must not corrupt sibling keys.
+	fm, _ := Frontmatter("---\ntype: note\nmeta:\n  a: 1\n  b: 2\ntitle: Kept\n---\nbody\n")
+	if fm["type"] != "note" || fm["title"] != "Kept" {
+		t.Errorf("nested map corrupted siblings: type=%q title=%q", fm["type"], fm["title"])
+	}
+}
+
 func TestUnquote(t *testing.T) {
 	for in, want := range map[string]string{
 		`"x"`:    "x",

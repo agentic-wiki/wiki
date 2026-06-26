@@ -20,8 +20,6 @@ TOML
 
 cat > "$TMP/index.md" <<'MD'
 ---
-type: index
-title: Home
 okf_version: "0.1"
 ---
 # Home
@@ -30,10 +28,6 @@ okf_version: "0.1"
 MD
 
 cat > "$TMP/finance/index.md" <<'MD'
----
-type: index
-title: Finance
----
 - [Income](/finance/income.md)
 - [Expenses](/finance/expenses.md)
 MD
@@ -60,10 +54,6 @@ tags: [finance, out-of-pocket]
 MD
 
 cat > "$TMP/tasks/index.md" <<'MD'
----
-type: index
-title: Tasks
----
 - [Reconcile accounts](/tasks/reconcile.md)
 MD
 

@@ -1,7 +1,7 @@
 ---
 type: task
 title: hand-rolled YAML frontmatter subset
-status: todo
+status: done
 priority: low
 tags: [debt, parser]
 ---

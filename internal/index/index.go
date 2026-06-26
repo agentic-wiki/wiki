@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/agentic-wiki/wiki/internal/bundle"
 	"github.com/agentic-wiki/wiki/internal/parse"
@@ -481,17 +482,38 @@ type Issue struct {
 func (idx *Index) Check() []Issue {
 	var issues []Issue
 	for _, e := range idx.Entries {
-		switch {
-		case e.Type == "":
-			issues = append(issues, Issue{"error", e.Path, "missing required `type`"})
-		case !idx.Bundle.KnownType(e.Type):
-			issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
-		}
-		if e.Name == "index.md" && e.Type != "" && e.Type != "index" {
-			issues = append(issues, Issue{"warning", e.Path, "index.md should be type: index"})
-		}
-		if e.Name == "log.md" && e.Type != "" && e.Type != "log" {
-			issues = append(issues, Issue{"warning", e.Path, "log.md should be type: log"})
+		if e.Name == "index.md" || e.Name == "log.md" {
+			// Reserved files (OKF §6/§7) are not concept documents: they carry no
+			// frontmatter (the bundle-root index.md may carry okf_version) and are
+			// exempt from the type requirement.
+			for k := range e.fm {
+				if e.Path == "/index.md" && k == "okf_version" {
+					continue
+				}
+				issues = append(issues, Issue{"warning", e.Path, "reserved file should carry no frontmatter"})
+				break
+			}
+			if e.Name == "log.md" {
+				// OKF §7: log date headings use ISO YYYY-MM-DD.
+				for _, h := range e.Headings {
+					if looksLikeNonISODate(h.Text) {
+						issues = append(issues, Issue{"warning", e.Path, "log date heading should be ISO YYYY-MM-DD: " + h.Text})
+					}
+				}
+			}
+		} else {
+			switch {
+			case e.Type == "":
+				issues = append(issues, Issue{"error", e.Path, "missing required `type`"})
+			case !idx.Bundle.KnownType(e.Type):
+				issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
+			}
+			// timestamp is optional, but if present it must be valid ISO 8601.
+			if _, ok := e.fm["timestamp"]; ok {
+				if ts := parse.String(e.fm, "timestamp"); !validTimestamp(ts) {
+					issues = append(issues, Issue{"error", e.Path, "timestamp not ISO 8601: " + ts})
+				}
+			}
 		}
 		if e.Depth() > 3 {
 			issues = append(issues, Issue{"warning", e.Path, "deeper than 3 folders"})
@@ -643,7 +665,8 @@ func (idx *Index) consolidateEntry(e *Entry, apply bool) ([]Fix, error) {
 func setFrontmatterValue(content, key, value string) (string, error) {
 	lines := strings.Split(content, "\n")
 	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		return "", fmt.Errorf("no frontmatter to update")
+		// No frontmatter block yet: create one carrying just this key.
+		return fmt.Sprintf("---\n%s: \"%s\"\n---\n%s", key, value, content), nil
 	}
 	closeIdx := -1
 	for i := 1; i < len(lines); i++ {
@@ -671,6 +694,38 @@ func setFrontmatterValue(content, key, value string) (string, error) {
 	out = append(out, newLine)
 	out = append(out, lines[closeIdx:]...)
 	return strings.Join(out, "\n"), nil
+}
+
+// validTimestamp reports whether s is a non-empty ISO 8601 timestamp: an
+// RFC 3339 datetime or a bare YYYY-MM-DD date.
+func validTimestamp(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if _, err := time.Parse(layout, s); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// nonISODateLayouts are common date spellings the log lint flags in favor of ISO.
+var nonISODateLayouts = []string{"2006/01/02", "01/02/2006", "2006-1-2", "January 2, 2006", "Jan 2, 2006", "2 Jan 2006"}
+
+// looksLikeNonISODate reports whether heading parses as a date in a common
+// non-ISO format (and not already as ISO YYYY-MM-DD).
+func looksLikeNonISODate(heading string) bool {
+	h := strings.TrimSpace(heading)
+	if _, err := time.Parse("2006-01-02", h); err == nil {
+		return false // already ISO
+	}
+	for _, l := range nonISODateLayouts {
+		if _, err := time.Parse(l, h); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func hasPathPrefix(path, prefix string) bool {

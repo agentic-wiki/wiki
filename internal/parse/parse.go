@@ -51,12 +51,17 @@ func Frontmatter(content string) (fm map[string]any, body string) {
 	return fm, body
 }
 
+// parseYAMLSubset fills fm from a frontmatter block. Supported: `key: value`
+// scalars (quoted or bare, internal spaces kept), flow lists `[a, "b c"]`, block
+// lists (`- item`), block scalars (`|`/`>`), and full-line and inline `#`
+// comments. Out of scope and skipped without corrupting other keys: nested maps,
+// anchors, multi-document streams. Numbers and booleans are kept as strings.
 func parseYAMLSubset(block string, fm map[string]any) {
 	lines := strings.Split(block, "\n")
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimRight(lines[i], "\r")
 		if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '-' {
-			continue // blank or nested; nested is consumed by the block-list scan below
+			continue // blank or nested; nested is consumed by the scans below
 		}
 		if strings.HasPrefix(strings.TrimSpace(line), "#") {
 			continue
@@ -66,16 +71,28 @@ func parseYAMLSubset(block string, fm map[string]any) {
 			continue
 		}
 		key = strings.TrimSpace(key)
-		val = strings.TrimSpace(val)
+		val = stripComment(strings.TrimSpace(val))
 		switch {
 		case strings.HasPrefix(val, "["):
 			fm[key] = List(val)
+		case strings.HasPrefix(val, "|") || strings.HasPrefix(val, ">"):
+			// block scalar: gather the following more-indented lines
+			var blk []string
+			for j := i + 1; j < len(lines); j++ {
+				raw := strings.TrimRight(lines[j], "\r")
+				if raw != "" && raw[0] != ' ' && raw[0] != '\t' {
+					break // dedent ends the block
+				}
+				blk = append(blk, strings.TrimSpace(raw))
+				i = j
+			}
+			fm[key] = strings.TrimSpace(strings.Join(blk, "\n"))
 		case val == "":
 			var list []string
 			for j := i + 1; j < len(lines); j++ {
 				t := strings.TrimSpace(strings.TrimRight(lines[j], "\r"))
 				if strings.HasPrefix(t, "- ") {
-					list = append(list, Unquote(t[2:]))
+					list = append(list, Unquote(stripComment(t[2:])))
 					i = j
 					continue
 				}
@@ -90,6 +107,30 @@ func parseYAMLSubset(block string, fm map[string]any) {
 			fm[key] = Unquote(val)
 		}
 	}
+}
+
+// stripComment removes a trailing inline YAML comment — a `#` at the start or
+// preceded by whitespace — that is not inside single/double quotes. A `#` glued
+// to the preceding character (URLs, anchors) is kept.
+func stripComment(s string) string {
+	inSingle, inDouble := false, false
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '#':
+			if !inSingle && !inDouble && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
+				return strings.TrimRight(s[:i], " \t")
+			}
+		}
+	}
+	return s
 }
 
 // List parses a bracketed, comma-separated list of quoted or bare tokens,

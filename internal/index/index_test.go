@@ -105,6 +105,72 @@ func TestRelativeLinkCountsForOrphans(t *testing.T) {
 	}
 }
 
+func TestReservedFilesExemptFromType(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // reserved: okf_version only
+		"log.md":   "# Log\n## 2026-01-01\nnote\n",                 // reserved: no frontmatter
+		"a.md":     "---\ntype: note\n---\nx\n",
+	})
+	// reserved files are exempt from the type requirement -> fully clean
+	if got := idx.Check(); len(got) != 0 {
+		t.Errorf("reserved files without a type should be clean, got %+v", got)
+	}
+}
+
+func TestReservedFileFrontmatterLinted(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\nhome\n", // type is disallowed here
+	})
+	issues := idx.Check()
+	if !hasWarning(issues, "/index.md", "no frontmatter") {
+		t.Errorf("reserved file carrying frontmatter should warn, got %+v", issues)
+	}
+	for _, is := range issues {
+		if is.Level == "error" {
+			t.Errorf("reserved file must not produce an error: %+v", is)
+		}
+	}
+}
+
+func TestCheckTimestamp(t *testing.T) {
+	for _, ok := range []string{"2026-06-24", "\"2026-06-24T10:00:00Z\""} {
+		idx := build(t, map[string]string{"a.md": "---\ntype: note\ntimestamp: " + ok + "\n---\nx\n"})
+		if got := idx.Check(); len(got) != 0 {
+			t.Errorf("valid timestamp %s should be clean, got %+v", ok, got)
+		}
+	}
+	// absent is fine (optional in OKF)
+	if got := build(t, map[string]string{"a.md": "---\ntype: note\n---\nx\n"}).Check(); len(got) != 0 {
+		t.Errorf("missing timestamp must not be flagged, got %+v", got)
+	}
+	// present but empty or non-ISO -> error
+	for _, bad := range []string{"\"\"", "not-a-date", "\"2026/06/24\""} {
+		idx := build(t, map[string]string{"a.md": "---\ntype: note\ntimestamp: " + bad + "\n---\nx\n"})
+		err := false
+		for _, is := range idx.Check() {
+			if is.Level == "error" && strings.Contains(is.Msg, "timestamp") {
+				err = true
+			}
+		}
+		if !err {
+			t.Errorf("timestamp %s should error, got %+v", bad, idx.Check())
+		}
+	}
+}
+
+func TestCheckLogDateHeadings(t *testing.T) {
+	bad := build(t, map[string]string{"log.md": "# Log\n## 01/02/2026\nnote\n## Notes\nfine\n"})
+	if !hasWarning(bad.Check(), "/log.md", "ISO YYYY-MM-DD") {
+		t.Errorf("non-ISO log date heading should warn, got %+v", bad.Check())
+	}
+	clean := build(t, map[string]string{"log.md": "# Log\n## 2026-01-02\nnote\n## Notes\nfine\n"})
+	for _, is := range clean.Check() {
+		if strings.Contains(is.Msg, "ISO") {
+			t.Errorf("ISO date heading must not warn: %+v", is)
+		}
+	}
+}
+
 func TestNormalizeLink(t *testing.T) {
 	cases := []struct{ from, target, want string }{
 		{"/index.md", "/a.md", "/a.md"},            // absolute passes through
@@ -170,7 +236,7 @@ func TestFilter(t *testing.T) {
 
 func TestCheckClean(t *testing.T) {
 	idx := build(t, map[string]string{
-		"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
+		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
 		"a.md":     "---\ntype: note\n---\nok\n",
 	})
 	if got := idx.Check(); len(got) != 0 {
@@ -180,12 +246,12 @@ func TestCheckClean(t *testing.T) {
 
 func TestCheckSeverity(t *testing.T) {
 	idx := build(t, map[string]string{
-		"index.md":     "---\ntype: index\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // valid
-		"a.md":         "---\ntype: note\n---\nok\n",                                // valid, linked
-		"notype.md":    "---\ntitle: x\n---\nbody\n",                                // ERROR: missing type
-		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",                    // WARNING unknown + ERROR broken link
-		"sub/index.md": "---\ntype: note\n---\nbody\n",                              // WARNING: index.md should be type index
-		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",                              // WARNING: depth > 3
+		"index.md":     "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // valid
+		"a.md":         "---\ntype: note\n---\nok\n",                   // valid, linked
+		"notype.md":    "---\ntitle: x\n---\nbody\n",                   // ERROR: missing type
+		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",       // WARNING unknown + ERROR broken link
+		"sub/index.md": "---\ntype: note\n---\nbody\n",                 // WARNING: reserved file carries frontmatter
+		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",                 // WARNING: depth > 3
 	})
 	errs, warns := 0, 0
 	for _, is := range idx.Check() {
@@ -200,7 +266,7 @@ func TestCheckSeverity(t *testing.T) {
 		t.Errorf("errors = %d, want 2 (missing type, broken link)", errs)
 	}
 	if warns != 3 {
-		t.Errorf("warnings = %d, want 3 (unknown type, index.md type, depth)", warns)
+		t.Errorf("warnings = %d, want 3 (unknown type, reserved-file frontmatter, depth)", warns)
 	}
 }
 
@@ -247,15 +313,15 @@ func TestScalarTagCoercion(t *testing.T) {
 
 func TestCheckOKFVersionSync(t *testing.T) {
 	// build's wiki.toml declares spec 0.1, which embeds OKF 0.1.
-	missing := build(t, map[string]string{"index.md": "---\ntype: index\n---\nhome\n"})
+	missing := build(t, map[string]string{"index.md": "home\n"})
 	if !hasWarning(missing.Check(), "/index.md", "okf_version") {
 		t.Errorf("missing okf_version should warn, got %+v", missing.Check())
 	}
-	stale := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	stale := build(t, map[string]string{"index.md": "---\nokf_version: \"0.2\"\n---\nhome\n"})
 	if !hasWarning(stale.Check(), "/index.md", "okf_version") {
 		t.Errorf("stale okf_version should warn, got %+v", stale.Check())
 	}
-	synced := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\nhome\n"})
+	synced := build(t, map[string]string{"index.md": "---\nokf_version: \"0.1\"\n---\nhome\n"})
 	if got := synced.Check(); len(got) != 0 {
 		t.Errorf("synced bundle should be clean, got %+v", got)
 	}
@@ -280,7 +346,7 @@ func TestFix(t *testing.T) {
 	}
 
 	// Drift: the fix is applied, the file rewritten, and a rebuild is clean.
-	drift := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	drift := build(t, map[string]string{"index.md": "---\nokf_version: \"0.2\"\n---\nhome\n"})
 	fixes, err := drift.Fix(true)
 	if err != nil {
 		t.Fatal(err)
@@ -300,7 +366,7 @@ func TestFix(t *testing.T) {
 	}
 
 	// Missing: okf_version is inserted (From is empty).
-	missing := build(t, map[string]string{"index.md": "---\ntype: index\n---\nhome\n"})
+	missing := build(t, map[string]string{"index.md": "home\n"})
 	if f, _ := missing.Fix(true); len(f) != 1 || f[0].From != "" || f[0].To != "0.1" {
 		t.Errorf("missing fix = %+v", f)
 	}
@@ -309,13 +375,13 @@ func TestFix(t *testing.T) {
 	}
 
 	// In sync: no-op.
-	synced := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\nhome\n"})
+	synced := build(t, map[string]string{"index.md": "---\nokf_version: \"0.1\"\n---\nhome\n"})
 	if f, _ := synced.Fix(true); len(f) != 0 {
 		t.Errorf("synced needs no fix, got %+v", f)
 	}
 
 	// Dry run: reports the change but does not touch disk.
-	dry := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	dry := build(t, map[string]string{"index.md": "---\nokf_version: \"0.2\"\n---\nhome\n"})
 	before := readRoot(dry)
 	if f, _ := dry.Fix(false); len(f) != 1 {
 		t.Errorf("dry run should report 1 fix, got %+v", f)
@@ -330,15 +396,13 @@ func TestSetFrontmatterValue(t *testing.T) {
 		{"update", "---\ntype: index\nokf_version: \"0.2\"\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
 		{"insert", "---\ntype: index\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
 		{"crlf", "---\r\ntype: index\r\n---\r\nbody\r\n", "---\r\ntype: index\r\nokf_version: \"0.1\"\r\n---\r\nbody\r\n"},
+		{"create", "no frontmatter here\n", "---\nokf_version: \"0.1\"\n---\nno frontmatter here\n"},
 	}
 	for _, c := range cases {
 		got, err := setFrontmatterValue(c.in, "okf_version", "0.1")
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q err=%v, want %q", c.name, got, err, c.want)
 		}
-	}
-	if _, err := setFrontmatterValue("no frontmatter here\n", "okf_version", "0.1"); err == nil {
-		t.Errorf("expected an error when there is no frontmatter")
 	}
 }
 

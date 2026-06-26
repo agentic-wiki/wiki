@@ -1,6 +1,4 @@
 ---
-type: index
-title: Wiki CLI — Tasks
 okf_version: "0.1"
 ---
 
@@ -18,9 +16,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 - [ ] [slugify filenames (spaces -> hyphens)](/3-graph-and-mutation/009-slugify-filenames.md)
 
-## Debt
-- [ ] [yaml frontmatter subset](/debt/001-yaml-frontmatter-subset.md)
-
 ## Done
 - [x] 1 — Foundation: discovery, parsers, index + graph, commands (status/list/tasks/unresolved/orphans/check), text+json, tests, full justfile + CI + goreleaser + smoke.
 - [x] Bundle model finalized: root = content root (git-style), `bundle` package/type, `okf_version` badge synced by `check`; spec + READMEs modernized.
@@ -36,3 +31,5 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [consolidate relative links](/3-graph-and-mutation/006-relative-link-lint.md): relative links are valid (OKF) and resolved into the graph at build, so `backlinks`/`orphans` see them; `wiki consolidate` normalizes them to canonical root-absolute. (`check` no longer flags relative links; broken ones stay errors.)
 - [x] slug filenames: `check` warns on a space in a path; spec + skill recommend lowercase-hyphenated names. `wiki` reads `<…>`-wrapped links (so they resolve cleanly, not garbage) but still flags the spaced filename and skips it in `consolidate`; bare-space and `%20` forms aren't special-cased. `normalizeLink` is the single canonical-link helper.
 - [x] bug fix: `move` now rewrites **relative** links (and `<…>`/anchored ones) to a moved file, not just root-absolute. Each indexed link carries its on-disk `Raw` form; move matches by resolved target and rewrites by `Raw`. Was a silent dangling-link bug exposed by relative-links-as-edges.
+- [x] [OKF alignment](/conformance/001-okf-alignment.md): removed the reserved-file frontmatter incompatibility (`index.md`/`log.md` are reserved filenames, no `type`, no frontmatter); adopted OKF `timestamp` (validated when present, never required); zero-dep YAML now handles inline comments + block scalars + graceful nesting; `log.md` ISO date-heading lint; reframed `check` as an opt-in lint, not an OKF gate. Net: our bundles are valid OKF and `wiki` accepts any OKF bundle.
+- [x] [yaml frontmatter](/debt/001-yaml-frontmatter-subset.md): the subset is expanded + documented and the hand-rolled, zero-dep approach is intentional (superseded by the OKF-alignment YAML work).

@@ -22,9 +22,6 @@ type Bundle struct {
 	Types []string // content types declared in wiki.toml
 }
 
-// reservedTypes are recognized regardless of wiki.toml.
-var reservedTypes = []string{"index", "log"}
-
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
 var ErrNotFound = errors.New("no wiki.toml found (not inside a wiki bundle)")
 
@@ -60,9 +57,9 @@ func load(root, cfg string) (*Bundle, error) {
 	}, nil
 }
 
-// KnownType reports whether t is a reserved or declared content type.
+// KnownType reports whether t is a content type declared in wiki.toml.
 func (b *Bundle) KnownType(t string) bool {
-	return slices.Contains(reservedTypes, t) || slices.Contains(b.Types, t)
+	return slices.Contains(b.Types, t)
 }
 
 // okfVersions maps an agentic-wiki spec version to the OKF version it embeds.

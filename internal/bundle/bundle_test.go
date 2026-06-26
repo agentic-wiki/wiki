@@ -37,14 +37,17 @@ func TestParseConfigMessy(t *testing.T) {
 }
 
 func TestKnownType(t *testing.T) {
-	b := &Bundle{Types: []string{"note"}}
-	for _, ty := range []string{"note", "index", "log"} {
+	b := &Bundle{Types: []string{"note", "concept"}}
+	for _, ty := range []string{"note", "concept"} {
 		if !b.KnownType(ty) {
 			t.Errorf("%q should be known", ty)
 		}
 	}
-	if b.KnownType("bogus") {
-		t.Errorf("bogus should be unknown")
+	// index/log are reserved filenames, not content types; bogus is undeclared.
+	for _, ty := range []string{"index", "log", "bogus"} {
+		if b.KnownType(ty) {
+			t.Errorf("%q is not a declared content type", ty)
+		}
 	}
 }
 

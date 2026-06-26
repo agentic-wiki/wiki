@@ -22,7 +22,7 @@ func writeBundle(t *testing.T) string {
 		}
 	}
 	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n")
-	write("index.md", "---\ntype: index\nokf_version: \"0.1\"\n---\n# Home\n[g](/guide.md)\n")
+	write("index.md", "---\nokf_version: \"0.1\"\n---\n# Home\n[g](/guide.md)\n")
 	write("guide.md", "---\ntype: note\ntitle: Guide\n---\n# Guide\nintro text\n## Setup\nstep one\n### Detail\nfine print\n## Usage\nrun it\n- [ ] try the CLI\n")
 	write("flat.md", "---\ntype: note\n---\nno headings here\n")
 	return dir
@@ -131,7 +131,7 @@ func TestCmdSearch(t *testing.T) {
 	}
 
 	// --type filter
-	if out, _ := capture(t, func() int { return cmdSearch([]string{"--type", "index", "Home"}) }); !strings.Contains(out, "/index.md") {
+	if out, _ := capture(t, func() int { return cmdSearch([]string{"--type", "note", "Setup"}) }); !strings.Contains(out, "/guide.md") {
 		t.Errorf("type-filter search: %q", out)
 	}
 
@@ -288,7 +288,7 @@ func TestCmdCheckFix(t *testing.T) {
 	dir := writeBundle(t)
 	// Introduce okf_version drift on the bundle-root index.md.
 	if err := os.WriteFile(filepath.Join(dir, "index.md"),
-		[]byte("---\ntype: index\nokf_version: \"0.2\"\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
+		[]byte("---\nokf_version: \"0.2\"\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)
@@ -322,7 +322,7 @@ func TestCmdConsolidate(t *testing.T) {
 	dir := writeBundle(t)
 	// Make the root index.md link to guide.md relatively (guide.md exists).
 	if err := os.WriteFile(filepath.Join(dir, "index.md"),
-		[]byte("---\ntype: index\nokf_version: \"0.1\"\n---\n# Home\n[g](guide.md)\n"), 0o644); err != nil {
+		[]byte("---\nokf_version: \"0.1\"\n---\n# Home\n[g](guide.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(dir)

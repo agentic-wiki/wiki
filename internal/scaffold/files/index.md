@@ -1,6 +1,4 @@
 ---
-type: index
-title: My Knowledge Base
 okf_version: "0.1"
 ---
 
