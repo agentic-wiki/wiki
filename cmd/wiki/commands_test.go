@@ -318,6 +318,42 @@ func TestCmdCheckFix(t *testing.T) {
 	}
 }
 
+func TestCmdConsolidate(t *testing.T) {
+	dir := writeBundle(t)
+	// Make the root index.md link to guide.md relatively (guide.md exists).
+	if err := os.WriteFile(filepath.Join(dir, "index.md"),
+		[]byte("---\ntype: index\nokf_version: \"0.1\"\n---\n# Home\n[g](guide.md)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	// dry-run previews without writing
+	out, code := capture(t, func() int { return cmdConsolidate([]string{"--dry-run"}) })
+	if code != 0 || !strings.Contains(out, "would consolidate") || !strings.Contains(out, "/guide.md") {
+		t.Errorf("dry-run: exit=%d out=%q", code, out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); strings.Contains(string(b), "(/guide.md)") {
+		t.Errorf("dry-run must not write")
+	}
+
+	// real run rewrites the link to root-absolute
+	if _, code := capture(t, func() int { return cmdConsolidate(nil) }); code != 0 {
+		t.Errorf("consolidate exit=%d", code)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); !strings.Contains(string(b), "[g](/guide.md)") {
+		t.Errorf("link not consolidated:\n%s", b)
+	}
+
+	// nothing left to consolidate → ok message, still exit 0
+	if out, code := capture(t, func() int { return cmdConsolidate(nil) }); code != 0 || !strings.Contains(out, "already root-absolute") {
+		t.Errorf("no-op consolidate: exit=%d out=%q", code, out)
+	}
+	// json output is a (possibly empty) array, never null
+	if out, _ := capture(t, func() int { return cmdConsolidate([]string{"--format", "json"}) }); !strings.Contains(out, "[") {
+		t.Errorf("json consolidate missing array: %q", out)
+	}
+}
+
 func TestGlobalRoot(t *testing.T) {
 	t.Cleanup(func() { rootDir = "" }) // global flag state; keep other tests independent
 	t.Chdir(t.TempDir())               // cwd has no bundle

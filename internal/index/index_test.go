@@ -81,6 +81,73 @@ func TestEscapingLinkIsBroken(t *testing.T) {
 	}
 }
 
+func TestRelativeLinkCannotEscapeBundle(t *testing.T) {
+	idx := build(t, map[string]string{
+		"sub/page.md": "---\ntype: note\n---\n[esc](../../../../../../etc/passwd)\n",
+	})
+	// path.Join caps at the bundle root, so the target stays in-bundle (/etc/passwd
+	// here, relative to the bundle, not the host) and is simply broken.
+	bl := idx.Broken()
+	if len(bl) != 1 || bl[0].Target != "/etc/passwd" {
+		t.Errorf("relative escape should cap at the bundle root, got %+v", bl)
+	}
+}
+
+func TestRelativeLinkCountsForOrphans(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](./a.md)\n", // relative edge
+		"a.md":     "---\ntype: note\n---\nx\n",
+	})
+	for _, o := range idx.Orphans() {
+		if o.Path == "/a.md" {
+			t.Fatalf("/a.md is linked relatively and must not be an orphan; orphans=%+v", idx.Orphans())
+		}
+	}
+}
+
+func TestNormalizeLink(t *testing.T) {
+	cases := []struct{ from, target, want string }{
+		{"/index.md", "/a.md", "/a.md"},            // absolute passes through
+		{"/index.md", "/a.md#sec", "/a.md#sec"},    // anchor preserved
+		{"/index.md", "a.md", "/a.md"},             // bare, from root
+		{"/index.md", "./a.md", "/a.md"},           // explicit current dir
+		{"/sub/x.md", "a.md", "/sub/a.md"},         // bare, from a subdir
+		{"/sub/x.md", "../a.md", "/a.md"},          // up one
+		{"/sub/deep/x.md", "../../a.md", "/a.md"},  // up two
+		{"/sub/x.md", "../a.md#sec", "/a.md#sec"},  // relative + anchor
+		{"/sub/x.md", "../../../../a.md", "/a.md"}, // cannot climb above the root
+		{"/a/b.md", "c/d.md", "/a/c/d.md"},         // nested relative
+	}
+	for _, c := range cases {
+		if got := normalizeLink(c.from, c.target); got != c.want {
+			t.Errorf("normalizeLink(%q, %q) = %q, want %q", c.from, c.target, got, c.want)
+		}
+	}
+}
+
+func TestLinksToSameTargetAcrossForms(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/hello.md)\n",    // absolute
+		"sub/b.md": "---\ntype: note\n---\n[b](../hello.md)\n",   // relative
+		"sub/c.md": "---\ntype: note\n---\n[c](../hello.md#x)\n", // relative + anchor
+		"hello.md": "---\ntype: note\n---\nhi\n",
+	})
+	// all three forms resolve to /hello.md -> three backlinks (one per source)
+	if bl := idx.Backlinks("/hello.md"); len(bl) != 3 {
+		t.Fatalf("want 3 backlinks across forms, got %+v", bl)
+	}
+	// consolidate normalizes the two relatives; the absolute one is left as-is
+	changes, _ := idx.Consolidate(true)
+	if len(changes) != 2 {
+		t.Errorf("want 2 consolidations (the relatives), got %+v", changes)
+	}
+	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/b.md"))
+	c, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/c.md"))
+	if !strings.Contains(string(b), "[b](/hello.md)") || !strings.Contains(string(c), "[c](/hello.md#x)") {
+		t.Errorf("relatives not normalized:\n%s%s", b, c)
+	}
+}
+
 func TestFilter(t *testing.T) {
 	idx := build(t, map[string]string{
 		"finance/income/a.md": "---\ntype: note\ntags: [eu]\n---\n",
@@ -134,6 +201,32 @@ func TestCheckSeverity(t *testing.T) {
 	}
 	if warns != 3 {
 		t.Errorf("warnings = %d, want 3 (unknown type, index.md type, depth)", warns)
+	}
+}
+
+func TestCheckFilenameSpace(t *testing.T) {
+	idx := build(t, map[string]string{"a b.md": "---\ntype: note\n---\nbody\n"})
+	if !hasWarning(idx.Check(), "/a b.md", "space") {
+		t.Errorf("a filename with a space should warn, got %+v", idx.Check())
+	}
+}
+
+func TestAngleBracketLinkResolvesButNotConsolidated(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[s](<../a b.md>)\n",
+		"a b.md":   "---\ntype: note\n---\nx\n",
+	})
+	// the <...> link parses cleanly and resolves into the graph (not garbage)
+	if len(idx.Backlinks("/a b.md")) == 0 {
+		t.Errorf("angle-bracket relative link should resolve to a backlink, got %+v", idx.Backlinks("/a b.md"))
+	}
+	// the space surfaces as the filename warning, not a broken link
+	if !hasWarning(idx.Check(), "/a b.md", "space") {
+		t.Errorf("spaced filename should warn, got %+v", idx.Check())
+	}
+	// consolidate leaves space targets alone (rename the file instead)
+	if c, _ := idx.Consolidate(false); len(c) != 0 {
+		t.Errorf("consolidate should skip space targets, got %+v", c)
 	}
 }
 
@@ -343,9 +436,10 @@ func TestLinkGraph(t *testing.T) {
 		t.Fatalf("a out-links = %+v want [/b.md /nope.md] (deduped)", out)
 	}
 
-	// backlinks deduped by source, sorted by path (a links to /b.md twice, counts once)
-	if bl := idx.Backlinks("/b.md"); len(bl) != 2 || bl[0].From != "/a.md" || bl[1].From != "/index.md" {
-		t.Errorf("backlinks /b.md = %+v (want a.md then index.md, deduped)", bl)
+	// backlinks: every occurrence (a links to /b.md twice -> both rows), sorted by
+	// source then line, so a.md:4, a.md:5, then index.md.
+	if bl := idx.Backlinks("/b.md"); len(bl) != 3 || bl[0].From != "/a.md" || bl[0].Line != 4 || bl[1].From != "/a.md" || bl[1].Line != 5 || bl[2].From != "/index.md" {
+		t.Errorf("backlinks /b.md = %+v (want a.md:4, a.md:5, index.md)", bl)
 	}
 	if bl := idx.Backlinks("/nope.md"); len(bl) != 1 || bl[0].From != "/a.md" {
 		t.Errorf("backlinks /nope.md = %+v (a.md links to it)", bl)
@@ -404,6 +498,47 @@ func TestMove(t *testing.T) {
 	}
 }
 
+func TestMoveRewritesRelativeLinks(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[abs](/a.md) [rel](a.md)\n", // both resolve to /a.md
+		"sub/x.md": "---\ntype: note\n---\n[up](../a.md#sec)\n",         // relative + anchor
+		"a.md":     "---\ntype: note\n---\nhi\n",
+	})
+	if _, err := idx.Move("/a.md", "/b.md", false); err != nil {
+		t.Fatal(err)
+	}
+	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	if !strings.Contains(string(root), "[abs](/b.md)") || !strings.Contains(string(root), "[rel](/b.md)") {
+		t.Errorf("both absolute and relative links to the moved file should be rewritten:\n%s", root)
+	}
+	sub, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/x.md"))
+	if !strings.Contains(string(sub), "[up](/b.md#sec)") {
+		t.Errorf("relative+anchor link should rewrite to absolute dest + anchor:\n%s", sub)
+	}
+}
+
+func TestMoveAcrossLinkForms(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/hello.md)\n",    // absolute
+		"sub/b.md": "---\ntype: note\n---\n[b](../hello.md)\n",   // relative
+		"sub/c.md": "---\ntype: note\n---\n[c](../hello.md#x)\n", // relative + anchor
+		"hello.md": "---\ntype: note\n---\nhi\n",
+	})
+	if _, err := idx.Move("/hello.md", "/world.md", false); err != nil {
+		t.Fatal(err)
+	}
+	for f, want := range map[string]string{
+		"index.md": "[a](/world.md)",
+		"sub/b.md": "[b](/world.md)",
+		"sub/c.md": "[c](/world.md#x)", // anchor preserved through the rewrite
+	} {
+		got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(f)))
+		if !strings.Contains(string(got), want) {
+			t.Errorf("%s: want %q in\n%s", f, want, got)
+		}
+	}
+}
+
 func TestMoveValidate(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
@@ -456,5 +591,60 @@ func TestMoveTitledLink(t *testing.T) {
 	// the title and the anchor are both preserved through the rewrite
 	if !strings.Contains(string(s), `[t](/b.md "keep me")`) || !strings.Contains(string(s), `[u](/b.md#sec 'k')`) {
 		t.Errorf("title/anchor not preserved on rewrite: %q", s)
+	}
+}
+
+func TestRelativeLinksResolveAndConsolidate(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":    "---\ntype: index\nokf_version: \"0.1\"\n---\n[up](sub/page.md) [bad](nope.md)\n[anc](sub/page.md#sec) [tit](sub/page.md \"hi\")\n",
+		"sub/page.md": "---\ntype: note\n---\nhi\n",
+	})
+
+	// Relative links are valid (OKF) and resolved into the graph: sub/page.md is
+	// a real backlink target, not orphaned, and check does not flag the form.
+	if bl := idx.Backlinks("/sub/page.md"); len(bl) == 0 {
+		t.Errorf("relative link should resolve to a backlink edge, got %+v", bl)
+	}
+	if hasWarning(idx.Check(), "/index.md", "not root-absolute") {
+		t.Errorf("relative links are valid; check must not flag them: %+v", idx.Check())
+	}
+	// The one that resolves nowhere is still reported broken (check audits).
+	broken := false
+	for _, b := range idx.Broken() {
+		if b.From == "/index.md" && b.Target == "/nope.md" {
+			broken = true
+		}
+	}
+	if !broken {
+		t.Errorf("unresolvable relative link should be broken (-> /nope.md), got %+v", idx.Broken())
+	}
+
+	// Consolidate canonicalizes every relative link (anchor + title preserved),
+	// including the unresolvable one (the absolute form is deterministic).
+	changes, err := idx.Consolidate(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changes) != 4 { // up, bad, anc, tit
+		t.Errorf("expected 4 consolidations, got %+v", changes)
+	}
+	raw, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	for _, want := range []string{"[up](/sub/page.md)", "[bad](/nope.md)", "[anc](/sub/page.md#sec)", `[tit](/sub/page.md "hi")`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+
+	// Once everything is absolute, there is nothing left to consolidate.
+	rebuilt, err := Build(idx.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry, _ := rebuilt.Consolidate(false); len(dry) != 0 {
+		t.Errorf("nothing should remain to consolidate, got %+v", dry)
 	}
 }

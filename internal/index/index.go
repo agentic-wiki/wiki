@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -14,6 +15,16 @@ import (
 	"github.com/agentic-wiki/wiki/internal/parse"
 )
 
+// Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
+// its resolved root-absolute graph key (Target, anchor stripped). Queries and
+// the graph match on Target; rewrites (move, consolidate) match Raw on disk.
+type Link struct {
+	Text   string
+	Raw    string
+	Target string
+	Line   int
+}
+
 // Entry is one markdown file in the content tree.
 type Entry struct {
 	Path     string          `json:"path"` // root-absolute, e.g. /finance/income/index.md
@@ -21,7 +32,7 @@ type Entry struct {
 	Type     string          `json:"type"`
 	Title    string          `json:"title"`
 	Tags     []string        `json:"tags"`
-	Links    []parse.Link    `json:"-"`
+	Links    []Link          `json:"-"` // internal links, resolved to root-absolute: the graph edges
 	Tasks    []parse.Task    `json:"-"`
 	Headings []parse.Heading `json:"-"`
 	abs      string
@@ -102,10 +113,11 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// their line numbers are body-relative; offset by the frontmatter's length
 	// to make them file-relative (what `unresolved`/`backlinks`/`tasks` report).
 	offset := strings.Count(content[:len(content)-len(body)], "\n")
-	links, tasks, heads := parse.InternalLinks(body), parse.Tasks(body), parse.Headings(body)
-	for i := range links {
-		links[i].Line += offset
-	}
+	// rel is the file's path under the bundle root ("finance/income.md");
+	// entryPath is its root-absolute bundle id ("/finance/income.md").
+	entryPath := "/" + filepath.ToSlash(rel)
+	links := resolveLinks(parse.Links(body), entryPath, offset)
+	tasks, heads := parse.Tasks(body), parse.Headings(body)
 	for i := range tasks {
 		tasks[i].Line += offset
 	}
@@ -113,7 +125,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		heads[i].Line += offset
 	}
 	return &Entry{
-		Path:     "/" + filepath.ToSlash(rel),
+		Path:     entryPath,
 		Name:     filepath.Base(abs),
 		Type:     parse.String(fm, "type"),
 		Title:    parse.String(fm, "title"),
@@ -137,6 +149,41 @@ func (idx *Index) FileExists(target string) bool {
 	}
 	fi, err := os.Stat(p)
 	return err == nil && !fi.IsDir()
+}
+
+// resolveLinks turns a body's parsed (as-written) internal links into indexed
+// links: each keeps its on-disk Raw form and gains a resolved root-absolute
+// Target (the graph key, anchor stripped). Lines are shifted by offset to be
+// file-relative. Absolute and relative links both resolve via normalizeLink.
+func resolveLinks(set parse.LinkSet, entryPath string, offset int) []Link {
+	links := make([]Link, 0, len(set.Absolute)+len(set.Relative))
+	for _, bucket := range [][]parse.Link{set.Absolute, set.Relative} {
+		for _, l := range bucket {
+			target := normalizeLink(entryPath, l.Target)
+			if h := strings.IndexByte(target, '#'); h >= 0 {
+				target = target[:h] // the graph edge is the file, not the anchor
+			}
+			links = append(links, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
+		}
+	}
+	return links
+}
+
+// normalizeLink resolves a link target, as written in the entry at fromPath, to
+// its canonical root-absolute spelling (anchor preserved): the single standard
+// representation of an internal link. Absolute targets pass through; relative
+// ones join against the entry's directory (path.Join cleans `.`/`..` and cannot
+// climb above the bundle root). The index uses it for the graph key (after
+// dropping the anchor) and consolidate uses it for the on-disk rewrite.
+func normalizeLink(fromPath, target string) string {
+	anchor := ""
+	if h := strings.IndexByte(target, '#'); h >= 0 {
+		anchor, target = target[h:], target[:h]
+	}
+	if !strings.HasPrefix(target, "/") {
+		target = path.Join(path.Dir(fromPath), target)
+	}
+	return target + anchor
 }
 
 // Resolve finds a single entry by a "/"-containing path (matched exactly,
@@ -298,18 +345,24 @@ func (idx *Index) OutLinks(e *Entry) []LinkRef {
 
 // Backlinks returns the unique entries that link to the given root-absolute path
 // (the first link from each source), sorted by source path.
+// Backlinks returns every internal link that points to target, one LinkRef per
+// occurrence (a source that links several times appears once per link), sorted
+// by source path then line. Relative links count, they resolve to the same target.
 func (idx *Index) Backlinks(target string) []LinkRef {
-	seen := map[string]bool{}
 	var refs []LinkRef
 	for _, e := range idx.Entries {
 		for _, l := range e.Links {
-			if l.Target == target && !seen[e.Path] {
-				seen[e.Path] = true
+			if l.Target == target {
 				refs = append(refs, LinkRef{From: e.Path, To: target, Text: l.Text, Line: l.Line})
 			}
 		}
 	}
-	slices.SortFunc(refs, func(a, b LinkRef) int { return strings.Compare(a.From, b.From) })
+	slices.SortStableFunc(refs, func(a, b LinkRef) int {
+		if a.From != b.From {
+			return strings.Compare(a.From, b.From)
+		}
+		return a.Line - b.Line
+	})
 	return refs
 }
 
@@ -329,11 +382,12 @@ type MoveResult struct {
 }
 
 // Move relocates the entry at srcArg to dest (a root-absolute path) and rewrites
-// every internal link that targets it across the bundle. Links are root-absolute,
-// so only links *to* src need rewriting; the moved file's own links stay valid.
-// With dryRun it computes the plan without writing. There is no rollback: on a
-// mid-way write error it returns what was already done so `unresolved` can surface
-// any leftovers.
+// every internal link that targets it across the bundle, relative and
+// root-absolute alike: links are matched by their resolved target and rewritten
+// by their on-disk form. The moved file's own outgoing links stay valid. With
+// dryRun it computes the plan without writing. There is no rollback: on a mid-way
+// write error it returns what was already done so `unresolved` can surface any
+// leftovers.
 func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 	src, err := idx.Resolve(srcArg)
 	if err != nil {
@@ -353,33 +407,36 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 	}
 	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
 
-	// rewrite incoming links, anchored to the lines the parser found real links on
-	re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(src.Path) + `(#[^)\s]*)?(\s[^)]*)?\)`)
+	// Rewrite every link whose resolved target is src, matching each by its
+	// on-disk form (Raw) so relative and root-absolute links are both handled.
 	for _, e := range idx.Entries {
-		onLine := map[int]bool{}
+		var hits []Link
 		for _, l := range e.Links {
 			if l.Target == src.Path {
-				onLine[l.Line] = true
+				hits = append(hits, l)
 			}
 		}
-		if len(onLine) == 0 {
+		if len(hits) == 0 {
 			continue
 		}
 		raw, err := e.Raw()
 		if err != nil {
 			return res, err
 		}
-		// Link lines are file-relative, so match directly against the raw file.
-		lines := strings.Split(raw, "\n")
+		lines := strings.Split(raw, "\n") // link lines are file-relative
 		n := 0
-		for i := range lines {
-			if !onLine[i+1] {
+		for _, l := range hits {
+			if l.Line-1 < 0 || l.Line-1 >= len(lines) {
 				continue
 			}
-			lines[i] = re.ReplaceAllStringFunc(lines[i], func(m string) string {
+			anchor := ""
+			if h := strings.IndexByte(l.Raw, '#'); h >= 0 {
+				anchor = l.Raw[h:]
+			}
+			re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(l.Raw) + `(\s[^)]*)?\)`)
+			lines[l.Line-1] = re.ReplaceAllStringFunc(lines[l.Line-1], func(m string) string {
 				n++
-				sub := re.FindStringSubmatch(m) // [1]=#anchor, [2]=" title"
-				return "](" + dest + sub[1] + sub[2] + ")"
+				return "](" + dest + anchor + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
 			})
 		}
 		if n == 0 {
@@ -439,7 +496,13 @@ func (idx *Index) Check() []Issue {
 		if e.Depth() > 3 {
 			issues = append(issues, Issue{"warning", e.Path, "deeper than 3 folders"})
 		}
+		if strings.Contains(e.Path, " ") {
+			issues = append(issues, Issue{"warning", e.Path, "path contains a space; use a hyphenated slug"})
+		}
 	}
+	// Broken links are reported as errors. Relative links are valid per OKF and
+	// are resolved into the graph at build, so Broken covers them too (a relative
+	// link that resolves nowhere shows up here); no separate relative-link check.
 	for _, b := range idx.Broken() {
 		issues = append(issues, Issue{"error", b.From, "broken link -> " + b.Target})
 	}
@@ -460,7 +523,8 @@ func (idx *Index) Check() []Issue {
 	return issues
 }
 
-// Fix is a single safe repair that `check --fix` can apply.
+// Fix is a single change reported by `check --fix` or `consolidate`: an entry's
+// field (or a link) rewritten From -> To.
 type Fix struct {
 	Entry string `json:"entry"`
 	Field string `json:"field"`
@@ -468,36 +532,108 @@ type Fix struct {
 	To    string `json:"to"`
 }
 
-// Fix computes the safe-to-write repairs for the bundle (currently syncing the
-// bundle-root index.md okf_version badge to the value the declared spec embeds).
-// It validates each rewrite before touching disk, and only writes when apply is
-// true; a file is never left partially edited.
+// Fix applies the bundle's safe-to-write conformance repairs. Currently that is
+// syncing the bundle-root index.md okf_version badge; the change is validated
+// before any write, and written only when apply is true. (Relative-link
+// normalization is not a repair, see Consolidate.)
 func (idx *Index) Fix(apply bool) ([]Fix, error) {
-	var fixes []Fix
+	okf, err := idx.fixOKFVersion(apply)
+	if err != nil {
+		return nil, err
+	}
+	if okf != nil {
+		return []Fix{*okf}, nil
+	}
+	return nil, nil
+}
+
+// fixOKFVersion syncs the bundle-root index.md okf_version badge to the value
+// the declared spec embeds. It returns the change, or nil when there is no root
+// index, the spec embeds no OKF version, or the badge is already in sync.
+func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	root, ok := idx.byPath["/index.md"]
 	if !ok {
-		return fixes, nil
+		return nil, nil
 	}
-	if want, embedsOKF := idx.Bundle.OKFVersion(); embedsOKF {
-		if got := parse.String(root.fm, "okf_version"); got != want {
-			abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(root.Path, "/")))
-			raw, err := os.ReadFile(abs)
-			if err != nil {
-				return nil, err
-			}
-			updated, err := setFrontmatterValue(string(raw), "okf_version", want)
-			if err != nil {
-				return nil, err
-			}
-			if apply {
-				if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
-					return nil, err
-				}
-			}
-			fixes = append(fixes, Fix{root.Path, "okf_version", got, want})
+	want, embedsOKF := idx.Bundle.OKFVersion()
+	if !embedsOKF {
+		return nil, nil
+	}
+	got := parse.String(root.fm, "okf_version")
+	if got == want {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(root.abs)
+	if err != nil {
+		return nil, err
+	}
+	updated, err := setFrontmatterValue(string(raw), "okf_version", want)
+	if err != nil {
+		return nil, err
+	}
+	if apply {
+		if err := os.WriteFile(root.abs, []byte(updated), 0o644); err != nil {
+			return nil, err
 		}
 	}
-	return fixes, nil
+	return &Fix{root.Path, "okf_version", got, want}, nil
+}
+
+// Consolidate rewrites relative links to their canonical root-absolute form
+// across the bundle. Relative links are valid per OKF, so this is an opt-in
+// normalization, not a repair: it canonicalizes their on-disk spelling and never
+// changes the graph (the resolved edge is already absolute in memory). With
+// apply=false it reports the changes without writing.
+func (idx *Index) Consolidate(apply bool) ([]Fix, error) {
+	var changes []Fix
+	for _, e := range idx.Entries {
+		c, err := idx.consolidateEntry(e, apply)
+		if err != nil {
+			return nil, err
+		}
+		changes = append(changes, c...)
+	}
+	return changes, nil
+}
+
+// consolidateEntry rewrites each relative link in one entry to its absolute form
+// (anchor and title preserved), writing the file once. The absolute form is
+// deterministic (path arithmetic), so it applies whether or not the target
+// exists. Returns one Fix per link.
+func (idx *Index) consolidateEntry(e *Entry, apply bool) ([]Fix, error) {
+	raw, err := e.Raw()
+	if err != nil {
+		return nil, err
+	}
+	_, body := parse.Frontmatter(raw)
+	offset := strings.Count(raw[:len(raw)-len(body)], "\n")
+	rels := parse.Links(body).Relative
+	if len(rels) == 0 {
+		return nil, nil
+	}
+	var changes []Fix
+	lines := strings.Split(raw, "\n") // link lines are file-relative
+	for _, l := range rels {
+		abs := normalizeLink(e.Path, l.Target)
+		if strings.ContainsAny(abs, " \t") {
+			continue // a space target is flagged by check; the fix is renaming the file, not consolidating
+		}
+		changes = append(changes, Fix{e.Path, "link", l.Target, abs})
+		ln := l.Line + offset - 1
+		if !apply || ln < 0 || ln >= len(lines) {
+			continue
+		}
+		re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(l.Target) + `(\s[^)]*)?\)`)
+		lines[ln] = re.ReplaceAllStringFunc(lines[ln], func(m string) string {
+			return "](" + abs + re.FindStringSubmatch(m)[1] + ")" // keep any title
+		})
+	}
+	if apply {
+		if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return changes, nil
 }
 
 // setFrontmatterValue returns content with the frontmatter `key` set to a quoted

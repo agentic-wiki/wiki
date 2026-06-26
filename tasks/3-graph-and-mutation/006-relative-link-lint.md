@@ -1,14 +1,16 @@
 ---
 type: task
-title: lint + normalize non-root-absolute links
-status: todo
+title: consolidate relative links to root-absolute
+status: done
 priority: low
 tags: [feature, check]
 ---
 
-The format mandates root-absolute links (`/path.md`); relative/bare ones (`../x.md`, `sibling.md`) are currently parsed out by `InternalLinks`, so they pass `check` silently (neither a graph edge nor a warning).
+OKF allows two internal link forms: root-absolute (`/x.md`) and relative (`./x.md`, `../x.md`, `sibling.md`). Both are valid; root-absolute is the canonical form we prefer for stability. Relative links must still resolve into the graph (so `backlinks`/`orphans` see them), and there should be an opt-in way to normalize them.
 
-- **Detect**: surface body links whose target has no URL scheme and does not start with `/`; `check` warns ("link not root-absolute").
-- **Normalize** (suggest / `--fix`): resolve the relative target against the file's directory to its root-absolute form. If the resolved file exists, rewrite the link (dry-run suggests, `--fix` applies). If it does not resolve, leave it and report a broken link, never guess a target. External URLs are left untouched.
+- **Resolve**: `parse.Links` classifies every link into `{Absolute, Relative, External}`; `index.Build` resolves relatives against the entry's directory (`path.Join`) so the whole graph is absolute in memory. A relative link that resolves nowhere is a normal broken link (reported by `check`/`unresolved`), not a special case.
+- **Consolidate**: `wiki consolidate [--dry-run]` rewrites relative links to their canonical root-absolute form (anchor + title preserved). It is an opt-in normalization, not a `fix`, relative links aren't wrong. The absolute form is deterministic, so it applies whether or not the target exists.
 
-Reuses the link-rewrite engine from move (002); the `--fix` lives under [`check --fix`](/3-graph-and-mutation/007-check-fix.md). Keeps the graph root-absolute-only.
+Done: `parse.Links` 3-bucket primitive; `index.Build` resolves relatives via `canonicalTarget`; `Consolidate`/`consolidateEntry` rewrite them (reusing move's regex engine on file-relative lines); `wiki consolidate` command (`--dry-run`). `check` no longer flags relative links.
+
+Note: an earlier cut treated relative links as violations (`check` warned, `check --fix` normalized). Corrected after re-reading the OKF spec, which explicitly permits relative links and mandates that consumers tolerate broken ones.

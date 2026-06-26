@@ -260,6 +260,35 @@ func cmdCheck(args []string) int {
 	return 0
 }
 
+func cmdConsolidate(args []string) int {
+	fs := flag.NewFlagSet("consolidate", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	dry := fs.Bool("dry-run", false, "report changes without writing")
+	fs.Parse(args)
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	changes, err := idx.Consolidate(!*dry)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	verb := "consolidate"
+	if *dry {
+		verb = "would consolidate"
+	}
+	var lines []string
+	for _, c := range changes {
+		lines = append(lines, fmt.Sprintf("%s %s: %q -> %q", verb, c.Entry, c.From, c.To))
+	}
+	if len(changes) == 0 {
+		lines = []string{"ok: all links already root-absolute"}
+	}
+	output.Emit(os.Stdout, *format, lines, changes)
+	return 0
+}
+
 func cmdRead(args []string) int {
 	fs := flag.NewFlagSet("read", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")

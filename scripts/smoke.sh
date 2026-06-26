@@ -158,12 +158,25 @@ mkdir -p "$TMP/fresh"
 test -f "$TMP/fresh/wiki.toml"
 test -f "$TMP/fresh/.gitignore"
 
+echo "--- check warns on a filename with a space ---"
+printf -- '---\ntype: note\n---\nx\n' > "$TMP/fresh/has space.md"
+( cd "$TMP/fresh" && contains "$($BIN check)" "space" )
+rm "$TMP/fresh/has space.md"
+
 echo "--- check --fix syncs okf_version drift ---"
 sed -i.bak 's/okf_version: "0.1"/okf_version: "0.2"/' "$TMP/fresh/index.md" && rm -f "$TMP/fresh/index.md.bak"
 ( cd "$TMP/fresh" && contains "$($BIN check)" "okf_version" )   # drift is flagged
 ( cd "$TMP/fresh" && contains "$($BIN check --fix)" "fixed" )   # and repaired
 ( cd "$TMP/fresh" && $BIN check >/dev/null )                    # now clean
 contains "$(cat "$TMP/fresh/index.md")" 'okf_version: "0.1"'
+
+echo "--- consolidate normalizes relative links (which are valid, not flagged) ---"
+printf '\n[home](../index.md)\n' >> "$TMP/fresh/notes/welcome.md"
+( cd "$TMP/fresh" && ! contains "$($BIN check)" "not root-absolute" )           # relative is valid
+( cd "$TMP/fresh" && $BIN check >/dev/null )                                    # resolves, so still clean
+( cd "$TMP/fresh" && contains "$($BIN consolidate --dry-run)" "would consolidate" )
+( cd "$TMP/fresh" && $BIN consolidate >/dev/null )                              # normalize to absolute
+contains "$(cat "$TMP/fresh/notes/welcome.md")" 'home](/index.md)'
 
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"

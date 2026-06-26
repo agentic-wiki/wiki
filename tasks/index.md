@@ -15,8 +15,8 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [scaffold registry (--template / --from / skill install)](/3-graph-and-mutation/005-scaffold-registry.md)
-- [ ] [lint + normalize non-root-absolute links](/3-graph-and-mutation/006-relative-link-lint.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
+- [ ] [slugify filenames (spaces -> hyphens)](/3-graph-and-mutation/009-slugify-filenames.md)
 
 ## Debt
 - [ ] [yaml frontmatter subset](/debt/001-yaml-frontmatter-subset.md)
@@ -33,3 +33,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] Hardening + coverage pass: fixed a `move` path-traversal (plus escaping link-targets, CRLF frontmatter, link titles, JSON `null`→`[]`).
 - [x] [path handling](/2-query-surface/005-path-handling.md): `--root` to operate on a bundle elsewhere (redirects discovery, no chdir) + `--path`→`--prefix`, settling the model: `--root` (which bundle, OS path) / positional subject + `--prefix` filter (bundle paths).
 - [x] [check --fix](/3-graph-and-mutation/007-check-fix.md): first writing command, repairs safe conformance drift (today, the root `okf_version` badge), validates before writing, reports each change.
+- [x] [consolidate relative links](/3-graph-and-mutation/006-relative-link-lint.md): relative links are valid (OKF) and resolved into the graph at build, so `backlinks`/`orphans` see them; `wiki consolidate` normalizes them to canonical root-absolute. (`check` no longer flags relative links; broken ones stay errors.)
+- [x] slug filenames: `check` warns on a space in a path; spec + skill recommend lowercase-hyphenated names. `wiki` reads `<…>`-wrapped links (so they resolve cleanly, not garbage) but still flags the spaced filename and skips it in `consolidate`; bare-space and `%20` forms aren't special-cased. `normalizeLink` is the single canonical-link helper.
+- [x] bug fix: `move` now rewrites **relative** links (and `<…>`/anchored ones) to a moved file, not just root-absolute. Each indexed link carries its on-disk `Raw` form; move matches by resolved target and rewrites by `Raw`. Was a silent dangling-link bug exposed by relative-links-as-edges.

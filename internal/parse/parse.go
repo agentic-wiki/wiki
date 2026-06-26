@@ -144,29 +144,80 @@ var (
 	inlineCodeRe = regexp.MustCompile("`[^`]*`")
 )
 
-// InternalLinks returns root-absolute markdown links from body, ignoring
-// fenced and inline code.
-func InternalLinks(body string) []Link {
-	var links []Link
+// scanLinks returns every markdown link in body (outside fenced/inline code),
+// with the optional title stripped but the anchor kept.
+func scanLinks(body string) []Link {
+	var out []Link
 	for i, line := range maskedLines(body) {
 		for _, m := range linkRe.FindAllStringSubmatch(line, -1) {
 			target := strings.TrimSpace(m[2])
-			// drop an optional link title: [text](/path "title")
-			if sp := strings.IndexAny(target, " \t"); sp >= 0 {
-				target = target[:sp]
+			if strings.HasPrefix(target, "<") {
+				// Angle-bracketed destination, the markdown way to allow spaces:
+				// take everything up to the closing '>', ignoring a title after it.
+				if gt := strings.IndexByte(target, '>'); gt >= 0 {
+					target = target[1:gt]
+				} else {
+					target = target[1:] // unterminated; drop the '<' rather than leak it
+				}
+			} else if sp := strings.IndexAny(target, " \t"); sp >= 0 {
+				target = target[:sp] // bare destination: a space begins the title
 			}
-			if !strings.HasPrefix(target, "/") {
-				continue
-			}
-			if h := strings.IndexByte(target, '#'); h >= 0 {
-				target = target[:h]
-			}
-			if target != "" {
-				links = append(links, Link{Text: m[1], Target: target, Line: i + 1})
-			}
+			out = append(out, Link{Text: m[1], Target: target, Line: i + 1})
 		}
 	}
-	return links
+	return out
+}
+
+// LinkSet holds a body's internal markdown links, classified by target form.
+// Targets are as written (title stripped, anchor kept); resolving them to
+// canonical root-absolute form is the index's job.
+type LinkSet struct {
+	Absolute []Link // root-absolute, e.g. /finance/income.md
+	Relative []Link // relative or bare, e.g. ../x.md, ./x.md, sibling.md
+	External []Link // carries a URL scheme, e.g. https://, mailto:
+}
+
+// Links classifies every markdown link in body (outside code) by target form.
+// Empty targets and pure #anchors are omitted (they point at no entry). Both
+// Absolute and Relative are valid internal links per OKF; External is the
+// leftover bucket, returned for completeness, no consumer requires it.
+func Links(body string) LinkSet {
+	var set LinkSet
+	for _, l := range scanLinks(body) {
+		switch t := l.Target; {
+		case t == "" || strings.HasPrefix(t, "#"):
+			// intra-document anchor or empty: not a link to another entry
+		case hasURLScheme(t):
+			set.External = append(set.External, l)
+		case strings.HasPrefix(t, "/"):
+			set.Absolute = append(set.Absolute, l)
+		default:
+			set.Relative = append(set.Relative, l)
+		}
+	}
+	return set
+}
+
+// hasURLScheme reports whether target begins with an RFC 3986 scheme
+// (ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":"), e.g. http: or mailto:.
+func hasURLScheme(target string) bool {
+	colon := strings.IndexByte(target, ':')
+	if colon <= 0 {
+		return false
+	}
+	if slash := strings.IndexByte(target, '/'); slash >= 0 && slash < colon {
+		return false // the ':' sits inside a path/anchor, not a scheme
+	}
+	for i := 0; i < colon; i++ {
+		c := target[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		case i > 0 && (c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.'):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // Tasks returns checkbox items, ignoring fenced code.
