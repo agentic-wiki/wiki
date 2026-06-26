@@ -319,3 +319,61 @@ func parseWithArg(fs *flag.FlagSet, args []string) (string, bool) {
 	}
 	return arg, true
 }
+
+func cmdLinks(args []string) int {
+	fs := flag.NewFlagSet("links", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	target, ok := parseWithArg(fs, args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: wiki links <file>")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	e, err := idx.Resolve(target)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	refs := idx.OutLinks(e)
+	var lines []string
+	for _, r := range refs {
+		lines = append(lines, r.To)
+	}
+	output.Emit(os.Stdout, *format, lines, refs)
+	if len(refs) == 0 {
+		return 1
+	}
+	return 0
+}
+
+func cmdBacklinks(args []string) int {
+	fs := flag.NewFlagSet("backlinks", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json")
+	target, ok := parseWithArg(fs, args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: wiki backlinks <file>")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	e, err := idx.Resolve(target)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	refs := idx.Backlinks(e.Path)
+	var lines []string
+	for _, r := range refs {
+		lines = append(lines, fmt.Sprintf("%s:%d  %s", r.From, r.Line, r.Text))
+	}
+	output.Emit(os.Stdout, *format, lines, refs)
+	if len(refs) == 0 {
+		return 1
+	}
+	return 0
+}

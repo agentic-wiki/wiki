@@ -253,6 +253,47 @@ func (idx *Index) Orphans() []*Entry {
 	return out
 }
 
+// LinkRef is a directed internal link between two entries.
+type LinkRef struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Text string `json:"text"`
+	Line int    `json:"line"`
+}
+
+// OutLinks returns the entry's outgoing internal links as unique targets, in
+// first-seen order. (Whether a target resolves is a health question for `check`
+// / `unresolved`, not this navigational view.)
+func (idx *Index) OutLinks(e *Entry) []LinkRef {
+	seen := map[string]bool{}
+	var refs []LinkRef
+	for _, l := range e.Links {
+		if seen[l.Target] {
+			continue
+		}
+		seen[l.Target] = true
+		refs = append(refs, LinkRef{From: e.Path, To: l.Target, Text: l.Text, Line: l.Line})
+	}
+	return refs
+}
+
+// Backlinks returns the unique entries that link to the given root-absolute path
+// (the first link from each source), sorted by source path.
+func (idx *Index) Backlinks(target string) []LinkRef {
+	seen := map[string]bool{}
+	var refs []LinkRef
+	for _, e := range idx.Entries {
+		for _, l := range e.Links {
+			if l.Target == target && !seen[e.Path] {
+				seen[e.Path] = true
+				refs = append(refs, LinkRef{From: e.Path, To: target, Text: l.Text, Line: l.Line})
+			}
+		}
+	}
+	slices.SortFunc(refs, func(a, b LinkRef) int { return strings.Compare(a.From, b.From) })
+	return refs
+}
+
 // Issue is a validation finding.
 type Issue struct {
 	Level string `json:"level"` // error | warning

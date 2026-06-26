@@ -22,6 +22,8 @@ commands:
   tasks         list checkbox tasks (--all --done --path)
   unresolved    broken internal links
   orphans       entries with no incoming links
+  links         an entry's outgoing links
+  backlinks     entries that link to an entry
   check         report conformance + health issues
   version       print the version
 
@@ -62,6 +64,10 @@ func run(args []string) int {
 		return cmdUnresolved(args[1:])
 	case "orphans":
 		return cmdOrphans(args[1:])
+	case "links":
+		return cmdLinks(args[1:])
+	case "backlinks":
+		return cmdBacklinks(args[1:])
 	case "check":
 		return cmdCheck(args[1:])
 	default:

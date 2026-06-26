@@ -137,6 +137,12 @@ contains "$($BIN search --type dataset rent)" "/finance/expenses.md"
 echo "--- search no match => exit 1 ---"
 ! $BIN search zzzznope >/dev/null
 
+echo "--- links lists outgoing ---"
+contains "$($BIN links /finance/index.md)" "/finance/income.md"
+
+echo "--- backlinks lists incoming ---"
+contains "$($BIN backlinks /finance/income.md)" "/finance/index.md"
+
 echo "--- orphans (none => exit 1) ---"
 ! $BIN orphans >/dev/null
 

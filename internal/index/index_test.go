@@ -241,3 +241,25 @@ func TestSearch(t *testing.T) {
 		t.Errorf("no-match = %d want 0", len(got))
 	}
 }
+
+func TestLinkGraph(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/a.md)\n[b](/b.md)\n",
+		"a.md":     "---\ntype: note\n---\n[b](/b.md)\n[b again](/b.md)\n[gone](/nope.md)\n",
+		"b.md":     "---\ntype: note\n---\nleaf, no links\n",
+	})
+	a, _ := idx.Resolve("a.md")
+
+	// outgoing links deduped by target (a links to /b.md twice)
+	if out := idx.OutLinks(a); len(out) != 2 || out[0].To != "/b.md" || out[1].To != "/nope.md" {
+		t.Fatalf("a out-links = %+v want [/b.md /nope.md] (deduped)", out)
+	}
+
+	// backlinks deduped by source, sorted by path (a links to /b.md twice, counts once)
+	if bl := idx.Backlinks("/b.md"); len(bl) != 2 || bl[0].From != "/a.md" || bl[1].From != "/index.md" {
+		t.Errorf("backlinks /b.md = %+v (want a.md then index.md, deduped)", bl)
+	}
+	if bl := idx.Backlinks("/nope.md"); len(bl) != 1 || bl[0].From != "/a.md" {
+		t.Errorf("backlinks /nope.md = %+v (a.md links to it)", bl)
+	}
+}

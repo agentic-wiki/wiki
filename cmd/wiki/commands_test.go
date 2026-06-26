@@ -149,3 +149,28 @@ func TestCmdSearch(t *testing.T) {
 		t.Errorf("json search: %q", out)
 	}
 }
+
+func TestCmdLinkGraph(t *testing.T) {
+	t.Chdir(writeBundle(t))
+
+	// links: index.md -> /guide.md
+	if out, code := capture(t, func() int { return cmdLinks([]string{"/index.md"}) }); code != 0 || !strings.Contains(out, "/guide.md") {
+		t.Errorf("links: %q (%d)", out, code)
+	}
+	// guide.md has no outgoing links -> exit 1
+	if _, code := capture(t, func() int { return cmdLinks([]string{"guide.md"}) }); code != 1 {
+		t.Errorf("links none exit=%d want 1", code)
+	}
+	// backlinks: guide.md <- index.md
+	if out, code := capture(t, func() int { return cmdBacklinks([]string{"guide.md"}) }); code != 0 || !strings.Contains(out, "/index.md") {
+		t.Errorf("backlinks: %q (%d)", out, code)
+	}
+	// flat.md has no backlinks -> exit 1
+	if _, code := capture(t, func() int { return cmdBacklinks([]string{"flat.md"}) }); code != 1 {
+		t.Errorf("backlinks none exit=%d want 1", code)
+	}
+	// missing target -> exit 2
+	if _, code := capture(t, func() int { return cmdLinks([]string{"nope.md"}) }); code != 2 {
+		t.Errorf("links missing exit=%d want 2", code)
+	}
+}

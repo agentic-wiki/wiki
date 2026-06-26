@@ -31,6 +31,8 @@ wiki search "language model" --lines     # full-text search (--type, --tag, --pa
 wiki tasks                               # open checkbox tasks (--all, --done, --path)
 wiki unresolved                          # broken internal links
 wiki orphans                             # entries with no incoming links
+wiki links /index.md                     # outgoing links (unique targets)
+wiki backlinks /finance/income.md        # entries that link here
 wiki check                               # report conformance + health issues
 wiki version
 ```

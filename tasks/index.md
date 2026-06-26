@@ -14,7 +14,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [path handling (-C / --path / positional)](/2-query-surface/005-path-handling.md)
 
 ## 3 — Graph & mutation
-- [ ] [link graph](/3-graph-and-mutation/001-link-graph.md)
 - [ ] [move & rename](/3-graph-and-mutation/002-move-rename.md)
 - [ ] [init scaffold](/3-graph-and-mutation/003-init-scaffold.md)
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
@@ -32,3 +31,4 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [README — install + modernization](/4-release-and-docs/001-readme-and-install.md): curl one-liners, three-layer framing, dogfood roadmap (URL liveness verified at publish).
 - [x] [read & outline](/2-query-surface/001-read-and-outline.md): body (frontmatter stripped) + heading hierarchy, with a shared `Resolve` (path or basename).
 - [x] [search](/2-query-surface/002-search.md): case-insensitive full-text (frontmatter + body), `--type/--tag/--path` + grep-style `--lines`; also fixed flags-after-positional for read/outline.
+- [x] [link graph](/3-graph-and-mutation/001-link-graph.md): `links` (outgoing) + `backlinks` (incoming).
