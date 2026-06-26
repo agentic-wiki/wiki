@@ -31,7 +31,7 @@ commands:
   links         an entry's outgoing links
   backlinks     entries that link to an entry
   move          relocate or rename an entry, rewriting links to it (--dry-run)
-  check         report conformance + health issues
+  check         report conformance + health issues (--fix repairs safe ones)
   version       print the version
 
 run 'wiki <command> -h' to see a command's flags

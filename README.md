@@ -35,6 +35,7 @@ wiki links /index.md                       # outgoing links (unique targets)
 wiki backlinks /finance/income.md          # entries that link here
 wiki move /a.md /archive/a.md --dry-run    # relocate/rename + rewrite links to it
 wiki check                                 # report conformance + health issues
+wiki check --fix                           # repair safe issues (e.g. sync okf_version)
 wiki version
 ```
 

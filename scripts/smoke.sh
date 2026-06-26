@@ -158,6 +158,13 @@ mkdir -p "$TMP/fresh"
 test -f "$TMP/fresh/wiki.toml"
 test -f "$TMP/fresh/.gitignore"
 
+echo "--- check --fix syncs okf_version drift ---"
+sed -i.bak 's/okf_version: "0.1"/okf_version: "0.2"/' "$TMP/fresh/index.md" && rm -f "$TMP/fresh/index.md.bak"
+( cd "$TMP/fresh" && contains "$($BIN check)" "okf_version" )   # drift is flagged
+( cd "$TMP/fresh" && contains "$($BIN check --fix)" "fixed" )   # and repaired
+( cd "$TMP/fresh" && $BIN check >/dev/null )                    # now clean
+contains "$(cat "$TMP/fresh/index.md")" 'okf_version: "0.1"'
+
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"
 test -f "$TMP/finance/expenses.md"

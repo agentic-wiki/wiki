@@ -16,7 +16,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [scaffold registry (--template / --from / skill install)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [lint + normalize non-root-absolute links](/3-graph-and-mutation/006-relative-link-lint.md)
-- [ ] [check --fix (repair drift)](/3-graph-and-mutation/007-check-fix.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Debt
@@ -33,3 +32,4 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [init](/3-graph-and-mutation/003-init-scaffold.md): scaffold a fresh check-clean bundle from an embedded starter (`go:embed`); `--force` for non-empty dirs.
 - [x] Hardening + coverage pass: fixed a `move` path-traversal (plus escaping link-targets, CRLF frontmatter, link titles, JSON `null`→`[]`).
 - [x] [path handling](/2-query-surface/005-path-handling.md): `--root` to operate on a bundle elsewhere (redirects discovery, no chdir) + `--path`→`--prefix`, settling the model: `--root` (which bundle, OS path) / positional subject + `--prefix` filter (bundle paths).
+- [x] [check --fix](/3-graph-and-mutation/007-check-fix.md): first writing command, repairs safe conformance drift (today, the root `okf_version` badge), validates before writing, reports each change.

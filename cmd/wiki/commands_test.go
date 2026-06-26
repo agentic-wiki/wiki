@@ -284,6 +284,40 @@ func TestRun(t *testing.T) {
 	}
 }
 
+func TestCmdCheckFix(t *testing.T) {
+	dir := writeBundle(t)
+	// Introduce okf_version drift on the bundle-root index.md.
+	if err := os.WriteFile(filepath.Join(dir, "index.md"),
+		[]byte("---\ntype: index\nokf_version: \"0.2\"\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	// Plain check flags the drift (a warning, so exit 0).
+	if out, _ := capture(t, func() int { return cmdCheck(nil) }); !strings.Contains(out, "okf_version") {
+		t.Fatalf("check should flag drift: %q", out)
+	}
+
+	// check --fix repairs it and reports what changed.
+	out, code := capture(t, func() int { return cmdCheck([]string{"--fix"}) })
+	if code != 0 {
+		t.Errorf("check --fix exit=%d want 0", code)
+	}
+	if !strings.Contains(out, "fixed") || !strings.Contains(out, "okf_version") {
+		t.Errorf("check --fix should report the fix: %q", out)
+	}
+
+	// The bundle is now clean.
+	if out, _ := capture(t, func() int { return cmdCheck(nil) }); !strings.Contains(out, "ok: no issues found") {
+		t.Errorf("post-fix check not clean: %q", out)
+	}
+
+	// JSON --fix surfaces a fixed[] key even when there is nothing left to fix.
+	if out, _ := capture(t, func() int { return cmdCheck([]string{"--fix", "--format", "json"}) }); !strings.Contains(out, `"fixed"`) {
+		t.Errorf("json --fix missing fixed key: %q", out)
+	}
+}
+
 func TestGlobalRoot(t *testing.T) {
 	t.Cleanup(func() { rootDir = "" }) // global flag state; keep other tests independent
 	t.Chdir(t.TempDir())               // cwd has no bundle

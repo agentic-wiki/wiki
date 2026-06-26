@@ -460,6 +460,83 @@ func (idx *Index) Check() []Issue {
 	return issues
 }
 
+// Fix is a single safe repair that `check --fix` can apply.
+type Fix struct {
+	Entry string `json:"entry"`
+	Field string `json:"field"`
+	From  string `json:"from"`
+	To    string `json:"to"`
+}
+
+// Fix computes the safe-to-write repairs for the bundle (currently syncing the
+// bundle-root index.md okf_version badge to the value the declared spec embeds).
+// It validates each rewrite before touching disk, and only writes when apply is
+// true; a file is never left partially edited.
+func (idx *Index) Fix(apply bool) ([]Fix, error) {
+	var fixes []Fix
+	root, ok := idx.byPath["/index.md"]
+	if !ok {
+		return fixes, nil
+	}
+	if want, embedsOKF := idx.Bundle.OKFVersion(); embedsOKF {
+		if got := parse.String(root.fm, "okf_version"); got != want {
+			abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(root.Path, "/")))
+			raw, err := os.ReadFile(abs)
+			if err != nil {
+				return nil, err
+			}
+			updated, err := setFrontmatterValue(string(raw), "okf_version", want)
+			if err != nil {
+				return nil, err
+			}
+			if apply {
+				if err := os.WriteFile(abs, []byte(updated), 0o644); err != nil {
+					return nil, err
+				}
+			}
+			fixes = append(fixes, Fix{root.Path, "okf_version", got, want})
+		}
+	}
+	return fixes, nil
+}
+
+// setFrontmatterValue returns content with the frontmatter `key` set to a quoted
+// value, updating an existing key in place or inserting it as the last
+// frontmatter line. It errors if there is no frontmatter block, and preserves
+// the file's existing line endings.
+func setFrontmatterValue(content, key, value string) (string, error) {
+	lines := strings.Split(content, "\n")
+	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
+		return "", fmt.Errorf("no frontmatter to update")
+	}
+	closeIdx := -1
+	for i := 1; i < len(lines); i++ {
+		if strings.TrimRight(lines[i], "\r") == "---" {
+			closeIdx = i
+			break
+		}
+	}
+	if closeIdx == -1 {
+		return "", fmt.Errorf("unterminated frontmatter")
+	}
+	cr := ""
+	if strings.HasSuffix(lines[0], "\r") {
+		cr = "\r"
+	}
+	newLine := fmt.Sprintf(`%s: "%s"`, key, value) + cr
+	for i := 1; i < closeIdx; i++ {
+		if k, _, ok := strings.Cut(strings.TrimRight(lines[i], "\r"), ":"); ok && strings.TrimSpace(k) == key {
+			lines[i] = newLine
+			return strings.Join(lines, "\n"), nil
+		}
+	}
+	out := make([]string, 0, len(lines)+1)
+	out = append(out, lines[:closeIdx]...)
+	out = append(out, newLine)
+	out = append(out, lines[closeIdx:]...)
+	return strings.Join(out, "\n"), nil
+}
+
 func hasPathPrefix(path, prefix string) bool {
 	return strings.HasPrefix(strings.TrimPrefix(path, "/"), strings.TrimPrefix(prefix, "/"))
 }

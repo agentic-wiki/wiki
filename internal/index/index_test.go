@@ -177,6 +177,78 @@ func hasWarning(issues []Issue, entry, substr string) bool {
 	return false
 }
 
+func TestFix(t *testing.T) {
+	readRoot := func(idx *Index) string {
+		b, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	// Drift: the fix is applied, the file rewritten, and a rebuild is clean.
+	drift := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	fixes, err := drift.Fix(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fixes) != 1 || fixes[0].Field != "okf_version" || fixes[0].From != "0.2" || fixes[0].To != "0.1" {
+		t.Fatalf("drift fix = %+v", fixes)
+	}
+	if !strings.Contains(readRoot(drift), `okf_version: "0.1"`) {
+		t.Errorf("file not synced:\n%s", readRoot(drift))
+	}
+	rebuilt, err := Build(drift.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rebuilt.Check(); len(got) != 0 {
+		t.Errorf("post-fix check not clean: %+v", got)
+	}
+
+	// Missing: okf_version is inserted (From is empty).
+	missing := build(t, map[string]string{"index.md": "---\ntype: index\n---\nhome\n"})
+	if f, _ := missing.Fix(true); len(f) != 1 || f[0].From != "" || f[0].To != "0.1" {
+		t.Errorf("missing fix = %+v", f)
+	}
+	if !strings.Contains(readRoot(missing), `okf_version: "0.1"`) {
+		t.Errorf("okf_version not inserted:\n%s", readRoot(missing))
+	}
+
+	// In sync: no-op.
+	synced := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.1\"\n---\nhome\n"})
+	if f, _ := synced.Fix(true); len(f) != 0 {
+		t.Errorf("synced needs no fix, got %+v", f)
+	}
+
+	// Dry run: reports the change but does not touch disk.
+	dry := build(t, map[string]string{"index.md": "---\ntype: index\nokf_version: \"0.2\"\n---\nhome\n"})
+	before := readRoot(dry)
+	if f, _ := dry.Fix(false); len(f) != 1 {
+		t.Errorf("dry run should report 1 fix, got %+v", f)
+	}
+	if readRoot(dry) != before {
+		t.Errorf("dry run wrote to disk")
+	}
+}
+
+func TestSetFrontmatterValue(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"update", "---\ntype: index\nokf_version: \"0.2\"\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
+		{"insert", "---\ntype: index\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
+		{"crlf", "---\r\ntype: index\r\n---\r\nbody\r\n", "---\r\ntype: index\r\nokf_version: \"0.1\"\r\n---\r\nbody\r\n"},
+	}
+	for _, c := range cases {
+		got, err := setFrontmatterValue(c.in, "okf_version", "0.1")
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %q err=%v, want %q", c.name, got, err, c.want)
+		}
+	}
+	if _, err := setFrontmatterValue("no frontmatter here\n", "okf_version", "0.1"); err == nil {
+		t.Errorf("expected an error when there is no frontmatter")
+	}
+}
+
 func TestResolve(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md":          "---\ntype: index\n---\nhome\n",

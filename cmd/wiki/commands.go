@@ -203,25 +203,57 @@ func cmdOrphans(args []string) int {
 func cmdCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")
+	fix := fs.Bool("fix", false, "apply safe repairs, e.g. sync okf_version (writes files)")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
 
+	var fixes []index.Fix
+	if *fix {
+		applied, err := idx.Fix(true)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wiki:", err)
+			return 2
+		}
+		fixes = applied
+		if len(applied) > 0 { // re-read so remaining issues reflect the writes
+			if rebuilt, c := loadIndex(); c == 0 {
+				idx = rebuilt
+			}
+		}
+	}
+
 	issues := idx.Check()
 	errs := 0
 	var lines []string
+	for _, fx := range fixes {
+		lines = append(lines, fmt.Sprintf("fixed   %s: %s %q -> %q", fx.Entry, fx.Field, fx.From, fx.To))
+	}
 	for _, is := range issues {
 		if is.Level == "error" {
 			errs++
 		}
 		lines = append(lines, fmt.Sprintf("%-7s %s: %s", is.Level, is.Entry, is.Msg))
 	}
-	if len(issues) == 0 {
+	if len(lines) == 0 {
 		lines = []string{"ok: no issues found"}
 	}
-	output.Emit(os.Stdout, *format, lines, issues)
+	if *fix {
+		if fixes == nil {
+			fixes = []index.Fix{}
+		}
+		if issues == nil {
+			issues = []index.Issue{}
+		}
+		output.Emit(os.Stdout, *format, lines, struct {
+			Fixed  []index.Fix   `json:"fixed"`
+			Issues []index.Issue `json:"issues"`
+		}{fixes, issues})
+	} else {
+		output.Emit(os.Stdout, *format, lines, issues)
+	}
 	if errs > 0 {
 		return 1
 	}
