@@ -16,7 +16,7 @@ import (
 func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	force := fs.Bool("force", false, "write into a non-empty directory")
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	dir := "."
 	if fs.NArg() >= 1 {
@@ -42,7 +42,7 @@ func cmdInit(args []string) int {
 
 func cmdStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -88,7 +88,7 @@ func cmdStatus(args []string) int {
 
 func cmdList(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	typ := fs.String("type", "", "filter by type")
 	tag := fs.String("tag", "", "filter by tag")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
@@ -153,7 +153,7 @@ func emitCounts(format string, rows []countRow, withCounts bool) int {
 
 // countFlags registers the flags shared by tags/properties/property.
 func countFlags(fs *flag.FlagSet, unit string) (format, sortBy, prefix *string, counts *bool) {
-	format = fs.String("format", "text", "output format: text|json")
+	format = fs.String("format", "text", "output format: text|json|csv|tsv")
 	counts = fs.Bool("counts", false, "show entry count per "+unit)
 	sortBy = fs.String("sort", "name", "sort order: name|count")
 	prefix = fs.String("prefix", "", "filter to a path prefix")
@@ -199,7 +199,7 @@ func cmdProperty(args []string) int {
 
 func cmdTasks(args []string) int {
 	fs := flag.NewFlagSet("tasks", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	all := fs.Bool("all", false, "include done tasks")
 	done := fs.Bool("done", false, "only done tasks")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
@@ -245,7 +245,7 @@ func cmdTasks(args []string) int {
 
 func cmdUnresolved(args []string) int {
 	fs := flag.NewFlagSet("unresolved", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -266,7 +266,7 @@ func cmdUnresolved(args []string) int {
 
 func cmdOrphans(args []string) int {
 	fs := flag.NewFlagSet("orphans", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -288,7 +288,7 @@ func cmdOrphans(args []string) int {
 
 func cmdCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fix := fs.Bool("fix", false, "apply safe repairs, e.g. sync okf_version (writes files)")
 	fs.Parse(args)
 	idx, code := loadIndex()
@@ -352,7 +352,7 @@ func cmdCheck(args []string) int {
 // is the preview.
 func cmdTidy(args []string) int {
 	fs := flag.NewFlagSet("tidy", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	links := fs.Bool("links", false, "normalize relative links to root-absolute")
 	slug := fs.Bool("slug", false, "rename spaced filenames to hyphenated slugs (rewriting inbound links)")
 	all := fs.Bool("all", false, "apply every category")
@@ -410,7 +410,7 @@ func cmdTidy(args []string) int {
 
 func cmdRead(args []string) int {
 	fs := flag.NewFlagSet("read", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki read <file>")
@@ -443,7 +443,7 @@ func cmdRead(args []string) int {
 
 func cmdOutline(args []string) int {
 	fs := flag.NewFlagSet("outline", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki outline <file>")
@@ -476,7 +476,7 @@ func cmdOutline(args []string) int {
 
 func cmdSearch(args []string) int {
 	fs := flag.NewFlagSet("search", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	typ := fs.String("type", "", "filter by type")
 	tag := fs.String("tag", "", "filter by tag")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
@@ -546,7 +546,7 @@ func parseWith2Args(fs *flag.FlagSet, args []string) (string, string, bool) {
 func cmdMove(args []string) int {
 	fs := flag.NewFlagSet("move", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	src, dest, ok := parseWith2Args(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki move <src> <dest> [--dry-run]")
@@ -579,7 +579,7 @@ func emitMove(res *index.MoveResult, dryRun bool, format string) {
 
 func cmdLinks(args []string) int {
 	fs := flag.NewFlagSet("links", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki links <file>")
@@ -608,7 +608,7 @@ func cmdLinks(args []string) int {
 
 func cmdBacklinks(args []string) int {
 	fs := flag.NewFlagSet("backlinks", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json")
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki backlinks <file>")

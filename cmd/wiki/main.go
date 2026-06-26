@@ -40,7 +40,7 @@ commands:
 
 run 'wiki <command> -h' to see a command's flags
 --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
-every command accepts --format text|json (default text)
+every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
 exit codes: 0 results, 1 none, 2 error
 `
 

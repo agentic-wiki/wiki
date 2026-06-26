@@ -43,7 +43,7 @@ wiki check --fix                           # repair safe issues (e.g. sync okf_v
 wiki version
 ```
 
-Every command takes `--format text|json`. Exit codes are `0` results, `1` none, `2` error, so commands compose in scripts:
+Every command takes `--format text|json|csv|tsv` (csv/tsv suit the list-shaped commands; other commands fall back to text). Exit codes are `0` results, `1` none, `2` error, so commands compose in scripts:
 
 ```sh
 wiki unresolved >/dev/null && echo "broken links found" || echo "clean"

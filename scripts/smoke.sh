@@ -117,6 +117,12 @@ contains "$DONE" "file the Q1 report"
 echo "--- json output ---"
 contains "$($BIN list --type concept --format json)" '"type": "concept"'
 
+echo "--- csv output: header row from json fields ---"
+contains "$($BIN list --type concept --format csv)" "path,name,type,title,tags"
+
+echo "--- tsv output: tab-separated header ---"
+contains "$($BIN property type --format tsv)" "$(printf 'name\tcount')"
+
 echo "--- read strips frontmatter ---"
 READ="$($BIN read /finance/income.md)"
 contains "$READ" "Monthly income tracking"
