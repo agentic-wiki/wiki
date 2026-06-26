@@ -1,6 +1,6 @@
 # Agentic Wiki CLI
 
-A standalone CLI for [agentic-wiki](https://github.com/agentic-wiki/spec) bundles: plain-markdown knowledge bases on the Open Knowledge Format. It indexes a bundle and answers structured queries (by type, tag, path), reports the link graph (broken links, orphans), lists tasks, and checks conformance. No Obsidian, no daemon, no runtime dependencies, a single static Go binary.
+A standalone CLI for [agentic-wiki](https://github.com/agentic-wiki/spec) bundles: plain-markdown knowledge bases on the Open Knowledge Format. It indexes a bundle and answers structured queries (by type, tag, path prefix), reports the link graph (broken links, orphans), lists tasks, and checks conformance. No Obsidian, no daemon, no runtime dependencies, a single static Go binary.
 
 Three layers come together: the **format** (markdown bundles, defined in the [spec repo](https://github.com/agentic-wiki/spec)); the **tool** (this repo, `wiki`, built for agents to call, though a human can run every command); and the **skill** (the manual an agent follows to drive the tool). This repo is the tool.
 
@@ -46,11 +46,12 @@ wiki unresolved >/dev/null && echo "broken links found" || echo "clean"
 
 Create a new bundle with `wiki init [dir]` (default: the current directory): it writes a small example, ready to use with `wiki`. Pass `--force` to write into a non-empty directory.
 
-File arguments are **bundle paths**, not OS paths:
-- Absolute path from the bundle's root: `/finance/income.md`
-- A bare `income.md` basename: resolved when it's unique. An ambiguous basename errors
+File arguments are **bundle paths**, not filesystem paths: they name an entry *inside* the wiki bundle, the same way links do. Two forms:
 
-This is independent of `--root` and the working directory. `--prefix` takes the same root-absolute form to narrow a listing to a subtree.
+- a root-absolute path from the bundle root: `/finance/income.md`
+- a bare basename: `income.md`, resolved when it's unambiguous (a name shared by two entries errors)
+
+Because they resolve against the bundle's index rather than the working directory, they mean the same thing wherever you run from and whatever `--root` points at. `--prefix` takes the same root-absolute form to scope a listing to a subtree.
 
 ## Design
 
