@@ -367,3 +367,22 @@ func TestMoveValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveTitledLink(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[t](/a.md \"keep me\")\n[u](/a.md#sec 'k')\n",
+		"a.md":     "---\ntype: note\n---\nx\n",
+	})
+	dir := idx.Bundle.Dir
+	if _, err := idx.Move("/a.md", "/b.md", false); err != nil {
+		t.Fatal(err)
+	}
+	s, err := os.ReadFile(filepath.Join(dir, "index.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the title and the anchor are both preserved through the rewrite
+	if !strings.Contains(string(s), `[t](/b.md "keep me")`) || !strings.Contains(string(s), `[u](/b.md#sec 'k')`) {
+		t.Errorf("title/anchor not preserved on rewrite: %q", s)
+	}
+}

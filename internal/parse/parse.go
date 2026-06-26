@@ -32,10 +32,12 @@ type Heading struct {
 // YAML subset we use: scalars and string lists. Values are string or []string.
 func Frontmatter(content string) (fm map[string]any, body string) {
 	fm = map[string]any{}
-	if !strings.HasPrefix(content, "---\n") {
-		return fm, content
+	rest, ok := strings.CutPrefix(content, "---\n")
+	if !ok {
+		if rest, ok = strings.CutPrefix(content, "---\r\n"); !ok {
+			return fm, content // no frontmatter (handles LF and CRLF openers)
+		}
 	}
-	rest := content[len("---\n"):]
 	end := strings.Index(rest, "\n---")
 	if end < 0 {
 		return fm, content
@@ -149,6 +151,10 @@ func InternalLinks(body string) []Link {
 	for i, line := range maskedLines(body) {
 		for _, m := range linkRe.FindAllStringSubmatch(line, -1) {
 			target := strings.TrimSpace(m[2])
+			// drop an optional link title: [text](/path "title")
+			if sp := strings.IndexAny(target, " \t"); sp >= 0 {
+				target = target[:sp]
+			}
 			if !strings.HasPrefix(target, "/") {
 				continue
 			}

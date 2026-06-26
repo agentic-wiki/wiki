@@ -5,6 +5,23 @@ import (
 	"testing"
 )
 
+func TestFrontmatterCRLF(t *testing.T) {
+	fm, body := Frontmatter("---\r\ntype: note\r\ntitle: A\r\n---\r\nbody line\r\n")
+	if fm["type"] != "note" || fm["title"] != "A" {
+		t.Errorf("CRLF frontmatter: type=%v title=%v", fm["type"], fm["title"])
+	}
+	if body != "body line\r\n" {
+		t.Errorf("CRLF body = %q", body)
+	}
+}
+
+func TestInternalLinksTitle(t *testing.T) {
+	links := InternalLinks(`see [x](/a.md "a title") and [y](/b.md#sec 'y')`)
+	if len(links) != 2 || links[0].Target != "/a.md" || links[1].Target != "/b.md" {
+		t.Errorf("titled links = %+v (want /a.md, /b.md)", links)
+	}
+}
+
 func TestFrontmatter(t *testing.T) {
 	content := "---\ntype: concept\ntitle: \"A: B\"\ntags: [x, y, z]\n---\n\n# Body\ntext\n"
 	fm, body := Frontmatter(content)

@@ -354,7 +354,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
 
 	// rewrite incoming links, anchored to the lines the parser found real links on
-	re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(src.Path) + `(#[^)]*)?\)`)
+	re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(src.Path) + `(#[^)\s]*)?(\s[^)]*)?\)`)
 	for _, e := range idx.Entries {
 		onLine := map[int]bool{}
 		for _, l := range e.Links {
@@ -378,8 +378,8 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 			}
 			lines[i] = re.ReplaceAllStringFunc(lines[i], func(m string) string {
 				n++
-				anchor := re.FindStringSubmatch(m)[1]
-				return "](" + dest + anchor + ")"
+				sub := re.FindStringSubmatch(m) // [1]=#anchor, [2]=" title"
+				return "](" + dest + sub[1] + sub[2] + ")"
 			})
 		}
 		if n == 0 {

@@ -7,6 +7,15 @@ import (
 	"testing"
 )
 
+func TestOKFVersion(t *testing.T) {
+	if v, ok := (&Bundle{Spec: "0.1"}).OKFVersion(); !ok || v != "0.1" {
+		t.Errorf("OKFVersion(0.1) = %q, %v; want 0.1, true", v, ok)
+	}
+	if _, ok := (&Bundle{Spec: "9.9"}).OKFVersion(); ok {
+		t.Errorf("unknown spec should not embed OKF")
+	}
+}
+
 func TestParseConfig(t *testing.T) {
 	spec, types := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
 	if spec != "0.1" {

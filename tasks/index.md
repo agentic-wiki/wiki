@@ -32,3 +32,4 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [link graph](/3-graph-and-mutation/001-link-graph.md): `links` (outgoing) + `backlinks` (incoming).
 - [x] [move](/3-graph-and-mutation/002-move-rename.md): relocate/rename an entry + rewrite every link to it (precise, anchor-preserving, `--dry-run`).
 - [x] [init](/3-graph-and-mutation/003-init-scaffold.md): scaffold a fresh check-clean bundle from an embedded starter (`go:embed`); `--force` for non-empty dirs.
+- [x] Hardening + coverage pass: fixed a `move` path-traversal (plus escaping link-targets, CRLF frontmatter, link titles, JSON `null`→`[]`).

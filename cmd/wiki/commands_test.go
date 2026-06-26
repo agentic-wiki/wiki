@@ -23,7 +23,7 @@ func writeBundle(t *testing.T) string {
 	}
 	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n")
 	write("index.md", "---\ntype: index\nokf_version: \"0.1\"\n---\n# Home\n[g](/guide.md)\n")
-	write("guide.md", "---\ntype: note\ntitle: Guide\n---\n# Guide\nintro text\n## Setup\nstep one\n### Detail\nfine print\n## Usage\nrun it\n")
+	write("guide.md", "---\ntype: note\ntitle: Guide\n---\n# Guide\nintro text\n## Setup\nstep one\n### Detail\nfine print\n## Usage\nrun it\n- [ ] try the CLI\n")
 	write("flat.md", "---\ntype: note\n---\nno headings here\n")
 	return dir
 }
@@ -242,5 +242,44 @@ func TestCmdInit(t *testing.T) {
 	}
 	if _, code := capture(t, func() int { return cmdInit([]string{"--force"}) }); code != 0 {
 		t.Errorf("init --force exit=%d want 0", code)
+	}
+}
+
+func TestQueryCommands(t *testing.T) {
+	t.Chdir(writeBundle(t))
+	cases := []struct {
+		name string
+		run  func() int
+		want int
+	}{
+		{"status", func() int { return cmdStatus(nil) }, 0},
+		{"list all", func() int { return cmdList(nil) }, 0},
+		{"list empty filter", func() int { return cmdList([]string{"--type", "nope"}) }, 1},
+		{"tasks", func() int { return cmdTasks(nil) }, 0},                   // guide.md has an open checkbox
+		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 1}, // no broken links
+		{"orphans", func() int { return cmdOrphans(nil) }, 0},               // flat.md is an orphan
+		{"check (clean)", func() int { return cmdCheck(nil) }, 0},
+	}
+	for _, tc := range cases {
+		if _, code := capture(t, tc.run); code != tc.want {
+			t.Errorf("%s: exit=%d want %d", tc.name, code, tc.want)
+		}
+	}
+}
+
+func TestRun(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"no args", nil, 2},
+		{"unknown command", []string{"frobnicate"}, 2},
+		{"help", []string{"help"}, 0},
+		{"version", []string{"version"}, 0},
+	} {
+		if _, code := capture(t, func() int { return run(tc.args) }); code != tc.want {
+			t.Errorf("run(%v) = %d, want %d", tc.args, code, tc.want)
+		}
 	}
 }
