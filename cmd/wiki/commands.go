@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/agentic-wiki/wiki/internal/index"
 	"github.com/agentic-wiki/wiki/internal/output"
 	"github.com/agentic-wiki/wiki/internal/parse"
 )
@@ -318,6 +319,54 @@ func parseWithArg(fs *flag.FlagSet, args []string) (string, bool) {
 		return "", false
 	}
 	return arg, true
+}
+
+// parseWith2Args is parseWithArg for commands taking exactly two positionals.
+func parseWith2Args(fs *flag.FlagSet, args []string) (string, string, bool) {
+	fs.Parse(args)
+	if fs.NArg() < 2 {
+		return "", "", false
+	}
+	a, b := fs.Arg(0), fs.Arg(1)
+	fs.Parse(fs.Args()[2:]) // pick up flags that followed the positionals
+	if fs.NArg() != 0 {
+		return "", "", false
+	}
+	return a, b, true
+}
+
+func cmdMove(args []string) int {
+	fs := flag.NewFlagSet("move", flag.ExitOnError)
+	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
+	format := fs.String("format", "text", "output format: text|json")
+	src, dest, ok := parseWith2Args(fs, args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: wiki move <src> <dest> [--dry-run]")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	res, err := idx.Move(src, dest, *dryRun)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	emitMove(res, *dryRun, *format)
+	return 0
+}
+
+func emitMove(res *index.MoveResult, dryRun bool, format string) {
+	verb := "moved"
+	if dryRun {
+		verb = "would move"
+	}
+	lines := []string{fmt.Sprintf("%s %s -> %s", verb, res.From, res.To)}
+	for _, rw := range res.Rewrites {
+		lines = append(lines, fmt.Sprintf("  %d link(s) in %s", rw.Links, rw.Path))
+	}
+	output.Emit(os.Stdout, format, lines, res)
 }
 
 func cmdLinks(args []string) int {

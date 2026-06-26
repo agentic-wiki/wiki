@@ -174,3 +174,46 @@ func TestCmdLinkGraph(t *testing.T) {
 		t.Errorf("links missing exit=%d want 2", code)
 	}
 }
+
+func TestCmdMove(t *testing.T) {
+	t.Chdir(writeBundle(t))
+
+	// dry-run previews and writes nothing
+	if out, code := capture(t, func() int { return cmdMove([]string{"--dry-run", "/guide.md", "/docs/guide.md"}) }); code != 0 || !strings.Contains(out, "would move") {
+		t.Errorf("dry-run move: %q (%d)", out, code)
+	}
+	if _, err := os.Stat("docs/guide.md"); !os.IsNotExist(err) {
+		t.Errorf("dry-run wrote the file")
+	}
+
+	// real move relocates the file and rewrites the incoming link
+	if _, code := capture(t, func() int { return cmdMove([]string{"/guide.md", "/docs/guide.md"}) }); code != 0 {
+		t.Fatalf("move exit %d", code)
+	}
+	if _, err := os.Stat("docs/guide.md"); err != nil {
+		t.Errorf("file not moved: %v", err)
+	}
+	if out, _ := capture(t, func() int { return cmdRead([]string{"/index.md"}) }); !strings.Contains(out, "/docs/guide.md") {
+		t.Errorf("incoming link not rewritten: %q", out)
+	}
+
+	// move also renames (same dir, new basename) — no separate command needed
+	if _, code := capture(t, func() int { return cmdMove([]string{"/docs/guide.md", "/docs/manual.md"}) }); code != 0 {
+		t.Errorf("rename-via-move exit %d", code)
+	}
+	if _, err := os.Stat("docs/manual.md"); err != nil {
+		t.Errorf("rename-via-move failed: %v", err)
+	}
+
+	// errors: missing src, one arg
+	if _, code := capture(t, func() int { return cmdMove([]string{"/nope.md", "/x.md"}) }); code != 2 {
+		t.Errorf("move missing src exit=%d want 2", code)
+	}
+	if _, code := capture(t, func() int { return cmdMove([]string{"/index.md"}) }); code != 2 {
+		t.Errorf("move one-arg exit=%d want 2", code)
+	}
+	// refuse overwriting an existing destination
+	if _, code := capture(t, func() int { return cmdMove([]string{"/index.md", "/flat.md"}) }); code != 2 {
+		t.Errorf("move onto existing dest exit=%d want 2", code)
+	}
+}

@@ -263,3 +263,89 @@ func TestLinkGraph(t *testing.T) {
 		t.Errorf("backlinks /nope.md = %+v (a.md links to it)", bl)
 	}
 }
+
+func TestMove(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
+		"b.md":     "---\ntype: note\n---\nsee [a](/a.md#intro) and again [a](/a.md)\n",
+		"c.md":     "---\ntype: note\n---\nprose /a.md not a link\n```\n[code](/a.md)\n```\n",
+		"a.md":     "---\ntype: note\n---\nthe target\n",
+	})
+	dir := idx.Bundle.Dir
+	read := func(rel string) string {
+		b, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read %s: %v", rel, err)
+		}
+		return string(b)
+	}
+
+	res, err := idx.Move("/a.md", "/sub/a.md", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.From != "/a.md" || res.To != "/sub/a.md" {
+		t.Errorf("res = %+v", res)
+	}
+	// rewrites in index.md (1) and b.md (2 on one line); NOT c.md (prose + fenced code)
+	got := map[string]int{}
+	for _, rw := range res.Rewrites {
+		got[rw.Path] = rw.Links
+	}
+	if len(res.Rewrites) != 2 || got["/index.md"] != 1 || got["/b.md"] != 2 {
+		t.Errorf("rewrites = %+v", res.Rewrites)
+	}
+
+	// the file moved, content intact
+	if !strings.Contains(read("sub/a.md"), "the target") {
+		t.Errorf("moved content wrong: %q", read("sub/a.md"))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.md")); !os.IsNotExist(err) {
+		t.Errorf("source still present after move")
+	}
+	// links rewritten; anchor preserved
+	if !strings.Contains(read("index.md"), "[a](/sub/a.md)") {
+		t.Errorf("index.md not rewritten: %q", read("index.md"))
+	}
+	if !strings.Contains(read("b.md"), "[a](/sub/a.md#intro)") || !strings.Contains(read("b.md"), "again [a](/sub/a.md)") {
+		t.Errorf("b.md not rewritten/anchor lost: %q", read("b.md"))
+	}
+	// c.md untouched: prose mention + fenced-code link stay as /a.md
+	if c := read("c.md"); strings.Contains(c, "/sub/a.md") || !strings.Contains(c, "/a.md") {
+		t.Errorf("c.md should be untouched: %q", c)
+	}
+}
+
+func TestMoveValidate(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
+		"a.md":     "---\ntype: note\n---\nx\n",
+		"b.md":     "---\ntype: note\n---\ny\n",
+	})
+	dir := idx.Bundle.Dir
+
+	// dry-run: plan computed, nothing written
+	res, err := idx.Move("/a.md", "/z.md", true)
+	if err != nil || !res.DryRun || len(res.Rewrites) != 1 {
+		t.Fatalf("dry-run res=%+v err=%v", res, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "z.md")); !os.IsNotExist(err) {
+		t.Errorf("dry-run wrote the destination")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.md")); err != nil {
+		t.Errorf("dry-run removed the source")
+	}
+
+	for _, tc := range []struct {
+		name, src, dest string
+	}{
+		{"overwrite", "/a.md", "/b.md"},
+		{"non-md dest", "/a.md", "/c"},
+		{"missing src", "/nope.md", "/x.md"},
+		{"dest equals src", "/a.md", "/a.md"},
+	} {
+		if _, err := idx.Move(tc.src, tc.dest, false); err == nil {
+			t.Errorf("%s: expected error", tc.name)
+		}
+	}
+}

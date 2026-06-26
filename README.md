@@ -23,17 +23,18 @@ Other platforms (darwin/amd64, linux/arm64) are on the [releases page](https://g
 Run any command from inside a wiki bundle:
 
 ```sh
-wiki status                              # bundle + index summary
-wiki list --type dataset --tag accounts  # filter entries (--type, --tag, --path)
-wiki read /finance/expenses.md           # print an entry's body (frontmatter stripped)
-wiki outline /finance/expenses.md        # print its heading hierarchy
-wiki search "language model" --lines     # full-text search (--type, --tag, --path, --lines)
-wiki tasks                               # open checkbox tasks (--all, --done, --path)
-wiki unresolved                          # broken internal links
-wiki orphans                             # entries with no incoming links
-wiki links /index.md                     # outgoing links (unique targets)
-wiki backlinks /finance/income.md        # entries that link here
-wiki check                               # report conformance + health issues
+wiki status                                # bundle + index summary
+wiki list --type dataset --tag accounts    # filter entries (--type, --tag, --path)
+wiki read /finance/expenses.md             # print an entry's body (frontmatter stripped)
+wiki outline /finance/expenses.md          # print its heading hierarchy
+wiki search "language model" --lines       # full-text search (--type, --tag, --path, --lines)
+wiki tasks                                 # open checkbox tasks (--all, --done, --path)
+wiki unresolved                            # broken internal links
+wiki orphans                               # entries with no incoming links
+wiki links /index.md                       # outgoing links (unique targets)
+wiki backlinks /finance/income.md          # entries that link here
+wiki move /a.md /archive/a.md --dry-run    # relocate/rename + rewrite links to it
+wiki check                                 # report conformance + health issues
 wiki version
 ```
 

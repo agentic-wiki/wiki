@@ -152,5 +152,15 @@ echo "--- no results => exit 1 ---"
 echo "--- version ---"
 contains "$($BIN version)" "wiki"
 
+echo "--- move --dry-run previews, writes nothing ---"
+contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"
+test -f "$TMP/finance/expenses.md"
+
+echo "--- move relocates and rewrites incoming links ---"
+$BIN move /finance/expenses.md /finance/costs.md >/dev/null
+test -f "$TMP/finance/costs.md"
+! test -f "$TMP/finance/expenses.md"
+contains "$($BIN links /finance/index.md)" "/finance/costs.md"
+
 echo ""
 echo "All smoke tests passed!"

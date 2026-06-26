@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -292,6 +293,98 @@ func (idx *Index) Backlinks(target string) []LinkRef {
 	}
 	slices.SortFunc(refs, func(a, b LinkRef) int { return strings.Compare(a.From, b.From) })
 	return refs
+}
+
+// FileRewrite records how many links were rewritten in one entry during a move.
+type FileRewrite struct {
+	Path  string `json:"path"`
+	Links int    `json:"links"`
+}
+
+// MoveResult describes a (possibly dry-run) move: the relocation and the
+// per-entry link rewrites it entails.
+type MoveResult struct {
+	From     string        `json:"from"`
+	To       string        `json:"to"`
+	DryRun   bool          `json:"dry_run"`
+	Rewrites []FileRewrite `json:"rewrites"`
+}
+
+// Move relocates the entry at srcArg to dest (a root-absolute path) and rewrites
+// every internal link that targets it across the bundle. Links are root-absolute,
+// so only links *to* src need rewriting; the moved file's own links stay valid.
+// With dryRun it computes the plan without writing. There is no rollback: on a
+// mid-way write error it returns what was already done so `unresolved` can surface
+// any leftovers.
+func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
+	src, err := idx.Resolve(srcArg)
+	if err != nil {
+		return nil, err
+	}
+	dest = "/" + filepath.ToSlash(strings.TrimPrefix(dest, "/"))
+	switch {
+	case !strings.HasSuffix(dest, ".md"):
+		return nil, fmt.Errorf("destination must be a .md path: %s", dest)
+	case dest == src.Path:
+		return nil, fmt.Errorf("destination equals source: %s", dest)
+	case idx.FileExists(dest):
+		return nil, fmt.Errorf("destination already exists: %s", dest)
+	}
+	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
+
+	// rewrite incoming links, anchored to the lines the parser found real links on
+	re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(src.Path) + `(#[^)]*)?\)`)
+	for _, e := range idx.Entries {
+		onLine := map[int]bool{}
+		for _, l := range e.Links {
+			if l.Target == src.Path {
+				onLine[l.Line] = true
+			}
+		}
+		if len(onLine) == 0 {
+			continue
+		}
+		raw, err := e.Raw()
+		if err != nil {
+			return res, err
+		}
+		// Link line numbers are body-relative (parsed from the frontmatter-stripped
+		// body), so rewrite within the body and re-attach the frontmatter prefix.
+		_, body := parse.Frontmatter(raw)
+		prefix := raw[:len(raw)-len(body)]
+		lines := strings.Split(body, "\n")
+		n := 0
+		for i := range lines {
+			if !onLine[i+1] {
+				continue
+			}
+			lines[i] = re.ReplaceAllStringFunc(lines[i], func(m string) string {
+				n++
+				anchor := re.FindStringSubmatch(m)[1]
+				return "](" + dest + anchor + ")"
+			})
+		}
+		if n == 0 {
+			continue
+		}
+		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n})
+		if !dryRun {
+			if err := os.WriteFile(e.abs, []byte(prefix+strings.Join(lines, "\n")), 0o644); err != nil {
+				return res, err
+			}
+		}
+	}
+
+	if !dryRun {
+		destAbs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(strings.TrimPrefix(dest, "/")))
+		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
+			return res, err
+		}
+		if err := os.Rename(src.abs, destAbs); err != nil {
+			return res, err
+		}
+	}
+	return res, nil
 }
 
 // Issue is a validation finding.

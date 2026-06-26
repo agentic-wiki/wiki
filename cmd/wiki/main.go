@@ -24,6 +24,7 @@ commands:
   orphans       entries with no incoming links
   links         an entry's outgoing links
   backlinks     entries that link to an entry
+  move          relocate or rename an entry, rewriting links to it (--dry-run)
   check         report conformance + health issues
   version       print the version
 
@@ -68,6 +69,8 @@ func run(args []string) int {
 		return cmdLinks(args[1:])
 	case "backlinks":
 		return cmdBacklinks(args[1:])
+	case "move":
+		return cmdMove(args[1:])
 	case "check":
 		return cmdCheck(args[1:])
 	default:
