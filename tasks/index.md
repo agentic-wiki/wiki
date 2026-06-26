@@ -7,7 +7,6 @@ okf_version: "0.1"
 Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki tasks`. Every entry: `wiki list --type task`. Debt only: `wiki list --type task --tag debt`.
 
 ## 2 — Query surface
-- [ ] [tags & properties](/2-query-surface/003-tags-and-properties.md)
 - [ ] [csv/tsv output](/2-query-surface/004-output-formats.md)
 
 ## 3 — Graph & mutation
@@ -16,6 +15,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Done
+- [x] [tags & properties](/2-query-surface/003-tags-and-properties.md): introspection — `wiki tags` (tags in use), `wiki properties` (frontmatter keys), `wiki property <key>` (its values), each with `--counts` / `--sort=name|count` / `--prefix`. Dropped the proposed `tag <name>` (pure duplicate of `list --tag`). Reuses `Filter`; index methods `TagCounts`/`PropertyKeyCounts`/`PropertyValueCounts`.
 - [x] 1 — Foundation: discovery, parsers, index + graph, commands (status/list/tasks/unresolved/orphans/check), text+json, tests, full justfile + CI + goreleaser + smoke.
 - [x] Bundle model finalized: root = content root (git-style), `bundle` package/type, `okf_version` badge synced by `check`; spec + READMEs modernized.
 - [x] [README — install + modernization](/4-release-and-docs/001-readme-and-install.md): curl one-liners, three-layer framing, dogfood roadmap (URL liveness verified at publish).

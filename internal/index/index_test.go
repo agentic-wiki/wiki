@@ -737,3 +737,46 @@ func TestRelativeLinksResolveAndNormalize(t *testing.T) {
 		t.Errorf("nothing should remain to normalize, got %+v", dry)
 	}
 }
+
+func TestCounts(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // reserved root: okf_version only, no type
+		"a.md":     "---\ntype: note\nstatus: open\ntags: [x, y]\n---\nA\n",
+		"b.md":     "---\ntype: note\nstatus: done\ntags: [y, y]\n---\nB\n", // duplicate tag y in one entry
+		"sub/c.md": "---\ntype: concept\nstatus: open\ntags: [z]\n---\nC\n",
+	})
+
+	// TagCounts: y is in a and b (twice in b, but an entry counts once).
+	tags := idx.TagCounts("")
+	if len(tags) != 3 || tags["x"] != 1 || tags["y"] != 2 || tags["z"] != 1 {
+		t.Errorf("TagCounts = %v, want {x:1, y:2, z:1}", tags)
+	}
+	if sub := idx.TagCounts("sub/"); len(sub) != 1 || sub["z"] != 1 {
+		t.Errorf("TagCounts(sub/) = %v, want {z:1}", sub)
+	}
+
+	// PropertyKeyCounts: index.md contributes only okf_version (reserved, no type).
+	keys := idx.PropertyKeyCounts("")
+	for key, want := range map[string]int{"okf_version": 1, "type": 3, "status": 3, "tags": 3} {
+		if keys[key] != want {
+			t.Errorf("PropertyKeyCounts[%q] = %d, want %d (all: %v)", key, keys[key], want, keys)
+		}
+	}
+
+	// PropertyValueCounts: scalar key (status, type) and list key (tags), with prefix.
+	if st := idx.PropertyValueCounts("status", ""); st["open"] != 2 || st["done"] != 1 {
+		t.Errorf("PropertyValueCounts(status) = %v, want {open:2, done:1}", st)
+	}
+	if ty := idx.PropertyValueCounts("type", ""); ty["note"] != 2 || ty["concept"] != 1 {
+		t.Errorf("PropertyValueCounts(type) = %v, want {note:2, concept:1}", ty)
+	}
+	if tg := idx.PropertyValueCounts("tags", ""); tg["x"] != 1 || tg["y"] != 2 || tg["z"] != 1 {
+		t.Errorf("PropertyValueCounts(tags) = %v, want {x:1, y:2, z:1}", tg)
+	}
+	if st := idx.PropertyValueCounts("status", "sub/"); len(st) != 1 || st["open"] != 1 {
+		t.Errorf("PropertyValueCounts(status, sub/) = %v, want {open:1}", st)
+	}
+	if got := idx.PropertyValueCounts("nope", ""); len(got) != 0 {
+		t.Errorf("PropertyValueCounts(nope) = %v, want empty", got)
+	}
+}

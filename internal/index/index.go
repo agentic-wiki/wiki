@@ -239,6 +239,60 @@ func (idx *Index) Filter(typ, tag, pathPrefix string) []*Entry {
 	return out
 }
 
+// TagCounts returns every tag in the bundle (optionally within a path prefix)
+// with the number of entries carrying it.
+func (idx *Index) TagCounts(pathPrefix string) map[string]int {
+	counts := map[string]int{}
+	for _, e := range idx.Filter("", "", pathPrefix) {
+		for _, t := range dedupe(e.Tags) {
+			counts[t]++
+		}
+	}
+	return counts
+}
+
+// PropertyKeyCounts returns every frontmatter key in use (optionally within a
+// path prefix) with the number of entries that set it.
+func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
+	counts := map[string]int{}
+	for _, e := range idx.Filter("", "", pathPrefix) {
+		for k := range e.fm {
+			counts[k]++
+		}
+	}
+	return counts
+}
+
+// PropertyValueCounts returns the distinct values of frontmatter key (optionally
+// within a path prefix) with the number of entries holding each. A list-valued
+// key (e.g. tags) contributes each element.
+func (idx *Index) PropertyValueCounts(key, pathPrefix string) map[string]int {
+	counts := map[string]int{}
+	for _, e := range idx.Filter("", "", pathPrefix) {
+		for _, v := range dedupe(parse.Strings(e.fm, key)) {
+			counts[v]++
+		}
+	}
+	return counts
+}
+
+// dedupe drops repeated strings, preserving first-seen order, so a value counts
+// an entry once even if it appears twice in the same list.
+func dedupe(items []string) []string {
+	if len(items) < 2 {
+		return items
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, it := range items {
+		if !seen[it] {
+			seen[it] = true
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
 // SearchLine is one matching line within an entry (1-indexed, file-relative).
 type SearchLine struct {
 	Line int    `json:"line"`

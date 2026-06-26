@@ -26,6 +26,9 @@ commands:
   outline       print an entry's heading hierarchy
   search        full-text search over entries (--type --tag --prefix --lines)
   tasks         list checkbox tasks (--all --done --prefix)
+  tags          list tags in use (--counts --sort=name|count --prefix)
+  properties    list frontmatter keys in use (--counts --sort --prefix)
+  property      list values of a frontmatter key (--counts --sort --prefix)
   unresolved    broken internal links
   orphans       entries with no incoming links
   links         an entry's outgoing links
@@ -75,6 +78,12 @@ func run(args []string) int {
 		return cmdSearch(args[1:])
 	case "tasks":
 		return cmdTasks(args[1:])
+	case "tags":
+		return cmdTags(args[1:])
+	case "properties":
+		return cmdProperties(args[1:])
+	case "property":
+		return cmdProperty(args[1:])
 	case "unresolved":
 		return cmdUnresolved(args[1:])
 	case "orphans":

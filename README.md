@@ -29,6 +29,9 @@ wiki read /finance/expenses.md             # print an entry's body (frontmatter 
 wiki outline /finance/expenses.md          # print its heading hierarchy
 wiki search "language model" --lines       # full-text search (--type, --tag, --prefix, --lines)
 wiki tasks                                 # open checkbox tasks (--all, --done, --prefix)
+wiki tags --counts --sort=count            # tags in use, by frequency
+wiki properties                            # frontmatter keys in use (--counts)
+wiki property status --counts              # values of a key, e.g. open/done (--prefix)
 wiki unresolved                            # broken internal links
 wiki orphans                               # entries with no incoming links
 wiki links /index.md                       # outgoing links (unique targets)

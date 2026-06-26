@@ -91,6 +91,19 @@ contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
 echo "--- list --prefix filters to a subtree ---"
 contains "$($BIN list --prefix finance/)" "/finance/income.md"
 
+echo "--- tags lists tags (with counts) ---"
+contains "$($BIN tags --counts --sort=count)" "finance"
+
+echo "--- properties lists frontmatter keys in use ---"
+contains "$($BIN properties)" "status"
+
+echo "--- property enumerates a key's values ---"
+contains "$($BIN property type --counts)" "dataset"
+contains "$($BIN property status)" "open"
+
+echo "--- property unknown key => exit 1 ---"
+! $BIN property zzznope >/dev/null
+
 echo "--- tasks default = open only ---"
 OPEN="$($BIN tasks)"
 contains "$OPEN" "reconcile the bank statement"

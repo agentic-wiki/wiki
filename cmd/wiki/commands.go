@@ -111,6 +111,92 @@ func cmdList(args []string) int {
 	return 0
 }
 
+// countRow is one name with its entry count: the row shape for tags/properties.
+type countRow struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// sortedCounts turns a name->count map into rows sorted by name (default) or by
+// count descending with name breaking ties (sortBy=="count").
+func sortedCounts(counts map[string]int, sortBy string) []countRow {
+	rows := make([]countRow, 0, len(counts))
+	for n, c := range counts {
+		rows = append(rows, countRow{n, c})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if sortBy == "count" && rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Name < rows[j].Name
+	})
+	return rows
+}
+
+// emitCounts renders count rows: text shows the name alone, or "name  count"
+// with --counts; json always carries the count. Empty result -> exit 1.
+func emitCounts(format string, rows []countRow, withCounts bool) int {
+	var lines []string
+	for _, r := range rows {
+		if withCounts {
+			lines = append(lines, fmt.Sprintf("%-30s %d", r.Name, r.Count))
+		} else {
+			lines = append(lines, r.Name)
+		}
+	}
+	output.Emit(os.Stdout, format, lines, rows)
+	if len(rows) == 0 {
+		return 1
+	}
+	return 0
+}
+
+// countFlags registers the flags shared by tags/properties/property.
+func countFlags(fs *flag.FlagSet, unit string) (format, sortBy, prefix *string, counts *bool) {
+	format = fs.String("format", "text", "output format: text|json")
+	counts = fs.Bool("counts", false, "show entry count per "+unit)
+	sortBy = fs.String("sort", "name", "sort order: name|count")
+	prefix = fs.String("prefix", "", "filter to a path prefix")
+	return
+}
+
+func cmdTags(args []string) int {
+	fs := flag.NewFlagSet("tags", flag.ExitOnError)
+	format, sortBy, prefix, counts := countFlags(fs, "tag")
+	fs.Parse(args)
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	return emitCounts(*format, sortedCounts(idx.TagCounts(*prefix), *sortBy), *counts)
+}
+
+func cmdProperties(args []string) int {
+	fs := flag.NewFlagSet("properties", flag.ExitOnError)
+	format, sortBy, prefix, counts := countFlags(fs, "property")
+	fs.Parse(args)
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	return emitCounts(*format, sortedCounts(idx.PropertyKeyCounts(*prefix), *sortBy), *counts)
+}
+
+func cmdProperty(args []string) int {
+	fs := flag.NewFlagSet("property", flag.ExitOnError)
+	format, sortBy, prefix, counts := countFlags(fs, "value")
+	name, ok := parseWithArg(fs, args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: wiki property <name> [--counts --sort=name|count --prefix]")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	return emitCounts(*format, sortedCounts(idx.PropertyValueCounts(name, *prefix), *sortBy), *counts)
+}
+
 func cmdTasks(args []string) int {
 	fs := flag.NewFlagSet("tasks", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json")

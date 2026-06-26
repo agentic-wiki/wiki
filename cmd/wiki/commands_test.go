@@ -367,6 +367,69 @@ func TestCmdTidy(t *testing.T) {
 	}
 }
 
+func TestCmdTagsProperties(t *testing.T) {
+	dir := writeBundle(t)
+	// give the entries tags/status so there is something to introspect
+	if err := os.WriteFile(filepath.Join(dir, "guide.md"),
+		[]byte("---\ntype: note\ntitle: Guide\nstatus: open\ntags: [docs, x]\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "flat.md"),
+		[]byte("---\ntype: note\nstatus: done\ntags: [x]\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(dir)
+
+	// tags --counts --sort=count: x (2) sorts before docs (1)
+	out, code := capture(t, func() int { return cmdTags([]string{"--counts", "--sort=count"}) })
+	if code != 0 {
+		t.Fatalf("tags exit=%d", code)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "x") {
+		t.Errorf("tags --sort=count: x (count 2) should be first, got %q", out)
+	}
+
+	// tags bare: just names, no counts
+	out, _ = capture(t, func() int { return cmdTags(nil) })
+	if !strings.Contains(out, "docs") || strings.ContainsAny(out, "0123456789") {
+		t.Errorf("bare tags should be names only: %q", out)
+	}
+
+	// properties --counts includes the reserved-root okf_version and the shared keys
+	out, _ = capture(t, func() int { return cmdProperties([]string{"--counts"}) })
+	for _, k := range []string{"okf_version", "status", "type", "tags"} {
+		if !strings.Contains(out, k) {
+			t.Errorf("properties missing %q: %q", k, out)
+		}
+	}
+
+	// property status: open and done, one each
+	out, _ = capture(t, func() int { return cmdProperty([]string{"status", "--counts"}) })
+	if !strings.Contains(out, "open") || !strings.Contains(out, "done") {
+		t.Errorf("property status: %q", out)
+	}
+
+	// property type as json: note appears twice
+	out, _ = capture(t, func() int { return cmdProperty([]string{"type", "--format", "json"}) })
+	if !strings.Contains(out, `"name": "note"`) || !strings.Contains(out, `"count": 2`) {
+		t.Errorf("property type json: %q", out)
+	}
+
+	// unknown key -> no values -> exit 1
+	if _, code := capture(t, func() int { return cmdProperty([]string{"zzz"}) }); code != 1 {
+		t.Errorf("property zzz exit=%d, want 1", code)
+	}
+	// missing name -> usage, exit 2
+	if _, code := capture(t, func() int { return cmdProperty(nil) }); code != 2 {
+		t.Errorf("property (no name) exit=%d, want 2", code)
+	}
+	// prefix with no entries -> exit 1
+	if _, code := capture(t, func() int { return cmdTags([]string{"--prefix", "sub/"}) }); code != 1 {
+		t.Errorf("tags --prefix sub/ exit=%d, want 1", code)
+	}
+}
+
 func TestGlobalRoot(t *testing.T) {
 	t.Cleanup(func() { rootDir = "" }) // global flag state; keep other tests independent
 	t.Chdir(t.TempDir())               // cwd has no bundle
