@@ -21,7 +21,7 @@ usage: wiki [--root <dir>] <command> [flags]
 commands:
   init          scaffold a new bundle (--force into a non-empty dir)
   status        bundle + index summary
-  list          list entries (--type --tag --prefix)
+  list, ls      list entries (--type --tag --prefix)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
   search        full-text search over entries (--type --tag --prefix --lines)
@@ -33,7 +33,7 @@ commands:
   orphans       entries with no incoming links
   links         an entry's outgoing links
   backlinks     every link that points to an entry
-  move          relocate or rename an entry, rewriting links to it (--dry-run)
+  move, mv      relocate or rename an entry, rewriting links to it (--dry-run)
   tidy          canonicalize the bundle: --links, --slug, --all (bare = preview)
   check         report conformance + health issues (--fix repairs safe ones)
   version       print the version
@@ -68,7 +68,7 @@ func run(args []string) int {
 		return 0
 	case "status":
 		return cmdStatus(args[1:])
-	case "list":
+	case "list", "ls":
 		return cmdList(args[1:])
 	case "read":
 		return cmdRead(args[1:])
@@ -92,7 +92,7 @@ func run(args []string) int {
 		return cmdLinks(args[1:])
 	case "backlinks":
 		return cmdBacklinks(args[1:])
-	case "move":
+	case "move", "mv":
 		return cmdMove(args[1:])
 	case "tidy":
 		return cmdTidy(args[1:])

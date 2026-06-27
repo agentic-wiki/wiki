@@ -1,15 +1,17 @@
 # Agentic Wiki CLI
 
-> A knowledge base that is just a folder of Markdown, and answers like a database.
+> Your agent can finally own your whole knowledge base.
 
-Your notes, documents, datasets, and to-dos live as plain text files in one folder. `wiki` reads that folder as a structured, linked graph: it answers questions by type, tag, and topic, follows links in both directions, surfaces what is broken or orphaned, gathers every task, and refactors the whole thing without breaking a single link.
+Karpathy's LLM-wiki note got a lot of us excited: a knowledge base an agent could actually live in. The idea immediately resonated; however, a full implementation never shipped. A lone skill file won't fly long.
 
-Built for your AI agent to operate from end to end, while every command is just as runnable by you.
+It takes a full stack: plain **Markdown** for your notes, docs, datasets, and tasks; a **tool** that reads the folder as a queryable, linked graph; and the **skills** that teach an agent to drive it. **Agentic wiki** provides the latter two, the tool and the skills. Your agent owns the upkeep (capturing, filing, linking, refining, grooming) while you own the files.
 
-No app. No database. No daemon. No sync service. No lock-in. One static binary, reading the files you will own and be able to open for the rest of your life.
+Underneath, it simply answers like a database. `wiki` CLI reads your markdown folder and tells you what links to what, what has no home, every entry of a given kind and tag, and every open task, then refactors the whole base without breaking a single link. Built for your agent to call, and just as runnable by you.
+
+There's pleasantly little to it: no app to launch, no database, no daemon, no sync service, nothing that can lock you in. Just one static binary handling plain files that are yours, and that you will still be able to open in thirty years.
 
 ```sh
-wiki list --type dataset --tag finance      # query by kind and topic
+wiki list --type dataset --tag finance      # query entries by type and topic
 wiki search "quarterly revenue"             # full-text search
 wiki backlinks /finance/income.md           # everything that points here
 wiki tasks                                  # every open checkbox, gathered
@@ -17,11 +19,9 @@ wiki tasks                                  # every open checkbox, gathered
 
 ## Why this exists
 
-Markdown in a folder is the only way to keep knowledge that is, at once, readable by a human, native to a language model, diffable, versioned by git, portable, self-hostable, and standard. Obsidian, your editor, this CLI, and any LLM all open the very same files. Nothing is trapped inside someone's product.
+Markdown in a folder is the only knowledge store that is human-readable, portable, LLM-native, git-versioned, and standard all at once. Your editor, Obsidian, this CLI, and any language model open the very same files, and nothing is trapped inside someone's product.
 
-The catch has always been that a folder of files is dumb. `grep` cannot tell you what links to a page, which notes have no home, or every entry of a given kind carrying a given tag. It cannot move a file and fix the links behind it. That missing structure is exactly what a knowledge base needs, and exactly what `wiki` computes, while leaving the files as ordinary Markdown.
-
-So you get both at the same time: the freedom of plain text, and the structure of a database. The files are the single source of truth; the index `wiki` builds from them is derived and disposable. Uninstall the tool tomorrow and you still hold a clean, navigable, complete knowledge base.
+The catch is that a plain text folder is dumb: `grep` cannot tell you what links to a page, which notes have no home, or move a file and fix the links behind it. `wiki` adds exactly that structure while leaving the files as ordinary Markdown, so you get the freedom of plain text and the power of a database at the same time. Markdown files stay the single source of truth; the index is derived and disposable.
 
 ## Install
 
@@ -35,13 +35,9 @@ curl -L https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_linux
 sudo mv wiki /usr/local/bin/
 ```
 
-```powershell
-# Windows (amd64), PowerShell
-irm https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_windows_amd64.zip -OutFile wiki.zip
-Expand-Archive wiki.zip .; # then put wiki.exe on your PATH
-```
+All other platforms (windows/amd64, darwin/amd64, linux/arm64, windows/arm64) are on the [releases page](https://github.com/agentic-wiki/wiki/releases).
 
-Other platforms (darwin/amd64, linux/arm64, windows/arm64) are on the [releases page](https://github.com/agentic-wiki/wiki/releases). With a Go toolchain on any OS: `go install github.com/agentic-wiki/wiki/cmd/wiki@latest`.
+With a Go toolchain on any OS: `go install github.com/agentic-wiki/wiki/cmd/wiki@latest`.
 
 ## Sixty seconds
 
@@ -52,7 +48,7 @@ wiki check                        # is it healthy? (links resolve, entries typed
 wiki list                         # every entry
 ```
 
-That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it. `wiki` simply makes it queryable and keeps it honest.
+That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
 ## What you can ask it
 
@@ -124,20 +120,28 @@ my-wiki/
     └── hetzner.md        (type: tool)
 ```
 
-It is designed to work with any Wiki-LLM deployment, as well as any [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing) bundle.
-
 ## Run by an agent
 
-The `wiki` CLI is built so an AI agent can operate the whole base, and it ships with the skills that teach one how.
+The `wiki` CLI is built for an AI agent to operate the whole base, end to end. An agent is probabilistic; your knowledge base must not be. `wiki` is the deterministic engine in between, so every query, move, and check is exact and repeatable: an agent runs your base with the reliability of a database, not the guesswork of a prompt.
 
-You capture a half-formed thought on the go, and the agent files it as a `draft`. Later it reads your drafts back to you, asks the one or two questions that sharpen each, then promotes it into a real entry in the right place, linked to what it relates to. It keeps the indexes current, finds the orphans, normalizes the links, and tells you what is still unwritten. You think and decide; it does the filing.
+You capture a rough thought on the go, and the agent files it as a `draft`. Later it reads your drafts back to you, asks the one or two questions that sharpen each, then files it into a real entry in the right place, linked to what it relates to. It keeps the indexes current, finds the orphans, grooms the links, and tells you what is still unwritten. You think and decide; it does the filing.
 
-The loop, in the tool's own verbs: capture, refine, promote, index, retrieve, maintain. Two skills live in [`.claude/skills/`](.claude/skills):
+The loop, in the tool's own verbs: capture, refine, promote, index, retrieve, maintain. Two skills live in the [skills repo](https://github.com/agentic-wiki/skills):
 
 - **agentic-wiki**, the operating manual for a knowledge base.
 - **wiki-tasks**, for a task backlog that is itself a wiki bundle.
 
 Because the agent drives the same commands you do, you are never locked out of your own knowledge, and it is never locked out of helping.
+
+## The stack: three layers
+
+What you have just met is a stack, the modern kind: three layers, and only the bottom one is required.
+
+1. **Markdown.** Plain files in a folder, with a light convention (a `type` in frontmatter, links between entries) we keep OKF-compatible. Complete and navigable on its own, by a human, an LLM, or any tool. This is all you strictly need; everything above is leverage.
+2. **Tool.** `wiki` CLI: a neutral, deterministic engine that indexes the folder and answers structured queries like a database. Built for agents to call, runnable by anyone.
+3. **Skill.** The manual your agent follows to drive the tool, where the workflow opinion lives, and yours to customize. Maintained in the [skills repo](https://github.com/agentic-wiki/skills).
+
+The Markdown is data at rest and stands alone; the tool is a swappable engine over it; the skills are where the opinion lives. We provide the top two; the foundation is just your own files, and you can keep only those.
 
 ## Everything it does
 
@@ -160,19 +164,11 @@ Because the agent drives the same commands you do, you are never locked out of y
 
 File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at. `--prefix` takes the same form to scope a listing to a subtree.
 
-## Three layers, and what you actually own
-
-The format is one of three layers, and only the first is required:
-
-1. **Format.** The bundle itself: Markdown, frontmatter, links. Complete and navigable on its own, by a human, an LLM, or any OKF reader. Defined in the [spec repo](https://github.com/agentic-wiki/spec).
-2. **Tool.** This repo, `wiki`: a neutral engine that indexes the bundle and answers structured queries. Built for agents to call, runnable by anyone.
-3. **Skill.** The manual your agent follows to drive the tool. This is where workflow opinion lives, and you customize it.
-
-The format is data at rest and stands on its own; the tool is a swappable engine over it; the skill is where the opinions live. You own all three, and you can keep just the first.
+Two everyday commands have short aliases: `wiki ls` for `list`, and `wiki mv` for `move`.
 
 ## The backlog itself is a wiki
 
-There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives in [`tasks/`](tasks/index.md), and it is itself an agentic-wiki bundle, managed by `wiki` itself. The tool runs on its own to-do list, with the same commands as above:
+There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives in [`tasks/`](tasks/index.md), and it is itself an agentic-wiki bundle, managed by `wiki`. The tool runs on its own to-do list, with the same commands as above:
 
 ```sh
 cd tasks
@@ -200,3 +196,7 @@ just test-all   # unit + smoke
 just smoke      # end-to-end smoke test against a temp bundle
 just build      # build the binary to ./bin/wiki
 ```
+
+---
+
+Built on Google's [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing), delivering the LLM-wiki idea Karpathy sketched.
