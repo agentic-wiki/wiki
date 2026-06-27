@@ -32,6 +32,29 @@ jobs:
 
       - name: Cross-compile check
         run: |
-          GOOS=darwin GOARCH=arm64 go build -o /dev/null ./cmd/wiki
-          GOOS=darwin GOARCH=amd64 go build -o /dev/null ./cmd/wiki
-          GOOS=linux  GOARCH=arm64 go build -o /dev/null ./cmd/wiki
+          GOOS=darwin  GOARCH=arm64 go build -o /dev/null ./cmd/wiki
+          GOOS=darwin  GOARCH=amd64 go build -o /dev/null ./cmd/wiki
+          GOOS=linux   GOARCH=arm64 go build -o /dev/null ./cmd/wiki
+          GOOS=windows GOARCH=amd64 go build -o /dev/null ./cmd/wiki
+          GOOS=windows GOARCH=arm64 go build -o /dev/null ./cmd/wiki
+
+  # Native Windows correctness gate: the Go suite is path-portable, so it is the
+  # guarantee that wiki.exe works at runtime. The bash smoke test is Linux-only
+  # by design and is intentionally not run here.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test -race ./...
+
+      - name: Build
+        run: go build -ldflags "-s -w" -o bin/wiki.exe ./cmd/wiki

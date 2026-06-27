@@ -6,12 +6,16 @@ okf_version: "0.1"
 
 Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki tasks`. Every entry: `wiki list --type task`. Debt only: `wiki list --type task --tag debt`.
 
+## 2 — Query surface
+- [ ] [sort entries by timestamp](/2-query-surface/006-sort-by-timestamp.md)
+
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [scaffold registry (--template / --from / skill install)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Done
+- [x] Windows support: `wiki.exe` is now a target
 - [x] [csv/tsv output](/2-query-surface/004-output-formats.md): `--format csv|tsv` in `output.Emit`, reflecting a header + columns from each result's json field tags (list fields like tags join with `; `; commas/tabs quoted via `encoding/csv`). Non-tabular results fall back to text. Now uniform across every command.
 - [x] [tags & properties](/2-query-surface/003-tags-and-properties.md): introspection — `wiki tags` (tags in use), `wiki properties` (frontmatter keys), `wiki property <key>` (its values), each with `--counts` / `--sort=name|count` / `--prefix`. Dropped the proposed `tag <name>` (pure duplicate of `list --tag`). Reuses `Filter`; index methods `TagCounts`/`PropertyKeyCounts`/`PropertyValueCounts`.
 - [x] 1 — Foundation: discovery, parsers, index + graph, commands (status/list/tasks/unresolved/orphans/check), text+json, tests, full justfile + CI + goreleaser + smoke.

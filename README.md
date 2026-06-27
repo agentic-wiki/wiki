@@ -11,12 +11,20 @@ Three layers come together: the **format** (markdown bundles, defined in the [sp
 curl -L https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_darwin_arm64.tar.gz | tar xz
 sudo mv wiki /usr/local/bin/
 
-# Linux (amd64)
+# Linux or WSL (amd64)
 curl -L https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_linux_amd64.tar.gz | tar xz
 sudo mv wiki /usr/local/bin/
 ```
 
-Other platforms (darwin/amd64, linux/arm64) are on the [releases page](https://github.com/agentic-wiki/wiki/releases). With a Go toolchain: `go install github.com/agentic-wiki/wiki/cmd/wiki@latest`.
+```powershell
+# Windows (amd64) — PowerShell
+irm https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_windows_amd64.zip -OutFile wiki.zip
+Expand-Archive wiki.zip .; # then put wiki.exe on your PATH
+```
+
+Other platforms (darwin/amd64, linux/arm64, windows/arm64) are all on the [releases page](https://github.com/agentic-wiki/wiki/releases).
+
+With a Go toolchain: `go install github.com/agentic-wiki/wiki/cmd/wiki@latest`.
 
 ## Use
 
