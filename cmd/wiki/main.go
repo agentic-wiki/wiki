@@ -14,11 +14,11 @@ var Version = "dev"
 // means discover from the current directory.
 var rootDir string
 
-const usage = `wiki — query an agentic-wiki bundle
+const usage = `Wiki: query an agentic-wiki bundle
 
-usage: wiki [--root <dir>] <command> [flags]
+Usage: wiki [--root <dir>] <command> [flags]
 
-commands:
+Commands:
   init          scaffold a new bundle (--force into a non-empty dir)
   status        bundle + index summary
   list, ls      list entries (--type --tag --prefix)
@@ -38,10 +38,11 @@ commands:
   check         report conformance + health issues (--fix repairs safe ones)
   version       print the version
 
-run 'wiki <command> -h' to see a command's flags
---root <dir>      operate on the bundle at <dir> (default: discover from cwd)
-every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
-exit codes: 0 results, 1 none, 2 error
+Run 'wiki <command> -h' to see a command's flags
+  --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
+
+Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
+Exit codes: 0 results, 1 none, 2 error
 `
 
 func main() {
