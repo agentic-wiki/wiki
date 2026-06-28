@@ -7,7 +7,6 @@ okf_version: "0.1"
 Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki tasks`. Every entry: `wiki list --type task`. Debt only: `wiki list --type task --tag debt`.
 
 ## 2 — Query surface
-- [ ] [sort entries by timestamp](/2-query-surface/006-sort-by-timestamp.md)
 - [ ] [extract a dataset's table (wiki table)](/2-query-surface/007-table-extract.md)
 
 ## 3 — Graph & mutation
@@ -16,6 +15,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Done
+- [x] [sort entries by timestamp](/2-query-surface/006-sort-by-timestamp.md): `list --sort=path|timestamp` (`--reverse`); newest-first, with the mtime fallback read on demand only for timestamp-less entries.
 - [x] [broken links as warning in check](/conformance/002-broken-links-warning.md): `check` demotes broken links from error to warning, so a bundle with not-yet-written links passes (exit 0); only a missing or invalid `type` is an error. `unresolved` stays the to-write surface.
 - [x] [normalize exit codes](/2-query-surface/008-exit-codes.md): enumeration/diagnostic commands now exit `0` when empty (like `ls`); only `search` (no match) and `check` (errors) use `1`. Updated CLI + tests + smoke, spec README, and both skills.
 - [x] Windows support: `wiki.exe` is now a target

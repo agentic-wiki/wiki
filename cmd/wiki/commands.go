@@ -4,8 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agentic-wiki/wiki/internal/index"
 	"github.com/agentic-wiki/wiki/internal/output"
@@ -92,6 +94,8 @@ func cmdList(args []string) int {
 	typ := fs.String("type", "", "filter by type")
 	tag := fs.String("tag", "", "filter by tag")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
+	sortBy := fs.String("sort", "path", "sort order: path|timestamp (timestamp is newest-first)")
+	reverse := fs.Bool("reverse", false, "reverse the sort order")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -99,7 +103,36 @@ func cmdList(args []string) int {
 	}
 
 	entries := idx.Filter(*typ, *tag, *prefix)
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	switch *sortBy {
+	case "path":
+		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	case "timestamp":
+		// Compute each entry's sort time once (the mtime fallback stats, so never
+		// inside the comparator), then order newest-first with path breaking ties.
+		type keyed struct {
+			e *index.Entry
+			t time.Time
+		}
+		ks := make([]keyed, len(entries))
+		for i, e := range entries {
+			ks[i] = keyed{e, e.SortTime()}
+		}
+		sort.SliceStable(ks, func(i, j int) bool {
+			if ks[i].t.Equal(ks[j].t) {
+				return ks[i].e.Path < ks[j].e.Path
+			}
+			return ks[i].t.After(ks[j].t)
+		})
+		for i, k := range ks {
+			entries[i] = k.e
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "wiki: unknown --sort %q (use path|timestamp)\n", *sortBy)
+		return 2
+	}
+	if *reverse {
+		slices.Reverse(entries)
+	}
 	var lines []string
 	for _, e := range entries {
 		lines = append(lines, fmt.Sprintf("%-44s %-9s %s", e.Path, e.Type, e.Title))

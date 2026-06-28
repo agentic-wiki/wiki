@@ -45,6 +45,19 @@ func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
 }
 
+// SortTime is the entry's effective time for ordering: its curated frontmatter
+// `timestamp` when present and valid, else the file's mtime, read on demand so
+// only timestamp-less entries pay the stat.
+func (e *Entry) SortTime() time.Time {
+	if t, ok := parseTimestamp(parse.String(e.fm, "timestamp")); ok {
+		return t
+	}
+	if fi, err := os.Stat(e.abs); err == nil {
+		return fi.ModTime()
+	}
+	return time.Time{}
+}
+
 // Raw returns the entry's full file content, read fresh from disk. The index
 // holds only metadata, so bodies are re-read on demand.
 func (e *Entry) Raw() (string, error) {
@@ -784,18 +797,24 @@ func setFrontmatterValue(content, key, value string) (string, error) {
 	return strings.Join(out, "\n"), nil
 }
 
-// validTimestamp reports whether s is a non-empty ISO 8601 timestamp: an
-// RFC 3339 datetime or a bare YYYY-MM-DD date.
+// parseTimestamp parses an ISO 8601 timestamp in the two forms the spec allows:
+// an RFC 3339 datetime or a bare YYYY-MM-DD date. ok is false if neither matches.
+func parseTimestamp(s string) (time.Time, bool) {
+	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// validTimestamp reports whether s is a non-empty ISO 8601 timestamp (see parseTimestamp).
 func validTimestamp(s string) bool {
 	if s == "" {
 		return false
 	}
-	for _, layout := range []string{time.RFC3339, "2006-01-02"} {
-		if _, err := time.Parse(layout, s); err == nil {
-			return true
-		}
-	}
-	return false
+	_, ok := parseTimestamp(s)
+	return ok
 }
 
 // nonISODateLayouts are common date spellings the log lint flags in favor of ISO.

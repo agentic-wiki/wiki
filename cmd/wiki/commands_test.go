@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeBundle creates a minimal bundle in a temp dir and returns its path.
@@ -455,5 +456,84 @@ func TestGlobalRoot(t *testing.T) {
 	}
 	if _, code := capture(t, func() int { return run([]string{"--root"}) }); code != 2 {
 		t.Errorf("--root no-arg exit=%d want 2", code)
+	}
+}
+
+// inOrder reports whether subs each appear in out, in the given order.
+func inOrder(out string, subs ...string) bool {
+	last := -1
+	for _, s := range subs {
+		i := strings.Index(out, s)
+		if i <= last {
+			return false
+		}
+		last = i
+	}
+	return true
+}
+
+func TestCmdListSort(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n")
+	write("old.md", "---\ntype: note\ntimestamp: 2024-01-01\n---\nx\n")
+	write("new.md", "---\ntype: note\ntimestamp: 2026-06-01\n---\nx\n")
+	write("mid.md", "---\ntype: note\ntimestamp: 2025-03-15\n---\nx\n")
+	t.Chdir(dir)
+
+	// --sort=timestamp orders newest-first
+	out, code := capture(t, func() int { return cmdList([]string{"--sort=timestamp"}) })
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+	if !inOrder(out, "/new.md", "/mid.md", "/old.md") {
+		t.Errorf("timestamp sort should be newest-first, got:\n%s", out)
+	}
+
+	// --reverse flips it to oldest-first (the grooming pass)
+	if out, _ := capture(t, func() int { return cmdList([]string{"--sort=timestamp", "--reverse"}) }); !inOrder(out, "/old.md", "/mid.md", "/new.md") {
+		t.Errorf("reversed timestamp sort should be oldest-first, got:\n%s", out)
+	}
+
+	// default sort is by path (alphabetical)
+	if out, _ := capture(t, func() int { return cmdList(nil) }); !inOrder(out, "/mid.md", "/new.md", "/old.md") {
+		t.Errorf("default sort should be by path, got:\n%s", out)
+	}
+
+	// an unknown --sort value is a usage error
+	if _, code := capture(t, func() int { return cmdList([]string{"--sort=bogus"}) }); code != 2 {
+		t.Errorf("unknown --sort exit=%d want 2", code)
+	}
+}
+
+func TestCmdListSortMtimeFallback(t *testing.T) {
+	dir := t.TempDir()
+	writeAt := func(rel, content string, mod time.Time) {
+		p := filepath.Join(dir, rel)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if !mod.IsZero() {
+			if err := os.Chtimes(p, mod, mod); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	writeAt("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n", time.Time{})
+	// neither carries a frontmatter timestamp, so ordering falls back to mtime
+	writeAt("older.md", "---\ntype: note\n---\nx\n", time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC))
+	writeAt("newer.md", "---\ntype: note\n---\nx\n", time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC))
+	t.Chdir(dir)
+
+	out, code := capture(t, func() int { return cmdList([]string{"--sort=timestamp"}) })
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+	if !inOrder(out, "/newer.md", "/older.md") {
+		t.Errorf("mtime fallback should put the newer mtime first, got:\n%s", out)
 	}
 }

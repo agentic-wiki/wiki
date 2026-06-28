@@ -21,7 +21,7 @@ Usage: wiki [--root <dir>] <command> [flags]
 Commands:
   init          scaffold a new bundle (--force into a non-empty dir)
   status        bundle + index summary
-  list, ls      list entries (--type --tag --prefix)
+  list, ls      list entries (--type --tag --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
   search        full-text search over entries (--type --tag --prefix --lines)

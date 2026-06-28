@@ -92,6 +92,9 @@ contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
 echo "--- list --prefix filters to a subtree ---"
 contains "$($BIN list --prefix finance/)" "/finance/income.md"
 
+echo "--- list --sort=timestamp orders results ---"
+contains "$($BIN list --sort=timestamp)" "/finance/income.md"
+
 echo "--- aliases: ls = list, mv = move ---"
 contains "$($BIN ls --type concept)" "/finance/income.md"
 contains "$($BIN mv --dry-run /finance/income.md /finance/costs.md)" "would move"

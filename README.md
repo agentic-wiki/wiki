@@ -58,6 +58,7 @@ Everything is a fast, scriptable query over the folder.
 
 ```sh
 wiki list --type concept --tag crypto --prefix tech/    # by kind, topic, and subtree
+wiki list --type note --sort=timestamp                  # most-recently-changed first (--reverse: oldest first)
 wiki search "language model" --lines                    # full-text over frontmatter + body
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
 wiki outline /tech/infra/hetzner.md                     # its heading map
