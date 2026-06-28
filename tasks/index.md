@@ -16,6 +16,8 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Done
+- [x] [broken links as warning in check](/conformance/002-broken-links-warning.md): `check` demotes broken links from error to warning, so a bundle with not-yet-written links passes (exit 0); only a missing or invalid `type` is an error. `unresolved` stays the to-write surface.
+- [x] [normalize exit codes](/2-query-surface/008-exit-codes.md): enumeration/diagnostic commands now exit `0` when empty (like `ls`); only `search` (no match) and `check` (errors) use `1`. Updated CLI + tests + smoke, spec README, and both skills.
 - [x] Windows support: `wiki.exe` is now a target
 - [x] [csv/tsv output](/2-query-surface/004-output-formats.md): `--format csv|tsv` in `output.Emit`, reflecting a header + columns from each result's json field tags (list fields like tags join with `; `; commas/tabs quoted via `encoding/csv`). Non-tabular results fall back to text. Now uniform across every command.
 - [x] [tags & properties](/2-query-surface/003-tags-and-properties.md): introspection — `wiki tags` (tags in use), `wiki properties` (frontmatter keys), `wiki property <key>` (its values), each with `--counts` / `--sort=name|count` / `--prefix`. Dropped the proposed `tag <name>` (pure duplicate of `list --tag`). Reuses `Filter`; index methods `TagCounts`/`PropertyKeyCounts`/`PropertyValueCounts`.

@@ -74,9 +74,10 @@ echo "--- status ---"
 contains "$($BIN status)" "Entries:  6"
 contains "$($BIN status)" "Broken:   1"
 
-echo "--- check (broken link => exit 1) ---"
-! $BIN check >/dev/null
+echo "--- check: broken link is a warning, not an error (exit 0) ---"
+$BIN check >/dev/null   # broken link no longer fails the lint
 contains "$($BIN check)" "/finance/q1-receipts.md"
+contains "$($BIN check)" "warning"
 
 echo "--- unresolved finds the broken link ---"
 contains "$($BIN unresolved)" "/finance/q1-receipts.md"
@@ -105,8 +106,8 @@ echo "--- property enumerates a key's values ---"
 contains "$($BIN property type --counts)" "dataset"
 contains "$($BIN property status)" "open"
 
-echo "--- property unknown key => exit 1 ---"
-! $BIN property zzznope >/dev/null
+echo "--- property unknown key => empty, exit 0 (like ls) ---"
+$BIN property zzznope >/dev/null
 
 echo "--- tasks default = open only ---"
 OPEN="$($BIN tasks)"
@@ -156,11 +157,11 @@ contains "$($BIN links /finance/index.md)" "/finance/income.md"
 echo "--- backlinks lists incoming ---"
 contains "$($BIN backlinks /finance/income.md)" "/finance/index.md"
 
-echo "--- orphans (none => exit 1) ---"
-! $BIN orphans >/dev/null
+echo "--- orphans (none => empty, exit 0) ---"
+$BIN orphans >/dev/null
 
-echo "--- no results => exit 1 ---"
-! $BIN list --type nonexistent >/dev/null
+echo "--- no results => empty, exit 0 (like ls) ---"
+$BIN list --type nonexistent >/dev/null
 
 echo "--- version ---"
 contains "$($BIN version)" "wiki"

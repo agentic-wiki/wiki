@@ -250,7 +250,7 @@ func TestCheckSeverity(t *testing.T) {
 		"index.md":     "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // valid
 		"a.md":         "---\ntype: note\n---\nok\n",                   // valid, linked
 		"notype.md":    "---\ntitle: x\n---\nbody\n",                   // ERROR: missing type
-		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",       // WARNING unknown + ERROR broken link
+		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",       // WARNING unknown type + WARNING broken link
 		"sub/index.md": "---\ntype: note\n---\nbody\n",                 // WARNING: reserved file carries frontmatter
 		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",                 // WARNING: depth > 3
 	})
@@ -263,11 +263,15 @@ func TestCheckSeverity(t *testing.T) {
 			warns++
 		}
 	}
-	if errs != 2 {
-		t.Errorf("errors = %d, want 2 (missing type, broken link)", errs)
+	if errs != 1 {
+		t.Errorf("errors = %d, want 1 (missing type only; a broken link is a warning, not an error)", errs)
 	}
-	if warns != 3 {
-		t.Errorf("warnings = %d, want 3 (unknown type, reserved-file frontmatter, depth)", warns)
+	if warns != 4 {
+		t.Errorf("warnings = %d, want 4 (unknown type, broken link, reserved-file frontmatter, depth)", warns)
+	}
+	// A broken link is a warning per OKF (not-yet-written knowledge), so it never fails the lint.
+	if !hasWarning(idx.Check(), "/weird.md", "broken link") {
+		t.Errorf("broken link should be a warning, got %+v", idx.Check())
 	}
 }
 

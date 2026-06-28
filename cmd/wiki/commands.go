@@ -105,9 +105,6 @@ func cmdList(args []string) int {
 		lines = append(lines, fmt.Sprintf("%-44s %-9s %s", e.Path, e.Type, e.Title))
 	}
 	output.Emit(os.Stdout, *format, lines, entries)
-	if len(entries) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -134,7 +131,7 @@ func sortedCounts(counts map[string]int, sortBy string) []countRow {
 }
 
 // emitCounts renders count rows: text shows the name alone, or "name  count"
-// with --counts; json always carries the count. Empty result -> exit 1.
+// with --counts; json always carries the count. An empty listing is still exit 0.
 func emitCounts(format string, rows []countRow, withCounts bool) int {
 	var lines []string
 	for _, r := range rows {
@@ -145,9 +142,6 @@ func emitCounts(format string, rows []countRow, withCounts bool) int {
 		}
 	}
 	output.Emit(os.Stdout, format, lines, rows)
-	if len(rows) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -237,9 +231,6 @@ func cmdTasks(args []string) int {
 		}
 	}
 	output.Emit(os.Stdout, *format, lines, rows)
-	if len(rows) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -258,9 +249,6 @@ func cmdUnresolved(args []string) int {
 		lines = append(lines, fmt.Sprintf("%s:%d -> %s", b.From, b.Line, b.Target))
 	}
 	output.Emit(os.Stdout, *format, lines, broken)
-	if len(broken) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -280,9 +268,6 @@ func cmdOrphans(args []string) int {
 		lines = append(lines, e.Path)
 	}
 	output.Emit(os.Stdout, *format, lines, orph)
-	if len(orph) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -600,9 +585,6 @@ func cmdLinks(args []string) int {
 		lines = append(lines, r.To)
 	}
 	output.Emit(os.Stdout, *format, lines, refs)
-	if len(refs) == 0 {
-		return 1
-	}
 	return 0
 }
 
@@ -629,8 +611,5 @@ func cmdBacklinks(args []string) int {
 		lines = append(lines, fmt.Sprintf("%s:%d  %s", r.From, r.Line, r.Text))
 	}
 	output.Emit(os.Stdout, *format, lines, refs)
-	if len(refs) == 0 {
-		return 1
-	}
 	return 0
 }

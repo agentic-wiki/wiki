@@ -157,17 +157,17 @@ func TestCmdLinkGraph(t *testing.T) {
 	if out, code := capture(t, func() int { return cmdLinks([]string{"/index.md"}) }); code != 0 || !strings.Contains(out, "/guide.md") {
 		t.Errorf("links: %q (%d)", out, code)
 	}
-	// guide.md has no outgoing links -> exit 1
-	if _, code := capture(t, func() int { return cmdLinks([]string{"guide.md"}) }); code != 1 {
-		t.Errorf("links none exit=%d want 1", code)
+	// guide.md has no outgoing links: an empty listing, exit 0 (like ls)
+	if _, code := capture(t, func() int { return cmdLinks([]string{"guide.md"}) }); code != 0 {
+		t.Errorf("links none exit=%d want 0", code)
 	}
 	// backlinks: guide.md <- index.md
 	if out, code := capture(t, func() int { return cmdBacklinks([]string{"guide.md"}) }); code != 0 || !strings.Contains(out, "/index.md") {
 		t.Errorf("backlinks: %q (%d)", out, code)
 	}
-	// flat.md has no backlinks -> exit 1
-	if _, code := capture(t, func() int { return cmdBacklinks([]string{"flat.md"}) }); code != 1 {
-		t.Errorf("backlinks none exit=%d want 1", code)
+	// flat.md has no backlinks: an empty listing, exit 0 (like ls)
+	if _, code := capture(t, func() int { return cmdBacklinks([]string{"flat.md"}) }); code != 0 {
+		t.Errorf("backlinks none exit=%d want 0", code)
 	}
 	// missing target -> exit 2
 	if _, code := capture(t, func() int { return cmdLinks([]string{"nope.md"}) }); code != 2 {
@@ -246,6 +246,8 @@ func TestCmdInit(t *testing.T) {
 }
 
 func TestQueryCommands(t *testing.T) {
+	// Enumeration and diagnostic commands return 0 even on an empty result, like
+	// ls/find; only search (grep) and check (lint) use exit 1. See TestCmdSearch.
 	t.Chdir(writeBundle(t))
 	cases := []struct {
 		name string
@@ -254,9 +256,9 @@ func TestQueryCommands(t *testing.T) {
 	}{
 		{"status", func() int { return cmdStatus(nil) }, 0},
 		{"list all", func() int { return cmdList(nil) }, 0},
-		{"list empty filter", func() int { return cmdList([]string{"--type", "nope"}) }, 1},
+		{"list empty filter", func() int { return cmdList([]string{"--type", "nope"}) }, 0}, // empty listing is still exit 0
 		{"tasks", func() int { return cmdTasks(nil) }, 0},                   // guide.md has an open checkbox
-		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 1}, // no broken links
+		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 0}, // no broken links: a clean diagnostic, exit 0
 		{"orphans", func() int { return cmdOrphans(nil) }, 0},               // flat.md is an orphan
 		{"check (clean)", func() int { return cmdCheck(nil) }, 0},
 	}
@@ -416,17 +418,17 @@ func TestCmdTagsProperties(t *testing.T) {
 		t.Errorf("property type json: %q", out)
 	}
 
-	// unknown key -> no values -> exit 1
-	if _, code := capture(t, func() int { return cmdProperty([]string{"zzz"}) }); code != 1 {
-		t.Errorf("property zzz exit=%d, want 1", code)
+	// unknown key -> no values -> exit 0 (an empty listing, like ls)
+	if _, code := capture(t, func() int { return cmdProperty([]string{"zzz"}) }); code != 0 {
+		t.Errorf("property zzz exit=%d, want 0", code)
 	}
 	// missing name -> usage, exit 2
 	if _, code := capture(t, func() int { return cmdProperty(nil) }); code != 2 {
 		t.Errorf("property (no name) exit=%d, want 2", code)
 	}
-	// prefix with no entries -> exit 1
-	if _, code := capture(t, func() int { return cmdTags([]string{"--prefix", "sub/"}) }); code != 1 {
-		t.Errorf("tags --prefix sub/ exit=%d, want 1", code)
+	// prefix with no entries -> exit 0 (an empty listing, like ls)
+	if _, code := capture(t, func() int { return cmdTags([]string{"--prefix", "sub/"}) }); code != 0 {
+		t.Errorf("tags --prefix sub/ exit=%d, want 0", code)
 	}
 }
 

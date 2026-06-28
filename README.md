@@ -91,10 +91,11 @@ wiki tidy                       # canonicalize links and filenames (run it bare 
 wiki check --fix                # health report, and repair the safe issues
 ```
 
-Every command speaks `--format text|json|csv|tsv` and returns clean exit codes (`0` found, `1` none, `2` error), so it drops straight into scripts and pipelines:
+Every command speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` only from `search` no-match and `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
 ```sh
-wiki unresolved >/dev/null && echo "broken links found" || echo "all links resolve"
+wiki search needs-review >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
+[ -n "$(wiki unresolved)" ] && echo "broken links exist"                    # listings exit 0 even when empty; test the output
 ```
 
 ## How a base is organized

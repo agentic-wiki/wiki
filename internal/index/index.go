@@ -537,9 +537,10 @@ type Issue struct {
 	Msg   string `json:"msg"`
 }
 
-// Check reports conformance and health issues. The one hard rule (a present
-// `type`) and broken links are errors; everything else (undeclared type,
-// reserved-file/type agreement, folder depth) is an advisory warning.
+// Check reports conformance and health issues. Errors are genuine malformations
+// (a missing `type`, a present-but-invalid timestamp); everything else is an
+// advisory warning, including broken links — per OKF a broken link may be
+// not-yet-written knowledge, so it does not fail the lint (`unresolved` lists them).
 func (idx *Index) Check() []Issue {
 	var issues []Issue
 	for _, e := range idx.Entries {
@@ -583,11 +584,13 @@ func (idx *Index) Check() []Issue {
 			issues = append(issues, Issue{"warning", e.Path, "path contains a space; use a hyphenated slug"})
 		}
 	}
-	// Broken links are reported as errors. Relative links are valid per OKF and
-	// are resolved into the graph at build, so Broken covers them too (a relative
+	// Broken links are warnings, not errors: per OKF a broken link may be
+	// not-yet-written knowledge, so a bundle with one still passes check
+	// (`unresolved` is the to-write surface). Relative links are valid per OKF
+	// and resolved into the graph at build, so Broken covers them too (a relative
 	// link that resolves nowhere shows up here); no separate relative-link check.
 	for _, b := range idx.Broken() {
-		issues = append(issues, Issue{"error", b.From, "broken link -> " + b.Target})
+		issues = append(issues, Issue{"warning", b.From, "broken link -> " + b.Target})
 	}
 	// The bundle-root index.md carries OKF's okf_version badge; wiki.toml `spec`
 	// is the source of truth, and the tool flags any drift between them.

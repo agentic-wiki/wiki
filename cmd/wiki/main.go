@@ -42,7 +42,7 @@ Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 
 Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
-Exit codes: 0 results, 1 none, 2 error
+Exit codes: 0 ok, 1 search no-match / check errors, 2 error
 `
 
 func main() {
