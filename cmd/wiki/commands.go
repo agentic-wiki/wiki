@@ -561,22 +561,26 @@ func cmdTable(args []string) int {
 	tables := parse.Tables(body)
 	switch {
 	case len(tables) == 0:
-		fmt.Fprintf(os.Stderr, "wiki: no table found in %s\n", e.Path)
-		return 2
+		fmt.Fprintf(os.Stderr, "wiki: no table in %s\n", e.Path)
+		return 1 // no table: a no-match, like search
 	case len(tables) > 1 && *n == 0:
 		fmt.Fprintf(os.Stderr, "wiki: %s has %d tables; choose one with --n\n", e.Path, len(tables))
 		for i, tb := range tables {
 			fmt.Fprintf(os.Stderr, "  %d: %s\n", i+1, strings.Join(tb.Header, " | "))
 		}
-		return 2
+		return 2 // ambiguous request: there are tables, pick one
 	}
 	sel := *n
 	if sel == 0 {
-		sel = 1
+		sel = 1 // default to the lone table
 	}
-	if sel < 1 || sel > len(tables) {
-		fmt.Fprintf(os.Stderr, "wiki: --n %d out of range (1..%d)\n", sel, len(tables))
-		return 2
+	if sel < 1 {
+		fmt.Fprintln(os.Stderr, "wiki: --n must be 1 or greater")
+		return 2 // malformed argument
+	}
+	if sel > len(tables) {
+		fmt.Fprintf(os.Stderr, "wiki: %s has no table %d (it has %d)\n", e.Path, sel, len(tables))
+		return 1 // no such table, like search with no match
 	}
 	tb := tables[sel-1]
 	if err := output.Table(os.Stdout, *format, tb.Header, tb.Rows); err != nil {

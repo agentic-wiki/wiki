@@ -573,12 +573,17 @@ func TestCmdTable(t *testing.T) {
 		t.Errorf("--n 2: %q (code %d)", out, code)
 	}
 
-	// --n out of range, no table, and missing file are all errors
-	if _, code := capture(t, func() int { return cmdTable([]string{"--n", "9", "multi.md"}) }); code != 2 {
-		t.Errorf("--n out of range should exit 2, got %d", code)
+	// no such table is a no-match negative (exit 1): none at all, or --n past the end
+	if _, code := capture(t, func() int { return cmdTable([]string{"none.md"}) }); code != 1 {
+		t.Errorf("no table should exit 1, got %d", code)
 	}
-	if _, code := capture(t, func() int { return cmdTable([]string{"none.md"}) }); code != 2 {
-		t.Errorf("no table should exit 2, got %d", code)
+	if _, code := capture(t, func() int { return cmdTable([]string{"--n", "9", "multi.md"}) }); code != 1 {
+		t.Errorf("--n past the end should exit 1, got %d", code)
+	}
+
+	// a malformed --n (negative) and a missing file are usage/operational errors (exit 2)
+	if _, code := capture(t, func() int { return cmdTable([]string{"--n", "-1", "multi.md"}) }); code != 2 {
+		t.Errorf("negative --n should exit 2, got %d", code)
 	}
 	if _, code := capture(t, func() int { return cmdTable([]string{"nope.md"}) }); code != 2 {
 		t.Errorf("missing file should exit 2, got %d", code)

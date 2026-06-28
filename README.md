@@ -93,7 +93,7 @@ wiki tidy                       # canonicalize links and filenames (run it bare 
 wiki check --fix                # health report, and repair the safe issues
 ```
 
-Every command speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` only from `search` no-match and `check` errors; `2` error), so it drops straight into scripts and pipelines:
+Every command speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
 ```sh
 wiki search needs-review >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
