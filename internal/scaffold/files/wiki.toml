@@ -1,2 +1,2 @@
 spec = "0.1"
-types = ["draft", "note", "concept", "entity", "event", "tool", "project", "task", "dataset", "source"]
+types = ["note", "concept", "entity", "event", "tool", "project", "task", "dataset", "source", "draft"]

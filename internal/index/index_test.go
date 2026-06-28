@@ -60,12 +60,13 @@ func TestBrokenAndOrphans(t *testing.T) {
 		"index.md": "---\ntype: index\n---\n[a](/a.md)\n",
 		"a.md":     "---\ntype: note\n---\n[missing](/nope.md)\n",
 		"b.md":     "---\ntype: note\n---\nlonely\n",
+		"log.md":   "# Log\n## 2026-01-01\nentry\n", // reserved + unlinked: must be exempt
 	})
 	if got := idx.Broken(); len(got) != 1 || got[0].Target != "/nope.md" {
 		t.Errorf("broken = %+v", got)
 	}
 	if orph := idx.Orphans(); len(orph) != 1 || orph[0].Path != "/b.md" {
-		t.Errorf("orphans = %+v (b unlinked; index.md exempt; a linked)", orph)
+		t.Errorf("orphans = %+v (b unlinked; index.md and log.md exempt; a linked)", orph)
 	}
 }
 

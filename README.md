@@ -129,7 +129,7 @@ You capture a rough thought on the go, and the agent files it as a `draft`. Late
 The loop, in the tool's own verbs: capture, refine, promote, index, retrieve, maintain. Two skills live in the [skills repo](https://github.com/agentic-wiki/skills):
 
 - **agentic-wiki**, the operating manual for a knowledge base.
-- **wiki-tasks**, for a task backlog that is itself a wiki bundle.
+- **agentic-backlog**, for a task backlog that is itself a wiki bundle.
 
 Because the agent drives the same commands you do, you are never locked out of your own knowledge, and it is never locked out of helping.
 

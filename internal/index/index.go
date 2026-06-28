@@ -353,8 +353,9 @@ func (idx *Index) Broken() []BrokenLink {
 	return out
 }
 
-// Orphans returns entries with no incoming internal links, excluding index.md
-// (navigation entry points).
+// Orphans returns entries with no incoming internal links, excluding the
+// reserved files index.md (navigation entry points) and log.md (side narrative),
+// neither of which is linkable content expected to have inbound links.
 func (idx *Index) Orphans() []*Entry {
 	incoming := map[string]int{}
 	for _, e := range idx.Entries {
@@ -364,7 +365,7 @@ func (idx *Index) Orphans() []*Entry {
 	}
 	var out []*Entry
 	for _, e := range idx.Entries {
-		if e.Name == "index.md" {
+		if e.Name == "index.md" || e.Name == "log.md" {
 			continue
 		}
 		if incoming[e.Path] == 0 {

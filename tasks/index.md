@@ -8,10 +8,11 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## 2 — Query surface
 - [ ] [sort entries by timestamp](/2-query-surface/006-sort-by-timestamp.md)
+- [ ] [extract a dataset's table (wiki table)](/2-query-surface/007-table-extract.md)
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
-- [ ] [scaffold registry (--template / --from / skill install)](/3-graph-and-mutation/005-scaffold-registry.md)
+- [ ] [scaffold registry (--template / --from)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Done
