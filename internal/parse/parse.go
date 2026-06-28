@@ -28,6 +28,13 @@ type Heading struct {
 	Line  int    `json:"line"`
 }
 
+// Table is a parsed GFM table: the header cells and the data rows (each row
+// padded or truncated to the header's width).
+type Table struct {
+	Header []string   `json:"header"`
+	Rows   [][]string `json:"rows"`
+}
+
 // Frontmatter splits a leading `---` block from the body and parses the small
 // YAML subset we use: scalars and string lists. Values are string or []string.
 func Frontmatter(content string) (fm map[string]any, body string) {
@@ -183,6 +190,9 @@ var (
 	taskRe       = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]\s+(.*)$`)
 	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	inlineCodeRe = regexp.MustCompile("`[^`]*`")
+	// tableDelimRe matches a GFM table's delimiter row: dash cells with optional
+	// alignment colons (e.g. `---|:--:|---`), with optional outer pipes.
+	tableDelimRe = regexp.MustCompile(`^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$`)
 )
 
 // scanLinks returns every markdown link in body (outside fenced/inline code),
@@ -306,4 +316,73 @@ func maskedLines(body string) []string {
 		lines[i] = inlineCodeRe.ReplaceAllString(line, "")
 	}
 	return lines
+}
+
+// Tables returns the GitHub-flavored markdown tables in body, in document order,
+// skipping fenced code. A table is a header row, a delimiter row (e.g. `---|:--:`),
+// then the contiguous data rows. Each data row is padded or truncated to the
+// header's width so the result is rectangular (GFM ignores surplus cells).
+func Tables(body string) []Table {
+	lines := strings.Split(body, "\n")
+	var tables []Table
+	inFence := false
+	for i := 0; i < len(lines); i++ {
+		t := strings.TrimSpace(lines[i])
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence || !strings.Contains(lines[i], "|") {
+			continue
+		}
+		// A header line is only a table if a delimiter row follows it.
+		if i+1 >= len(lines) || !tableDelimRe.MatchString(lines[i+1]) {
+			continue
+		}
+		header := splitRow(lines[i])
+		var rows [][]string
+		j := i + 2
+		for ; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" || !strings.Contains(lines[j], "|") {
+				break
+			}
+			rows = append(rows, fitRow(splitRow(lines[j]), len(header)))
+		}
+		tables = append(tables, Table{Header: header, Rows: rows})
+		i = j - 1
+	}
+	return tables
+}
+
+// splitRow splits a markdown table row into trimmed cells, dropping the optional
+// outer pipes. It honors `\|` as a literal pipe; a `|` inside an inline-code span
+// is not special-cased (uncommon in dataset tables).
+func splitRow(line string) []string {
+	s := strings.TrimSpace(line)
+	s = strings.TrimPrefix(s, "|")
+	s = strings.TrimSuffix(s, "|")
+	var cells []string
+	var cur strings.Builder
+	for i := 0; i < len(s); i++ {
+		switch {
+		case s[i] == '\\' && i+1 < len(s) && s[i+1] == '|':
+			cur.WriteByte('|')
+			i++
+		case s[i] == '|':
+			cells = append(cells, strings.TrimSpace(cur.String()))
+			cur.Reset()
+		default:
+			cur.WriteByte(s[i])
+		}
+	}
+	return append(cells, strings.TrimSpace(cur.String()))
+}
+
+// fitRow pads (with empty cells) or truncates row to exactly n columns so a
+// table's rows stay rectangular against its header.
+func fitRow(row []string, n int) []string {
+	if len(row) < n {
+		return append(row, make([]string, n-len(row))...)
+	}
+	return row[:n]
 }

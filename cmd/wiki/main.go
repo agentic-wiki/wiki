@@ -24,6 +24,7 @@ Commands:
   list, ls      list entries (--type --tag --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
+  table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (--type --tag --prefix --lines)
   tasks         list checkbox tasks (--all --done --prefix)
   tags          list tags in use (--counts --sort=name|count --prefix)
@@ -79,6 +80,8 @@ func run(args []string) int {
 		return cmdSearch(args[1:])
 	case "tasks":
 		return cmdTasks(args[1:])
+	case "table":
+		return cmdTable(args[1:])
 	case "tags":
 		return cmdTags(args[1:])
 	case "properties":

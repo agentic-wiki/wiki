@@ -86,6 +86,10 @@ echo "--- list --type concept / dataset ---"
 contains "$($BIN list --type concept)" "/finance/income.md"
 contains "$($BIN list --type dataset)" "/finance/expenses.md"
 
+echo "--- table extracts a dataset's markdown table (csv) ---"
+contains "$($BIN table /finance/expenses.md --format csv)" "month,category,amount_eur"
+contains "$($BIN table /finance/expenses.md --format csv)" "2026-01,rent,900"
+
 echo "--- list --tag out-of-pocket ---"
 contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
 

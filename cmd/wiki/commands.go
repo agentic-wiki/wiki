@@ -532,6 +532,60 @@ func cmdSearch(args []string) int {
 	return 0
 }
 
+// cmdTable extracts a markdown table from an entry. The dataset convention is one
+// table per file, so a lone table needs no flag; with several, it lists them and
+// asks for --n (1-based) rather than silently guessing.
+func cmdTable(args []string) int {
+	fs := flag.NewFlagSet("table", flag.ExitOnError)
+	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	n := fs.Int("n", 0, "which table to extract when a file has several (1-based)")
+	target, ok := parseWithArg(fs, args)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "usage: wiki table <file> [--n N] [--format text|json|csv|tsv]")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+	e, err := idx.Resolve(target)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	body, err := e.Body()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	tables := parse.Tables(body)
+	switch {
+	case len(tables) == 0:
+		fmt.Fprintf(os.Stderr, "wiki: no table found in %s\n", e.Path)
+		return 2
+	case len(tables) > 1 && *n == 0:
+		fmt.Fprintf(os.Stderr, "wiki: %s has %d tables; choose one with --n\n", e.Path, len(tables))
+		for i, tb := range tables {
+			fmt.Fprintf(os.Stderr, "  %d: %s\n", i+1, strings.Join(tb.Header, " | "))
+		}
+		return 2
+	}
+	sel := *n
+	if sel == 0 {
+		sel = 1
+	}
+	if sel < 1 || sel > len(tables) {
+		fmt.Fprintf(os.Stderr, "wiki: --n %d out of range (1..%d)\n", sel, len(tables))
+		return 2
+	}
+	tb := tables[sel-1]
+	if err := output.Table(os.Stdout, *format, tb.Header, tb.Rows); err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	return 0
+}
+
 // parseWithArg parses fs allowing flags on either side of a single positional
 // argument, which it returns. ok is false unless there is exactly one positional.
 func parseWithArg(fs *flag.FlagSet, args []string) (string, bool) {

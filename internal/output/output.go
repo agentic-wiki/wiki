@@ -2,6 +2,7 @@
 package output
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -114,6 +115,108 @@ func structColumns(t reflect.Type) []column {
 		cols = append(cols, column{name, f.Index})
 	}
 	return cols
+}
+
+// Table renders a dataset's extracted table, whose columns are dynamic (named by
+// the header) and so can't go through Emit's struct-tag path. text prints
+// space-aligned columns; csv/tsv write the header and rows through encoding/csv;
+// json emits an array of row objects keyed by the header, column order preserved.
+func Table(w io.Writer, format string, header []string, rows [][]string) error {
+	switch format {
+	case "json":
+		objs := make([]orderedObj, len(rows))
+		for i, r := range rows {
+			objs[i] = orderedObj{header, r}
+		}
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(objs)
+	case "csv":
+		return delimitedTable(w, ',', header, rows)
+	case "tsv":
+		return delimitedTable(w, '\t', header, rows)
+	default:
+		return alignedTable(w, header, rows)
+	}
+}
+
+// orderedObj marshals to a JSON object preserving key order (a table's column
+// order), which encoding/json's sorted-key map handling would not.
+type orderedObj struct {
+	keys, vals []string
+}
+
+func (o orderedObj) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, k := range o.keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		val := ""
+		if i < len(o.vals) {
+			val = o.vals[i]
+		}
+		kb, err := json.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		vb, err := json.Marshal(val)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(kb)
+		b.WriteByte(':')
+		b.Write(vb)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
+}
+
+func delimitedTable(w io.Writer, comma rune, header []string, rows [][]string) error {
+	cw := csv.NewWriter(w)
+	cw.Comma = comma
+	cw.Write(header)
+	for _, r := range rows {
+		cw.Write(r)
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+// alignedTable prints the table as space-padded columns, for human reading.
+func alignedTable(w io.Writer, header []string, rows [][]string) error {
+	widths := make([]int, len(header))
+	for i, h := range header {
+		widths[i] = len(h)
+	}
+	for _, r := range rows {
+		for i := 0; i < len(widths) && i < len(r); i++ {
+			if len(r[i]) > widths[i] {
+				widths[i] = len(r[i])
+			}
+		}
+	}
+	put := func(cells []string) {
+		var b strings.Builder
+		for i := range widths {
+			c := ""
+			if i < len(cells) {
+				c = cells[i]
+			}
+			if i == len(widths)-1 {
+				b.WriteString(c)
+			} else {
+				b.WriteString(c + strings.Repeat(" ", widths[i]-len(c)+2))
+			}
+		}
+		fmt.Fprintln(w, b.String())
+	}
+	put(header)
+	for _, r := range rows {
+		put(r)
+	}
+	return nil
 }
 
 // cell renders one field value as a string cell. A string slice joins with

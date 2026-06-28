@@ -102,3 +102,40 @@ func TestEmitDelimitedEdges(t *testing.T) {
 		t.Errorf("scalar slice csv: %q", b.String())
 	}
 }
+
+func TestTable(t *testing.T) {
+	header := []string{"date", "amount"}
+	rows := [][]string{{"2026-01", "100"}, {"2026-02", "200"}}
+
+	var csvb bytes.Buffer
+	if err := Table(&csvb, "csv", header, rows); err != nil {
+		t.Fatal(err)
+	}
+	if got := csvb.String(); !strings.Contains(got, "date,amount\n") || !strings.Contains(got, "2026-01,100\n") {
+		t.Errorf("csv = %q", got)
+	}
+
+	var tsvb bytes.Buffer
+	Table(&tsvb, "tsv", header, rows)
+	if got := tsvb.String(); !strings.Contains(got, "date\tamount\n") {
+		t.Errorf("tsv = %q", got)
+	}
+
+	// json: array of row objects with keys in HEADER order, not alphabetical
+	var jsb bytes.Buffer
+	Table(&jsb, "json", header, rows)
+	js := jsb.String()
+	if !strings.Contains(js, `"date"`) || !strings.Contains(js, `"2026-01"`) || !strings.Contains(js, `"amount"`) {
+		t.Errorf("json = %q", js)
+	}
+	if strings.Index(js, `"date"`) > strings.Index(js, `"amount"`) {
+		t.Errorf("json column order not preserved (a map would sort amount before date): %q", js)
+	}
+
+	// text: aligned columns, values present
+	var txt bytes.Buffer
+	Table(&txt, "text", header, rows)
+	if got := txt.String(); !strings.Contains(got, "date") || !strings.Contains(got, "2026-02") {
+		t.Errorf("text = %q", got)
+	}
+}

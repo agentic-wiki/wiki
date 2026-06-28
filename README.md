@@ -62,6 +62,7 @@ wiki list --type note --sort=timestamp                  # most-recently-changed 
 wiki search "language model" --lines                    # full-text over frontmatter + body
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
 wiki outline /tech/infra/hetzner.md                     # its heading map
+wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
 ```
 
 **Follow the graph** (the part `grep` cannot do)

@@ -222,3 +222,55 @@ func TestHeadings(t *testing.T) {
 		t.Fatalf("headings = %+v (no-space and fenced excluded)", hs)
 	}
 }
+
+func TestTables(t *testing.T) {
+	body := "intro\n\n| Date | Amount |\n|------|-------:|\n| 2026-01 | 100 |\n| 2026-02 | 200 |\n\nafter\n"
+	got := Tables(body)
+	if len(got) != 1 {
+		t.Fatalf("want 1 table, got %d: %+v", len(got), got)
+	}
+	if !reflect.DeepEqual(got[0].Header, []string{"Date", "Amount"}) {
+		t.Errorf("header = %v", got[0].Header)
+	}
+	if want := [][]string{{"2026-01", "100"}, {"2026-02", "200"}}; !reflect.DeepEqual(got[0].Rows, want) {
+		t.Errorf("rows = %v, want %v", got[0].Rows, want)
+	}
+}
+
+func TestTablesEdges(t *testing.T) {
+	// no outer pipes; an escaped pipe stays literal in its cell; rows fitted to header
+	body := "a | b | c\n--- | --- | ---\nx\\|y | 2\n1 | 2 | 3 | 4\n"
+	got := Tables(body)
+	if len(got) != 1 {
+		t.Fatalf("want 1 table, got %d", len(got))
+	}
+	if !reflect.DeepEqual(got[0].Header, []string{"a", "b", "c"}) {
+		t.Errorf("header = %v", got[0].Header)
+	}
+	if !reflect.DeepEqual(got[0].Rows[0], []string{"x|y", "2", ""}) { // \| literal; short row padded
+		t.Errorf("row0 = %q", got[0].Rows[0])
+	}
+	if !reflect.DeepEqual(got[0].Rows[1], []string{"1", "2", "3"}) { // surplus 4th cell dropped
+		t.Errorf("row1 = %q", got[0].Rows[1])
+	}
+}
+
+func TestTablesFencedAndMultiple(t *testing.T) {
+	body := "```\n| not | a |\n|---|---|\n| x | y |\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\ntext\n\n| C | D |\n|---|---|\n| 3 | 4 |\n"
+	got := Tables(body)
+	if len(got) != 2 { // the fenced table is ignored
+		t.Fatalf("want 2 tables, got %d: %+v", len(got), got)
+	}
+	if got[0].Header[0] != "A" || got[1].Header[0] != "C" {
+		t.Errorf("headers = %v / %v", got[0].Header, got[1].Header)
+	}
+}
+
+func TestTablesNone(t *testing.T) {
+	if got := Tables("# Heading\n\njust prose, no pipes.\n"); len(got) != 0 {
+		t.Errorf("want no tables, got %+v", got)
+	}
+	if got := Tables("| a | b |\nnot a delimiter row\n"); len(got) != 0 {
+		t.Errorf("a pipe line without a delimiter row is not a table, got %+v", got)
+	}
+}

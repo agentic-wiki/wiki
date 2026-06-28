@@ -537,3 +537,50 @@ func TestCmdListSortMtimeFallback(t *testing.T) {
 		t.Errorf("mtime fallback should put the newer mtime first, got:\n%s", out)
 	}
 }
+
+func TestCmdTable(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\",\"dataset\"]\n")
+	write("one.md", "---\ntype: dataset\n---\n| date | amt |\n|---|---|\n| 2026-01 | 100 |\n")
+	write("multi.md", "---\ntype: note\n---\n| a | b |\n|---|---|\n| 1 | 2 |\n\ntext\n\n| c | d |\n|---|---|\n| 3 | 4 |\n")
+	write("none.md", "---\ntype: note\n---\njust prose\n")
+	t.Chdir(dir)
+
+	// a lone table needs no flag: csv
+	out, code := capture(t, func() int { return cmdTable([]string{"--format", "csv", "one.md"}) })
+	if code != 0 || !strings.Contains(out, "date,amt") || !strings.Contains(out, "2026-01,100") {
+		t.Errorf("csv table: %q (code %d)", out, code)
+	}
+
+	// json carries the rows
+	if out, _ := capture(t, func() int { return cmdTable([]string{"--format", "json", "one.md"}) }); !strings.Contains(out, `"date"`) || !strings.Contains(out, "2026-01") {
+		t.Errorf("json table: %q", out)
+	}
+
+	// several tables without --n: refuse rather than guess (exit 2)
+	if _, code := capture(t, func() int { return cmdTable([]string{"multi.md"}) }); code != 2 {
+		t.Errorf("multi-table without --n should exit 2, got %d", code)
+	}
+
+	// --n selects (opt-in)
+	out, code = capture(t, func() int { return cmdTable([]string{"--n", "2", "--format", "csv", "multi.md"}) })
+	if code != 0 || !strings.Contains(out, "c,d") || !strings.Contains(out, "3,4") {
+		t.Errorf("--n 2: %q (code %d)", out, code)
+	}
+
+	// --n out of range, no table, and missing file are all errors
+	if _, code := capture(t, func() int { return cmdTable([]string{"--n", "9", "multi.md"}) }); code != 2 {
+		t.Errorf("--n out of range should exit 2, got %d", code)
+	}
+	if _, code := capture(t, func() int { return cmdTable([]string{"none.md"}) }); code != 2 {
+		t.Errorf("no table should exit 2, got %d", code)
+	}
+	if _, code := capture(t, func() int { return cmdTable([]string{"nope.md"}) }); code != 2 {
+		t.Errorf("missing file should exit 2, got %d", code)
+	}
+}
