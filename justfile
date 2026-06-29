@@ -90,3 +90,8 @@ cross-compile:
 [group('release')]
 release-dry:
     goreleaser release --snapshot --clean
+
+# Preview the Homebrew formula from a snapshot build (no push)
+[group('release')]
+formula-preview: release-dry
+    VERSION={{version}} ./scripts/update-formula.sh

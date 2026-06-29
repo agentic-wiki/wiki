@@ -11,6 +11,9 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [scaffold registry (--template / --from)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
+## 4 — Release & docs
+- [ ] [Homebrew tap (cross-platform formula)](/4-release-and-docs/002-homebrew-tap.md)
+
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 

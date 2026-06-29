@@ -25,6 +25,14 @@ The catch is that a plain text folder is dumb: `grep` cannot tell you what links
 
 ## Install
 
+Homebrew, on macOS or Linux:
+
+```sh
+brew install agentic-wiki/tap/wiki
+```
+
+Or grab a binary directly:
+
 ```sh
 # macOS
 curl -L https://github.com/agentic-wiki/wiki/releases/latest/download/wiki_darwin_arm64.tar.gz | tar xz

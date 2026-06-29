@@ -28,3 +28,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Render the cross-platform Homebrew formula from dist/checksums.txt and
+      # push it to the tap. Needs a PAT (default GITHUB_TOKEN can't push cross-repo).
+      - name: Publish Homebrew formula
+        run: ./scripts/update-formula.sh
+        env:
+          VERSION: ${{ github.ref_name }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
