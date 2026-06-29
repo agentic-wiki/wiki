@@ -11,13 +11,11 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [scaffold registry (--template / --from)](/3-graph-and-mutation/005-scaffold-registry.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
-## 4 — Release & docs
-- [ ] [Homebrew tap (cross-platform formula)](/4-release-and-docs/002-homebrew-tap.md)
-
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 
 ## Done
+- [x] [Homebrew tap (cross-platform formula)](/4-release-and-docs/002-homebrew-tap.md): `brew install agentic-wiki/tap/wiki` on macOS + Linux from one cross-platform formula, rendered by `scripts/update-formula.sh` and pushed to the tap by CI on each tag. Shipped in v0.3.0.
 - [x] [extract a dataset's table (wiki table)](/2-query-surface/007-table-extract.md): `wiki table <file>` renders a dataset's markdown table as text/csv/json (`--n` to pick among several). New `parse.Tables` + `output.Table`.
 - [x] [sort entries by timestamp](/2-query-surface/006-sort-by-timestamp.md): `list --sort=path|timestamp` (`--reverse`); newest-first, with the mtime fallback read on demand only for timestamp-less entries.
 - [x] [broken links as warning in check](/conformance/002-broken-links-warning.md): `check` demotes broken links from error to warning, so a bundle with not-yet-written links passes (exit 0); only a missing or invalid `type` is an error. `unresolved` stays the to-write surface.
