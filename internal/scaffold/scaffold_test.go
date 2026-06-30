@@ -35,6 +35,30 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+// A lone .git directory does not make the target "non-empty": a freshly
+// `git init`'d (or empty-cloned) repo is a normal init target.
+func TestWriteToleratesGitDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(dir, false); err != nil {
+		t.Errorf("init into a .git-only dir should succeed without force: %v", err)
+	}
+
+	// .git alongside real content still requires --force
+	dir2 := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir2, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir2, "notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(dir2, false); err == nil {
+		t.Errorf("init into a dir with .git + content should still require force")
+	}
+}
+
 // TestScaffoldIsOKFConformant locks the OKF v0.1 MUST-level rules on the bundle
 // `wiki init` emits, independently of `wiki check` (which is an opt-in lint, not
 // an OKF gate). A future edit to files/ that breaks conformance fails here.
