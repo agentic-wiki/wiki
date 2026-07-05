@@ -70,27 +70,50 @@ func TestBrokenAndOrphans(t *testing.T) {
 	}
 }
 
-func TestEscapingLinkIsBroken(t *testing.T) {
+func TestEscapingLinkIsOutOfBundleNotBroken(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\ntype: index\n---\n[esc](/../../../../../../../../etc/hosts)\n",
 	})
-	if idx.FileExists("/../../../../../../../../etc/hosts") {
-		t.Errorf("a target escaping the bundle must not resolve, even if it exists on the host")
+	// A link that climbs above the bundle root points outside the self-contained
+	// bundle: it is not an internal edge, so it is not indexed and not reported
+	// broken — but check surfaces it as its own out-of-bundle advisory.
+	if got := idx.Entries[0].Links; len(got) != 0 {
+		t.Errorf("out-of-bundle link must not become an edge, got %+v", got)
 	}
-	if got := idx.Broken(); len(got) != 1 {
-		t.Errorf("escaping link should be reported broken, got %+v", got)
+	if got := idx.Broken(); len(got) != 0 {
+		t.Errorf("out-of-bundle link must not be reported broken, got %+v", got)
+	}
+	if !hasWarning(idx.Check(), "/index.md", "out-of-bundle link") {
+		t.Errorf("escaping link should warn as out-of-bundle, got %+v", idx.Check())
+	}
+	// The security guard still stands for direct callers (e.g. Move's dest check):
+	// an escaping target must never resolve, even if it exists on the host.
+	if idx.FileExists("/../../../../../../../../etc/hosts") {
+		t.Errorf("FileExists must refuse a target that escapes the bundle")
 	}
 }
 
-func TestRelativeLinkCannotEscapeBundle(t *testing.T) {
+// A bundle nested in a repo often references sibling files (a repo-root PRD): the
+// link is legitimate but outside the bundle, so check must flag it as out-of-bundle
+// (an advisory warning), never as a broken link or an error.
+func TestOutOfBundleReferenceWarns(t *testing.T) {
 	idx := build(t, map[string]string{
-		"sub/page.md": "---\ntype: note\n---\n[esc](../../../../../../etc/passwd)\n",
+		"index.md":    "---\ntype: index\n---\n[prd](../PRD.md) and [b](/b.md)\n",
+		"sub/page.md": "---\ntype: note\n---\n[prd](../../PRD.md)\n",
+		"b.md":        "---\ntype: note\n---\nx\n",
 	})
-	// path.Join caps at the bundle root, so the target stays in-bundle (/etc/passwd
-	// here, relative to the bundle, not the host) and is simply broken.
-	bl := idx.Broken()
-	if len(bl) != 1 || bl[0].Target != "/etc/passwd" {
-		t.Errorf("relative escape should cap at the bundle root, got %+v", bl)
+	if got := idx.Broken(); len(got) != 0 {
+		t.Errorf("out-of-bundle refs must not be broken; only in-bundle links count, got %+v", got)
+	}
+	issues := idx.Check()
+	if !hasWarning(issues, "/index.md", "out-of-bundle link -> ../PRD.md") ||
+		!hasWarning(issues, "/sub/page.md", "out-of-bundle link -> ../../PRD.md") {
+		t.Errorf("both out-of-bundle refs should warn, got %+v", issues)
+	}
+	for _, is := range issues {
+		if is.Level == "error" {
+			t.Errorf("out-of-bundle reference must not be an error: %+v", is)
+		}
 	}
 }
 
@@ -173,21 +196,30 @@ func TestCheckLogDateHeadings(t *testing.T) {
 }
 
 func TestNormalizeLink(t *testing.T) {
-	cases := []struct{ from, target, want string }{
-		{"/index.md", "/a.md", "/a.md"},            // absolute passes through
-		{"/index.md", "/a.md#sec", "/a.md#sec"},    // anchor preserved
-		{"/index.md", "a.md", "/a.md"},             // bare, from root
-		{"/index.md", "./a.md", "/a.md"},           // explicit current dir
-		{"/sub/x.md", "a.md", "/sub/a.md"},         // bare, from a subdir
-		{"/sub/x.md", "../a.md", "/a.md"},          // up one
-		{"/sub/deep/x.md", "../../a.md", "/a.md"},  // up two
-		{"/sub/x.md", "../a.md#sec", "/a.md#sec"},  // relative + anchor
-		{"/sub/x.md", "../../../../a.md", "/a.md"}, // cannot climb above the root
-		{"/a/b.md", "c/d.md", "/a/c/d.md"},         // nested relative
+	// Resolution is pure path math against the root, so any real dir works as root.
+	root := t.TempDir()
+	cases := []struct {
+		from, target, want string
+		escapes            bool
+	}{
+		{"/index.md", "/a.md", "/a.md", false},                 // absolute
+		{"/index.md", "/a.md#sec", "/a.md#sec", false},         // anchor preserved
+		{"/index.md", "a.md", "/a.md", false},                  // bare, from root
+		{"/index.md", "./a.md", "/a.md", false},                // explicit current dir
+		{"/sub/x.md", "a.md", "/sub/a.md", false},              // bare, from a subdir
+		{"/sub/x.md", "../a.md", "/a.md", false},               // up one
+		{"/sub/deep/x.md", "../../a.md", "/a.md", false},       // up two
+		{"/sub/x.md", "../a.md#sec", "/a.md#sec", false},       // relative + anchor
+		{"/a/b.md", "c/d.md", "/a/c/d.md", false},              // nested relative
+		{"/a/x.md", "/a/../b.md", "/b.md", false},              // absolute interior .. canonicalized
+		{"/index.md", "../PRD.md", "", true},                   // relative climbs above root
+		{"/sub/x.md", "../../../../a.md", "", true},            // relative climbs above root
+		{"/index.md", "/something/../../../this.md", "", true}, // absolute climbs above root
 	}
 	for _, c := range cases {
-		if got := normalizeLink(c.from, c.target); got != c.want {
-			t.Errorf("normalizeLink(%q, %q) = %q, want %q", c.from, c.target, got, c.want)
+		abs, escapes := normalizeLink(root, c.from, c.target)
+		if escapes != c.escapes || (!escapes && abs != c.want) {
+			t.Errorf("normalizeLink(%q, %q) = (%q, %v), want (%q, %v)", c.from, c.target, abs, escapes, c.want, c.escapes)
 		}
 	}
 }
@@ -283,9 +315,11 @@ func TestCheckFilenameSpace(t *testing.T) {
 }
 
 func TestAngleBracketLinkResolvesButNotNormalized(t *testing.T) {
+	// Source in a subdir so the relative `../` stays in-bundle (a `../` from the
+	// bundle root would now correctly resolve outside the bundle and be skipped).
 	idx := build(t, map[string]string{
-		"index.md": "---\ntype: index\n---\n[s](<../a b.md>)\n",
-		"a b.md":   "---\ntype: note\n---\nx\n",
+		"sub/page.md": "---\ntype: note\n---\n[s](<../a b.md>)\n",
+		"a b.md":      "---\ntype: note\n---\nx\n",
 	})
 	// the <...> link parses cleanly and resolves into the graph (not garbage)
 	if len(idx.Backlinks("/a b.md")) == 0 {

@@ -200,6 +200,10 @@ var (
 func scanLinks(body string) []Link {
 	var out []Link
 	for i, line := range maskedLines(body) {
+		// A link written inside an inline code span is documentation, not an edge,
+		// so blank spans on this line before matching. (Tasks/Headings keep their
+		// inline code as text, so this strip lives here, not in maskedLines.)
+		line = inlineCodeRe.ReplaceAllString(line, "")
 		for _, m := range linkRe.FindAllStringSubmatch(line, -1) {
 			target := strings.TrimSpace(m[2])
 			if strings.HasPrefix(target, "<") {
@@ -297,8 +301,10 @@ func Headings(body string) []Heading {
 	return hs
 }
 
-// maskedLines returns body split into lines with fenced code blocks and inline
-// code spans blanked, preserving line numbers.
+// maskedLines returns body split into lines with fenced code blocks blanked
+// (line numbers preserved) so block-scanning parsers skip code. Inline code
+// spans are left intact: task and heading text keeps them verbatim, and the one
+// caller that must ignore inline code (link scanning) blanks it itself.
 func maskedLines(body string) []string {
 	lines := strings.Split(body, "\n")
 	inFence := false
@@ -311,9 +317,7 @@ func maskedLines(body string) []string {
 		}
 		if inFence {
 			lines[i] = ""
-			continue
 		}
-		lines[i] = inlineCodeRe.ReplaceAllString(line, "")
 	}
 	return lines
 }

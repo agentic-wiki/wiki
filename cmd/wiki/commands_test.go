@@ -258,9 +258,9 @@ func TestQueryCommands(t *testing.T) {
 		{"status", func() int { return cmdStatus(nil) }, 0},
 		{"list all", func() int { return cmdList(nil) }, 0},
 		{"list empty filter", func() int { return cmdList([]string{"--type", "nope"}) }, 0}, // empty listing is still exit 0
-		{"tasks", func() int { return cmdTasks(nil) }, 0},                   // guide.md has an open checkbox
-		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 0}, // no broken links: a clean diagnostic, exit 0
-		{"orphans", func() int { return cmdOrphans(nil) }, 0},               // flat.md is an orphan
+		{"tasks", func() int { return cmdTasks(nil) }, 0},                                   // guide.md has an open checkbox
+		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 0},                 // no broken links: a clean diagnostic, exit 0
+		{"orphans", func() int { return cmdOrphans(nil) }, 0},                               // flat.md is an orphan
 		{"check (clean)", func() int { return cmdCheck(nil) }, 0},
 	}
 	for _, tc := range cases {

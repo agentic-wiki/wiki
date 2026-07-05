@@ -18,6 +18,8 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 
 ## Done
+- [x] [out-of-bundle links warn, not "broken"](/conformance/004-out-of-bundle-links.md): a link resolving above the bundle root (e.g. `../PRD.md` from a nested bundle) is no longer clamped to a fake in-bundle target and mislabeled broken. `normalizeLink` now decides in/out via `withinDir` (one containment check, shared with `FileExists`); out-of-bundle links get their own `check` advisory (`out-of-bundle link -> …`, warning, exit `0`) and `tidy --links` leaves them untouched. The path-traversal guard is preserved.
+- [x] bug fix: `wiki tasks` / `wiki outline` no longer strip inline code spans from checkbox and heading text (they reused the link scanner's masking, which blanks inline code). Task/heading text now keeps `` `code` `` verbatim; only fenced blocks are still skipped. (`parse.maskedLines` + tests)
 - [x] bug fix: `wiki init .` tolerates a lone `.git` directory (a fresh repo is a normal init target); only real content still needs `--force`. (`scaffold.Write` + test)
 - [x] [Homebrew tap (cross-platform formula)](/4-release-and-docs/002-homebrew-tap.md): `brew install agentic-wiki/tap/wiki` on macOS + Linux from one cross-platform formula, rendered by `scripts/update-formula.sh` and pushed to the tap by CI on each tag. Shipped in v0.3.0.
 - [x] [extract a dataset's table (wiki table)](/2-query-surface/007-table-extract.md): `wiki table <file>` renders a dataset's markdown table as text/csv/json (`--n` to pick among several). New `parse.Tables` + `output.Table`.

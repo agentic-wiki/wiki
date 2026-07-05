@@ -34,6 +34,7 @@ type Entry struct {
 	Title    string          `json:"title"`
 	Tags     []string        `json:"tags"`
 	Links    []Link          `json:"-"` // internal links, resolved to root-absolute: the graph edges
+	Outside  []Link          `json:"-"` // links resolving outside the bundle (Raw kept, no Target)
 	Tasks    []parse.Task    `json:"-"`
 	Headings []parse.Heading `json:"-"`
 	abs      string
@@ -130,7 +131,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// rel is the file's path under the bundle root ("finance/income.md");
 	// entryPath is its root-absolute bundle id ("/finance/income.md").
 	entryPath := "/" + filepath.ToSlash(rel)
-	links := resolveLinks(parse.Links(body), entryPath, offset)
+	links, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
 	tasks, heads := parse.Tasks(body), parse.Headings(body)
 	for i := range tasks {
 		tasks[i].Line += offset
@@ -145,6 +146,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		Title:    parse.String(fm, "title"),
 		Tags:     parse.Strings(fm, "tags"),
 		Links:    links,
+		Outside:  outside,
 		Tasks:    tasks,
 		Headings: heads,
 		abs:      abs,
@@ -168,36 +170,57 @@ func (idx *Index) FileExists(target string) bool {
 // resolveLinks turns a body's parsed (as-written) internal links into indexed
 // links: each keeps its on-disk Raw form and gains a resolved root-absolute
 // Target (the graph key, anchor stripped). Lines are shifted by offset to be
-// file-relative. Absolute and relative links both resolve via normalizeLink.
-func resolveLinks(set parse.LinkSet, entryPath string, offset int) []Link {
-	links := make([]Link, 0, len(set.Absolute)+len(set.Relative))
+// file-relative. Links whose target resolves outside the bundle are returned
+// separately in outside (Raw kept, no resolved Target): they are not graph edges
+// and the escaping path is never resolved on disk, but check reports them so the
+// author knows the tool cannot verify them.
+func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset int) (links, outside []Link) {
+	links = make([]Link, 0, len(set.Absolute)+len(set.Relative))
 	for _, bucket := range [][]parse.Link{set.Absolute, set.Relative} {
 		for _, l := range bucket {
-			target := normalizeLink(entryPath, l.Target)
+			target, escapes := normalizeLink(bundleRoot, entryPath, l.Target)
+			if escapes {
+				outside = append(outside, Link{Text: l.Text, Raw: l.Target, Line: l.Line + offset})
+				continue
+			}
 			if h := strings.IndexByte(target, '#'); h >= 0 {
 				target = target[:h] // the graph edge is the file, not the anchor
 			}
 			links = append(links, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
 		}
 	}
-	return links
+	return links, outside
 }
 
 // normalizeLink resolves a link target, as written in the entry at fromPath, to
-// its canonical root-absolute spelling (anchor preserved): the single standard
-// representation of an internal link. Absolute targets pass through; relative
-// ones join against the entry's directory (path.Join cleans `.`/`..` and cannot
-// climb above the bundle root). The index uses it for the graph key (after
-// dropping the anchor) and NormalizeLinks uses it for the on-disk rewrite.
-func normalizeLink(fromPath, target string) string {
+// its canonical root-absolute spelling within the bundle rooted at bundleRoot
+// (anchor preserved): the single standard representation of an internal link. An
+// absolute target resolves from the bundle root, a relative one from the entry's
+// directory; the result is the final on-disk path with all `.`/`..` applied.
+// escapes is true when that path lands outside the bundle — decided by withinDir,
+// the same containment guard FileExists uses, so a `..` climb above the root
+// (relative or absolute) is caught once, here, and never resolved on disk. Such a
+// link points outside the self-contained bundle, so it is not an internal edge and
+// callers skip it. The index uses the resolved form as the graph key (anchor
+// dropped); NormalizeLinks uses it for the on-disk rewrite.
+func normalizeLink(bundleRoot, fromPath, target string) (abs string, escapes bool) {
 	anchor := ""
 	if h := strings.IndexByte(target, '#'); h >= 0 {
 		anchor, target = target[h:], target[:h]
 	}
+	base := bundleRoot
 	if !strings.HasPrefix(target, "/") {
-		target = path.Join(path.Dir(fromPath), target)
+		base = filepath.Join(bundleRoot, filepath.FromSlash(strings.TrimPrefix(path.Dir(fromPath), "/")))
 	}
-	return target + anchor
+	p := filepath.Join(base, filepath.FromSlash(strings.TrimPrefix(target, "/")))
+	if !withinDir(bundleRoot, p) {
+		return "", true // final path is outside the bundle: an out-of-bundle reference
+	}
+	rel, _ := filepath.Rel(bundleRoot, p) // no error: withinDir confirmed p is under bundleRoot
+	if rel == "." {
+		return "/" + anchor, false // the bundle root itself
+	}
+	return "/" + filepath.ToSlash(rel) + anchor, false
 }
 
 // Resolve finds a single entry by a "/"-containing path (matched exactly,
@@ -605,6 +628,15 @@ func (idx *Index) Check() []Issue {
 	for _, b := range idx.Broken() {
 		issues = append(issues, Issue{"warning", b.From, "broken link -> " + b.Target})
 	}
+	// A link that resolves outside the bundle is not broken (the file lives
+	// elsewhere) and not a graph edge, but it cannot be verified from within the
+	// self-contained bundle, so it is surfaced as its own advisory. To silence it,
+	// reference the out-of-bundle file as a code span or a full URL, not a link.
+	for _, e := range idx.Entries {
+		for _, l := range e.Outside {
+			issues = append(issues, Issue{"warning", e.Path, "out-of-bundle link -> " + l.Raw})
+		}
+	}
 	// The bundle-root index.md carries OKF's okf_version badge; wiki.toml `spec`
 	// is the source of truth, and the tool flags any drift between them.
 	if root, ok := idx.byPath["/index.md"]; ok {
@@ -737,7 +769,10 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	var changes []Fix
 	lines := strings.Split(raw, "\n") // link lines are file-relative
 	for _, l := range rels {
-		abs := normalizeLink(e.Path, l.Target)
+		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, l.Target)
+		if escapes {
+			continue // out-of-bundle link: leave it exactly as authored, never clamp it
+		}
 		if strings.ContainsAny(abs, " \t") {
 			continue // a space target is flagged by check; the fix is renaming the file, not normalizing the link
 		}
