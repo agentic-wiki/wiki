@@ -1,0 +1,21 @@
+---
+type: task
+title: "init scaffolds an operating manual (AGENTS.md) + a selectable workflow"
+status: todo
+priority: medium
+tags: [feature, scaffold]
+---
+
+Replace the dummy-example starter with self-contained scaffolding, so a fresh bundle teaches an agent to operate it with no separate skill install. Builds on [init scaffold](/3-graph-and-mutation/003-init-scaffold.md).
+
+**Decided (design session 2026-07-06):**
+
+- **`wiki init [dir] --workflow <name>`** — `--workflow` is the single axis (not `--template`). The chosen workflow dictates how the base is built: the `wiki.toml` types, the `WORKFLOW.md` opinion doc, and any seed structure. Default `generic`. Curated workflows embedded via `go:embed`; start with `generic` plus one or two (candidates: `org-wiki`, `project-backlog`/kanban, `product-docs`, `personal`).
+- **Scaffold `AGENTS.md`** (workflow-independent) — **the source of truth for how to operate the tool and how a bundle is managed**: the bundle model (files are truth; folder = home, `type` = what it is, tags = cross-cutting; root-absolute links), the maintenance loop (capture→refine→promote→index→retrieve→maintain), and health discipline (run `wiki check` after edits; `unresolved` is the to-write list). Organized around **use cases, not commands** — worked recipes for the situations a user/agent lands in (capture a rough thought, promote a draft, re-home an orphan, groom links, extract a dataset...), each of which may chain several `wiki` commands *and* steps that aren't `wiki` at all (edit a file, `git commit`). Exhaustive flag/syntax detail is left to the built-in reference `wiki <cmd> -h` (generated from the binary; `wiki help` is a summary, not the guide). It references `WORKFLOW.md` for how *this* base is organized.
+- **Scaffold `CLAUDE.md` as a symlink → `AGENTS.md`**, with a one-line stub fallback when the symlink can't be created (e.g. Windows without privilege).
+- **`WORKFLOW.md`** = the workflow-specific opinion; user-editable and swappable.
+- **Two kinds of file, kept distinct.** *Instruction/meta* files the tool scaffolds and owns — `AGENTS.md`, `WORKFLOW.md`, `CLAUDE.md` — and lists in `skip`. *Content / user-space* is the user's: `README.md` is not scaffolded (theirs to write), and `index.md` is content too. The one exception we must seed is a minimal root `index.md` (OKF nav entry, and where `okf_version` lives, so the bundle is `check`-clean); `notes/welcome.md` is dropped, and any worked example goes inside `WORKFLOW.md` as snippets, not as live content. *(Open: seed only this minimal `index.md`, or seed zero content and relax the `missing okf_version` check so an empty bundle is still clean.)*
+
+**Superseded:** the remote scaffold-registry idea (`--template` / `--from <git-url>`). A URL `--from` is low value (you can just `curl` the file); built-ins stay embedded and offline. Revisit only if a real need appears.
+
+**Depends on** [non-entry files](/conformance/005-non-entry-files.md) (the `skip` list keeps `AGENTS.md`/`CLAUDE.md`/`WORKFLOW.md` indexed but exempt from conformance reports). **Needs a spec note** to recognize these meta files, and a README rewrite of the stack framing from *Markdown + tool + skill* to **format + tool + workflow**: two of the three layers (format, workflow) now live in the bundle; only the tool is external. The skills repo is **not** deprecated — skills and AGENTS.md serve different contexts: a skill suits a general-purpose agent that manages many things (Claude Cowork, Hermes, ...), where agentic-wiki is one capability among many; AGENTS.md suits a purpose-specific bundle, where operating it is the agent's whole job. Both stay; AGENTS.md is the in-repo channel, not a skill replacement.

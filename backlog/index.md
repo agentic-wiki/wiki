@@ -8,14 +8,17 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
-- [ ] [scaffold registry (--template / --from)](/3-graph-and-mutation/005-scaffold-registry.md)
+- [ ] [init: operating manual + selectable workflow](/3-graph-and-mutation/005-workflow-scaffold.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
 ## Conformance
 - [ ] [detect & convert wikilinks](/conformance/003-wikilink-detection.md)
+- [ ] [wiki.toml `skip` field for meta files](/conformance/005-non-entry-files.md)
 
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
+- [ ] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md)
+- [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
 - [x] [out-of-bundle links warn, not "broken"](/conformance/004-out-of-bundle-links.md): a link resolving above the bundle root (e.g. `../PRD.md` from a nested bundle) is no longer clamped to a fake in-bundle target and mislabeled broken. `normalizeLink` now decides in/out via `withinDir` (one containment check, shared with `FileExists`); out-of-bundle links get their own `check` advisory (`out-of-bundle link -> …`, warning, exit `0`) and `tidy --links` leaves them untouched. The path-traversal guard is preserved.

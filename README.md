@@ -164,6 +164,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
 | `outline <path>` | An entry's heading hierarchy |
+| `table <path>` | Extract a dataset's markdown table as text/csv/json (`--n` to pick one) |
 | `tasks` | Open `- [ ]` checkboxes (`--all`, `--done`) |
 | `tags` / `properties` / `property <key>` | The base's vocabulary (`--counts`, `--sort=name\|count`) |
 | `links <path>` / `backlinks <path>` | Outgoing / incoming links |
@@ -179,10 +180,10 @@ Two everyday commands have short aliases: `wiki ls` for `list`, and `wiki mv` fo
 
 ## The backlog itself is a wiki
 
-There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives in [`tasks/`](tasks/index.md), and it is itself an agentic-wiki bundle, managed by `wiki`. The tool runs on its own to-do list, with the same commands as above:
+There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives in [`backlog/`](backlog/index.md), and it is itself an agentic-wiki bundle, managed by `wiki`. The tool runs on its own to-do list, with the same commands as above:
 
 ```sh
-cd tasks
+cd backlog
 wiki tasks                           # what is left to build
 wiki list --type task --tag feature  # new features
 wiki check                           # the backlog stays conformant

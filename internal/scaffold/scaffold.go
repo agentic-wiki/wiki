@@ -1,8 +1,8 @@
 // Package scaffold writes a fresh agentic-wiki bundle from an embedded starter.
 //
-// v1 embeds the starter in this repo (the files/ directory). Sourcing it from
-// the separate agentic-wiki/template repo as a go-module dependency, plus
-// template selection, is the scaffold-registry work (see tasks/).
+// v1 embeds a single starter (the files/ directory). Growing this into an
+// AGENTS.md operating manual plus curated, selectable workflows (--workflow)
+// is the workflow-scaffold work (see backlog/).
 package scaffold
 
 import (
