@@ -17,7 +17,7 @@ func TestOKFVersion(t *testing.T) {
 }
 
 func TestParseConfig(t *testing.T) {
-	spec, types, _, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
+	spec, types, _, _, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
 	if spec != "0.1" {
 		t.Errorf("spec=%q", spec)
 	}
@@ -28,21 +28,34 @@ func TestParseConfig(t *testing.T) {
 
 func TestParseConfigMessy(t *testing.T) {
 	// Spaces, bare + quoted tokens; internal space preserved; no spec line.
-	if _, types, _, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
+	if _, types, _, _, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
 		t.Errorf("types=%#v", types)
 	}
-	if spec, empty, _, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
+	if spec, empty, _, _, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
 		t.Errorf("spec=%q types=%#v, want empty", spec, empty)
 	}
 }
 
 func TestParseConfigIgnore(t *testing.T) {
-	_, _, ignore, orphans := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\nignore_orphans=[\"backlog/**\"]\n")
+	_, _, ignore, orphans, _ := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\nignore_orphans=[\"backlog/**\"]\n")
 	if !reflect.DeepEqual(ignore, []string{"AGENTS.md", "../PRD.md"}) {
 		t.Errorf("ignore=%#v", ignore)
 	}
 	if !reflect.DeepEqual(orphans, []string{"backlog/**"}) {
 		t.Errorf("ignore_orphans=%#v", orphans)
+	}
+}
+
+func TestParseConfigUnknownKeys(t *testing.T) {
+	// A renamed field (the old `skip`) or a typo is inert; parseConfig collects it
+	// so `check` can flag it rather than let it pass silently.
+	_, _, _, _, unknown := parseConfig("spec=\"0.1\"\nskip=[\"AGENTS.md\"]\ntpyes=[\"note\"]\n")
+	if !reflect.DeepEqual(unknown, []string{"skip", "tpyes"}) {
+		t.Errorf("unknown=%#v, want [skip tpyes]", unknown)
+	}
+	// A clean config yields no unknown keys.
+	if _, _, _, _, u := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[]\nignore_orphans=[]\n"); u != nil {
+		t.Errorf("unknown=%#v, want nil", u)
 	}
 }
 

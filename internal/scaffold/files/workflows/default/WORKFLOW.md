@@ -1,6 +1,6 @@
 # How this base is organized
 
-This is the **workflow** layer: the conventions for *this* base, on top of what [AGENTS.md](AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how you work.**
+This is the **workflow** layer: the conventions for *this* base, on top of what [AGENTS.md](/AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how you work.**
 
 This is the `default` workflow: a general-purpose knowledge base (notes, concepts, datasets) with a task backlog. Other starter workflows will exist (`wiki init --workflow <name>`); or just reshape this file.
 
@@ -34,18 +34,17 @@ my-base/
 │   ├── articles/
 │   └── watch-later/
 └── tasks/             # the backlog (see below)
-    ├── index.md       # the board: goals + grouped checkboxes
-    ├── now/
-    ├── next/
-    ├── sometime/
-    └── archive/
+    ├── index.md       # the board: goals + ## Now / ## Next
+    ├── active/        # committed work, linked from the board
+    ├── backlog/       # unscheduled / someday
+    └── archive/       # shipped or dropped
 ```
 
 Each `index.md` is the map for its level; the leaves are entries.
 
 ## Capture → promote (the inbox)
 
-Unclassified thoughts land in `inbox/` as `type: draft`, so `wiki list --type draft` is the to-refine queue:
+Unclassified thoughts land in `inbox/` as `type: draft`, so `wiki list --where type=draft` is the to-refine queue:
 
 1. **Capture** a new `inbox/<slug>.md` with `type: draft` and whatever you know. A binary (a PDF) goes in a gitignored `inbox/resources/`, pointed at by the draft's `resource:`.
 2. **Refine** it: read it back, sharpen, fill it in.
@@ -58,9 +57,9 @@ Fully-formed knowledge can be created in place; the inbox is only for unrefined 
 Treat tasks as a **backlog**, not a flat checklist. A `tasks/index.md` (or the root `index.md`) is the board:
 
 - **Goals first.** Open the board with the one or two overarching objectives the current work serves, so "what's next" always has a *why*.
-- **Grouped, linked checkboxes.** Under the goals, group tasks (by timeframe (`now` / `next` / `sometime`) or by `status`) as `- [ ]` checkboxes that link to the real entries.
-- **Entries hold the detail.** Each non-trivial task is a `type: task` file in a subfolder (`tasks/now/`, `tasks/next/`, …) carrying frontmatter like `status`, `priority`, and `tags` (`feature`/`bug`/`debt`/`chore`), plus links to related entries. Trivial tasks can stay inline `- [ ]` without a full entry.
-- **Archive the past.** Move shipped or dead tasks to `tasks/archive/` (or delete them once their value is captured elsewhere), so the board stays a lean snapshot of what's next.
+- **Grouped, linked checkboxes.** Under the goals, group tasks into `## Now` / `## Next` sections (or by `status`) as `- [ ]` checkboxes linking to the real entries. Scheduling lives in these sections, not in folders.
+- **Entries hold the detail.** Each non-trivial task is a `type: task` file carrying frontmatter like `status`, `priority`, and `tags` (`feature`/`bug`/`debt`/`chore`), plus links to related entries. Keep committed tasks in `tasks/active/` and parked ones in `tasks/backlog/`; a task's progress is its `status`, not a folder to shuffle it between. Trivial tasks can stay inline `- [ ]` without a full entry.
+- **Archive the past.** Move shipped or dead tasks to `tasks/archive/` (or delete them once their value is captured elsewhere), so the board stays a lean snapshot of what's next. If you keep `tasks/backlog/` or `tasks/archive/`, add `ignore_orphans = ["tasks/backlog/**", "tasks/archive/**"]` to `wiki.toml` so parked work is not flagged as orphans.
 
 ```markdown
 # Backlog
@@ -68,11 +67,11 @@ Treat tasks as a **backlog**, not a flat checklist. A `tasks/index.md` (or the r
 **Goal:** ship v1 of the importer this quarter.
 
 ## Now
-- [ ] 🔵 [CSV header parser](/tasks/now/csv-parser.md)
-- [ ] 🔴 [Timezone bug in ingest](/tasks/now/tz-bug.md)
+- [ ] 🔵 [CSV header parser](/tasks/active/csv-parser.md)
+- [ ] 🔴 [Timezone bug in ingest](/tasks/active/tz-bug.md)
 
 ## Next
-- [ ] [Dedup incoming rows](/tasks/next/dedup.md)
+- [ ] [Dedup incoming rows](/tasks/active/dedup.md)
 ```
 
 A checkbox is checked exactly when its entry's `status` is `done`: update both in one change. If you *don't* group by status, a subtle leading emoji can carry it at a glance (🔵 in progress, 🔴 blocked, ✅ done); skip the emoji when the grouping already says it.
@@ -89,4 +88,4 @@ Little and often. Aim for a base that gets **more discoverable** over time, so *
 
 ## Make it yours
 
-Nothing here is fixed beyond "every entry has a `type`." Have one inbox or none, a backlog or just inline checkboxes, these folders or your own. Rewrite this file to match your base; [AGENTS.md](AGENTS.md) points here for the specifics.
+Nothing here is fixed beyond "every entry has a `type`." Have one inbox or none, a backlog or just inline checkboxes, these folders or your own. Rewrite this file to match your base; [AGENTS.md](/AGENTS.md) points here for the specifics.

@@ -21,11 +21,11 @@ Usage: wiki [--root <dir>] <command> [flags]
 Commands:
   init          scaffold a new bundle (--workflow <name>, --force)
   status        bundle + index summary
-  list, ls      list entries (--type --tag --prefix --sort=path|timestamp --reverse)
+  list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
-  search        full-text search over entries (--type --tag --prefix --lines)
+  search        full-text search over entries (--where key=value --prefix --lines)
   tasks         list checkbox tasks (--all --done --prefix)
   tags          list tags in use (--counts --sort=name|count --prefix)
   properties    list frontmatter keys in use (--counts --sort --prefix)
@@ -43,6 +43,9 @@ Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 
 Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
+Filter frontmatter with --where key=value (repeatable = AND) on list/search; type and tags are
+  ordinary fields, e.g. --where type=note, --where tags=bug
+list --format json carries each entry's full frontmatter; csv/tsv carry the canonical columns
 Exit codes: 0 ok, 1 no match or check errors, 2 error
 `
 

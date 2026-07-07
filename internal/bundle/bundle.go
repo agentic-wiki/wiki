@@ -24,6 +24,10 @@ type Bundle struct {
 	// IgnoreOrphans lists paths (relative to Dir) whose entries stay indexed but are
 	// not reported by `wiki orphans`: a directory subtree or an exact path.
 	IgnoreOrphans []string
+	// Unknown holds wiki.toml keys the tool does not recognize (a typo, or a
+	// renamed field). They are inert; `check` surfaces them so they aren't
+	// silently ignored.
+	Unknown []string
 }
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
@@ -53,13 +57,14 @@ func load(root, cfg string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	spec, types, ignore, ignoreOrphans := parseConfig(string(data))
+	spec, types, ignore, ignoreOrphans, unknown := parseConfig(string(data))
 	return &Bundle{
 		Dir:           root,
 		Spec:          spec,
 		Types:         types,
 		Ignore:        ignore,
 		IgnoreOrphans: ignoreOrphans,
+		Unknown:       unknown,
 	}, nil
 }
 
@@ -83,8 +88,9 @@ func (b *Bundle) OKFVersion() (string, bool) {
 
 // parseConfig reads the tiny wiki.toml we define: a `spec` string, and `types`,
 // `ignore`, and `ignore_orphans` arrays, each on one line. Deliberately minimal
-// (no TOML dependency).
-func parseConfig(s string) (spec string, types, ignore, ignoreOrphans []string) {
+// (no TOML dependency). Any other key is collected in unknown so `check` can flag
+// it rather than let a typo or a renamed field pass unnoticed.
+func parseConfig(s string) (spec string, types, ignore, ignoreOrphans, unknown []string) {
 	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -94,7 +100,7 @@ func parseConfig(s string) (spec string, types, ignore, ignoreOrphans []string) 
 		if !ok {
 			continue
 		}
-		switch strings.TrimSpace(key) {
+		switch k := strings.TrimSpace(key); k {
 		case "spec":
 			spec = parse.Unquote(val)
 		case "types":
@@ -103,7 +109,9 @@ func parseConfig(s string) (spec string, types, ignore, ignoreOrphans []string) 
 			ignore = parse.List(val)
 		case "ignore_orphans":
 			ignoreOrphans = parse.List(val)
+		default:
+			unknown = append(unknown, k)
 		}
 	}
-	return spec, types, ignore, ignoreOrphans
+	return spec, types, ignore, ignoreOrphans, unknown
 }

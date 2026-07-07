@@ -3,7 +3,7 @@
 // The starter is split into shared files (the AGENTS.md operating manual, the
 // .gitignore) and per-workflow files (wiki.toml, index.md, WORKFLOW.md) under
 // files/workflows/<name>/. `wiki init --workflow <name>` picks one; the default
-// is `generic`. Sourcing workflows from a separate repo is deferred (see backlog).
+// is `default`. Sourcing workflows from a separate repo is deferred (see backlog).
 package scaffold
 
 import (

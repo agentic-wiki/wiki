@@ -82,16 +82,16 @@ contains "$($BIN check)" "warning"
 echo "--- unresolved finds the broken link ---"
 contains "$($BIN unresolved)" "/finance/q1-receipts.md"
 
-echo "--- list --type concept / dataset ---"
-contains "$($BIN list --type concept)" "/finance/income.md"
-contains "$($BIN list --type dataset)" "/finance/expenses.md"
+echo "--- list --where type=concept / dataset ---"
+contains "$($BIN list --where type=concept)" "/finance/income.md"
+contains "$($BIN list --where type=dataset)" "/finance/expenses.md"
 
 echo "--- table extracts a dataset's markdown table (csv) ---"
 contains "$($BIN table /finance/expenses.md --format csv)" "month,category,amount_eur"
 contains "$($BIN table /finance/expenses.md --format csv)" "2026-01,rent,900"
 
-echo "--- list --tag out-of-pocket ---"
-contains "$($BIN list --tag out-of-pocket)" "/finance/expenses.md"
+echo "--- list --where tags=out-of-pocket ---"
+contains "$($BIN list --where tags=out-of-pocket)" "/finance/expenses.md"
 
 echo "--- list --prefix filters to a subtree ---"
 contains "$($BIN list --prefix finance/)" "/finance/income.md"
@@ -100,7 +100,7 @@ echo "--- list --sort=timestamp orders results ---"
 contains "$($BIN list --sort=timestamp)" "/finance/income.md"
 
 echo "--- aliases: ls = list, mv = move ---"
-contains "$($BIN ls --type concept)" "/finance/income.md"
+contains "$($BIN ls --where type=concept)" "/finance/income.md"
 contains "$($BIN mv --dry-run /finance/income.md /finance/costs.md)" "would move"
 
 echo "--- tags lists tags (with counts) ---"
@@ -127,10 +127,10 @@ contains "$DONE" "file the Q1 report"
 ! contains "$DONE" "reconcile the bank statement"
 
 echo "--- json output ---"
-contains "$($BIN list --type concept --format json)" '"type": "concept"'
+contains "$($BIN list --where type=concept --format json)" '"type": "concept"'
 
 echo "--- csv output: header row from json fields ---"
-contains "$($BIN list --type concept --format csv)" "path,name,type,title,tags"
+contains "$($BIN list --where type=concept --format csv)" "path,name,type,title,tags"
 
 echo "--- tsv output: tab-separated header ---"
 contains "$($BIN property type --format tsv)" "$(printf 'name\tcount')"
@@ -152,8 +152,8 @@ contains "$($BIN search income)" "/finance/income.md"
 echo "--- search --lines shows file:line ---"
 contains "$($BIN search --lines income)" "/finance/income.md:"
 
-echo "--- search --type filters ---"
-contains "$($BIN search --type dataset rent)" "/finance/expenses.md"
+echo "--- search --where filters ---"
+contains "$($BIN search --where type=dataset rent)" "/finance/expenses.md"
 
 echo "--- search no match => exit 1 ---"
 ! $BIN search zzzznope >/dev/null
@@ -168,7 +168,7 @@ echo "--- orphans (none => empty, exit 0) ---"
 $BIN orphans >/dev/null
 
 echo "--- no results => empty, exit 0 (like ls) ---"
-$BIN list --type nonexistent >/dev/null
+$BIN list --where type=nonexistent >/dev/null
 
 echo "--- version ---"
 contains "$($BIN version)" "wiki"

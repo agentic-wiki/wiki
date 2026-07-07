@@ -2,6 +2,7 @@
 package index
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -79,14 +80,39 @@ func (e *Entry) Body() (string, error) {
 	return body, nil
 }
 
+// MarshalJSON renders the entry as a flat object: its canonical fields (path,
+// name, type, title, tags) plus every other frontmatter key it carries, so
+// `list --format json` exposes the full frontmatter (status, assignee, epic, …)
+// that structured tooling needs. CSV/TSV keep the fixed canonical columns (the
+// struct's json tags), since arbitrary keys don't fit a fixed column set.
+func (e *Entry) MarshalJSON() ([]byte, error) {
+	m := make(map[string]any, len(e.fm)+5)
+	for k, v := range e.fm {
+		m[k] = v
+	}
+	m["path"] = e.Path
+	m["name"] = e.Name
+	m["type"] = e.Type
+	m["title"] = e.Title
+	m["tags"] = e.Tags
+	return json.Marshal(m)
+}
+
+// MatchProperty reports whether the entry's frontmatter key holds value: a
+// list-valued key (e.g. tags) matches when any element equals value, a scalar
+// matches on equality. A missing key never matches. Backs the `--where` filter.
+func (e *Entry) MatchProperty(key, value string) bool {
+	return slices.Contains(parse.Strings(e.fm, key), value)
+}
+
 // Index is the built model of a bundle.
 type Index struct {
-	Bundle       *bundle.Bundle
-	Entries      []*Entry
-	byPath       map[string]*Entry
-	ignoreIn     map[string]bool // wiki.toml `ignore` entries resolving inside: bundle path -> exempt from conformance/orphans/broken
-	ignoreOut    map[string]bool // wiki.toml `ignore` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
-	orphanIgnore []string        // wiki.toml `ignore_orphans` as "/dir" prefixes (or exact paths): matched entries stay indexed but are not reported as orphans
+	Bundle      *bundle.Bundle
+	Entries     []*Entry
+	byPath      map[string]*Entry
+	ignoreIn    []string        // wiki.toml `ignore` patterns resolving inside: bundle-path globs; a match is not indexed as an entry
+	ignoreOut   map[string]bool // wiki.toml `ignore` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
+	orphanGlobs []string        // wiki.toml `ignore_orphans` as bundle-path globs: matched entries stay indexed but are not reported as orphans
 }
 
 // Build scans the bundle directory and parses every .md file.
@@ -107,7 +133,7 @@ func Build(b *bundle.Bundle) (*Index, error) {
 			return nil
 		}
 		rel, _ := filepath.Rel(b.Dir, path)
-		if idx.ignoreIn["/"+filepath.ToSlash(rel)] {
+		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
 		}
 		e, err := parseEntry(b, path)
@@ -124,14 +150,16 @@ func Build(b *bundle.Bundle) (*Index, error) {
 	return idx, nil
 }
 
-// resolveIgnore resolves the bundle's wiki.toml `ignore` list into two lookup sets:
-// entries resolving inside the bundle (ignoreIn, keyed by bundle path) are indexed
-// but exempt from every conformance report; entries resolving outside (ignoreOut,
-// keyed by absolute fs path) acknowledge an out-of-bundle link so its advisory is
-// silenced. Each entry is a path relative to the bundle root; matching is pure
-// lexical arithmetic, so an outside path is never stat'd or read.
+// resolveIgnore resolves the bundle's wiki.toml `ignore` and `ignore_orphans`
+// lists into glob patterns matched by matchGlob. An `ignore` pattern resolving
+// inside the bundle becomes a bundle-path glob (ignoreIn): a matching file is not
+// indexed as an entry. One resolving outside (ignoreOut, keyed by absolute fs
+// path) acknowledges an out-of-bundle link so its advisory is silenced; these are
+// exact (globbing external files is out of scope). `ignore_orphans` patterns
+// become bundle-path globs (orphanGlobs). A pattern with no wildcard is an exact
+// path (a single file), so `ignore = ["AGENTS.md"]` still works. Classification
+// is pure lexical arithmetic, so an outside path is never stat'd or read.
 func (idx *Index) resolveIgnore() {
-	idx.ignoreIn = map[string]bool{}
 	idx.ignoreOut = map[string]bool{}
 	root := idx.Bundle.Dir
 	for _, s := range idx.Bundle.Ignore {
@@ -139,17 +167,13 @@ func (idx *Index) resolveIgnore() {
 		p := filepath.Join(root, filepath.FromSlash(s))
 		if withinDir(root, p) {
 			rel, _ := filepath.Rel(root, p)
-			idx.ignoreIn["/"+filepath.ToSlash(rel)] = true
+			idx.ignoreIn = append(idx.ignoreIn, "/"+filepath.ToSlash(rel))
 		} else {
 			idx.ignoreOut[p] = true
 		}
 	}
 	for _, pat := range idx.Bundle.IgnoreOrphans {
-		d := strings.TrimPrefix(filepath.ToSlash(pat), "/")
-		d = strings.TrimSuffix(d, "/**")
-		d = strings.TrimSuffix(d, "/*")
-		d = strings.TrimSuffix(d, "/")
-		idx.orphanIgnore = append(idx.orphanIgnore, "/"+d)
+		idx.orphanGlobs = append(idx.orphanGlobs, "/"+strings.TrimPrefix(filepath.ToSlash(pat), "/"))
 	}
 }
 
@@ -293,18 +317,22 @@ func (idx *Index) Resolve(arg string) (*Entry, error) {
 	}
 }
 
-// Filter returns entries matching the given type, tag, and path prefix (any of
-// which may be empty to skip).
-func (idx *Index) Filter(typ, tag, pathPrefix string) []*Entry {
+// PropFilter is one frontmatter key/value test for Filter/Search (the `--where`
+// flag): an entry matches when its frontmatter key holds value (Entry.MatchProperty).
+type PropFilter struct{ Key, Value string }
+
+// Filter returns entries under pathPrefix (empty = the whole bundle) that satisfy
+// every property filter (nil = no property constraint). props are ANDed; a
+// list-valued field matches when it includes the value, a scalar when it equals
+// it. type and tags are ordinary fields here (`type=note`, `tags=bug`), so one
+// filter covers every frontmatter axis.
+func (idx *Index) Filter(pathPrefix string, props []PropFilter) []*Entry {
 	var out []*Entry
 	for _, e := range idx.Entries {
-		if typ != "" && e.Type != typ {
-			continue
-		}
-		if tag != "" && !slices.Contains(e.Tags, tag) {
-			continue
-		}
 		if pathPrefix != "" && !hasPathPrefix(e.Path, pathPrefix) {
+			continue
+		}
+		if !e.matchesAll(props) {
 			continue
 		}
 		out = append(out, e)
@@ -312,11 +340,21 @@ func (idx *Index) Filter(typ, tag, pathPrefix string) []*Entry {
 	return out
 }
 
+// matchesAll reports whether the entry satisfies every property filter (AND).
+func (e *Entry) matchesAll(props []PropFilter) bool {
+	for _, p := range props {
+		if !e.MatchProperty(p.Key, p.Value) {
+			return false
+		}
+	}
+	return true
+}
+
 // TagCounts returns every tag in the bundle (optionally within a path prefix)
 // with the number of entries carrying it.
 func (idx *Index) TagCounts(pathPrefix string) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter("", "", pathPrefix) {
+	for _, e := range idx.Filter(pathPrefix, nil) {
 		for _, t := range dedupe(e.Tags) {
 			counts[t]++
 		}
@@ -328,7 +366,7 @@ func (idx *Index) TagCounts(pathPrefix string) map[string]int {
 // path prefix) with the number of entries that set it.
 func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter("", "", pathPrefix) {
+	for _, e := range idx.Filter(pathPrefix, nil) {
 		for k := range e.fm {
 			counts[k]++
 		}
@@ -341,7 +379,7 @@ func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
 // key (e.g. tags) contributes each element.
 func (idx *Index) PropertyValueCounts(key, pathPrefix string) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter("", "", pathPrefix) {
+	for _, e := range idx.Filter(pathPrefix, nil) {
 		for _, v := range dedupe(parse.Strings(e.fm, key)) {
 			counts[v]++
 		}
@@ -382,12 +420,12 @@ type SearchHit struct {
 }
 
 // Search returns entries whose file (frontmatter + body) contains query,
-// case-insensitively, after applying the type/tag/path filters. Each hit carries
-// its matching lines, sorted by path. Unreadable files are skipped.
-func (idx *Index) Search(query, typ, tag, pathPrefix string) []SearchHit {
+// case-insensitively, after applying the path-prefix and property filters. Each
+// hit carries its matching lines, sorted by path. Unreadable files are skipped.
+func (idx *Index) Search(query, pathPrefix string, props []PropFilter) []SearchHit {
 	q := strings.ToLower(query)
 	var hits []SearchHit
-	for _, e := range idx.Filter(typ, tag, pathPrefix) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		raw, err := e.Raw()
 		if err != nil {
 			continue
@@ -449,16 +487,11 @@ func (idx *Index) Orphans() []*Entry {
 	return out
 }
 
-// orphanExempt reports whether p is covered by a wiki.toml `ignore_orphans` entry:
-// an exact path, or anything under a listed directory subtree. Finer globs (`*.md`,
-// `a/**/b.md`) are not matched yet (see backlog debt/005).
+// orphanExempt reports whether p is covered by a wiki.toml `ignore_orphans`
+// glob (see matchGlob): an exact path, a `dir/**` subtree, or any `*`/`?`/`**`
+// pattern.
 func (idx *Index) orphanExempt(p string) bool {
-	for _, pre := range idx.orphanIgnore {
-		if p == pre || strings.HasPrefix(p, pre+"/") {
-			return true
-		}
-	}
-	return false
+	return matchAnyGlob(idx.orphanGlobs, p)
 }
 
 // LinkRef is a directed internal link between two entries.
@@ -627,6 +660,12 @@ type Issue struct {
 // not-yet-written knowledge, so it does not fail the lint (`unresolved` lists them).
 func (idx *Index) Check() []Issue {
 	var issues []Issue
+	// An unrecognized wiki.toml key is silently inert otherwise (a typo, or a
+	// renamed field like the old `skip`), so surface it rather than let the author
+	// assume it took effect.
+	for _, k := range idx.Bundle.Unknown {
+		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
+	}
 	for _, e := range idx.Entries {
 		if e.Name == "index.md" || e.Name == "log.md" {
 			// Reserved files (OKF §6/§7) are not concept documents: they carry no

@@ -131,8 +131,8 @@ func TestCmdSearch(t *testing.T) {
 		t.Errorf("flag-after-query search: %q", out)
 	}
 
-	// --type filter
-	if out, _ := capture(t, func() int { return cmdSearch([]string{"--type", "note", "Setup"}) }); !strings.Contains(out, "/guide.md") {
+	// --where filter
+	if out, _ := capture(t, func() int { return cmdSearch([]string{"--where", "type=note", "Setup"}) }); !strings.Contains(out, "/guide.md") {
 		t.Errorf("type-filter search: %q", out)
 	}
 
@@ -257,10 +257,10 @@ func TestQueryCommands(t *testing.T) {
 	}{
 		{"status", func() int { return cmdStatus(nil) }, 0},
 		{"list all", func() int { return cmdList(nil) }, 0},
-		{"list empty filter", func() int { return cmdList([]string{"--type", "nope"}) }, 0}, // empty listing is still exit 0
-		{"tasks", func() int { return cmdTasks(nil) }, 0},                                   // guide.md has an open checkbox
-		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 0},                 // no broken links: a clean diagnostic, exit 0
-		{"orphans", func() int { return cmdOrphans(nil) }, 0},                               // flat.md is an orphan
+		{"list empty filter", func() int { return cmdList([]string{"--where", "type=nope"}) }, 0}, // empty listing is still exit 0
+		{"tasks", func() int { return cmdTasks(nil) }, 0},                                         // guide.md has an open checkbox
+		{"unresolved (clean)", func() int { return cmdUnresolved(nil) }, 0},                       // no broken links: a clean diagnostic, exit 0
+		{"orphans", func() int { return cmdOrphans(nil) }, 0},                                     // flat.md is an orphan
 		{"check (clean)", func() int { return cmdCheck(nil) }, 0},
 	}
 	for _, tc := range cases {
@@ -430,6 +430,89 @@ func TestCmdTagsProperties(t *testing.T) {
 	// prefix with no entries -> exit 0 (an empty listing, like ls)
 	if _, code := capture(t, func() int { return cmdTags([]string{"--prefix", "sub/"}) }); code != 0 {
 		t.Errorf("tags --prefix sub/ exit=%d, want 0", code)
+	}
+}
+
+func TestCmdListWhere(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"task\"]\n")
+	write("a.md", "---\ntype: task\nstatus: done\nassignee: ana\ntags: [feature]\n---\nx\n")
+	write("b.md", "---\ntype: task\nstatus: done\nassignee: bob\ntags: [bug]\n---\nx\n")
+	write("c.md", "---\ntype: task\nstatus: todo\nassignee: ana\n---\nx\n")
+	write("d.md", "---\ntype: task\nassignee: \"Mary Jane\"\n---\nx\n")
+	t.Chdir(dir)
+
+	// single --where: entries whose frontmatter key holds the value
+	out, code := capture(t, func() int { return cmdList([]string{"--where", "status=done"}) })
+	if code != 0 || !strings.Contains(out, "/a.md") || !strings.Contains(out, "/b.md") || strings.Contains(out, "/c.md") {
+		t.Errorf("--where status=done: %q (code %d)", out, code)
+	}
+
+	// a composite (spaced) value: matched exactly, split only on the first '='
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "assignee=Mary Jane"}) })
+	if !strings.Contains(out, "/d.md") {
+		t.Errorf("--where with a spaced value: %q", out)
+	}
+	// exact match only: a prefix of the value must not match
+	if out, _ := capture(t, func() int { return cmdList([]string{"--where", "assignee=Mary"}) }); strings.Contains(out, "/d.md") {
+		t.Errorf("--where should match the whole value, not a prefix: %q", out)
+	}
+
+	// quotes that survive the shell are unquoted like frontmatter, so
+	// --where 'assignee="Mary Jane"' still matches assignee: "Mary Jane"
+	if out, _ := capture(t, func() int { return cmdList([]string{"--where", `assignee="Mary Jane"`}) }); !strings.Contains(out, "/d.md") {
+		t.Errorf("--where with surviving quotes should match: %q", out)
+	}
+
+	// repeated --where is AND across keys
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "status=done", "--where", "assignee=ana"}) })
+	if !strings.Contains(out, "/a.md") || strings.Contains(out, "/b.md") || strings.Contains(out, "/c.md") {
+		t.Errorf("--where AND: %q", out)
+	}
+
+	// a list-valued key (tags) matches any element
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "tags=bug"}) })
+	if !strings.Contains(out, "/b.md") || strings.Contains(out, "/a.md") {
+		t.Errorf("--where tags=bug: %q", out)
+	}
+
+	// no match is an empty listing, exit 0 (like ls)
+	if out, code := capture(t, func() int { return cmdList([]string{"--where", "assignee=nobody"}) }); code != 0 || strings.TrimSpace(out) != "" {
+		t.Errorf("--where no-match: %q (code %d), want empty/0", out, code)
+	}
+}
+
+func TestCmdListJSONFrontmatter(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		if err := os.WriteFile(filepath.Join(dir, rel), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"task\"]\n")
+	write("a.md", "---\ntype: task\ntitle: A\nstatus: done\nassignee: ana\ntags: [feature]\n---\nx\n")
+	t.Chdir(dir)
+
+	// json carries the full frontmatter (arbitrary keys), not just the canonical set
+	out, code := capture(t, func() int { return cmdList([]string{"--format", "json"}) })
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+	for _, want := range []string{`"status": "done"`, `"assignee": "ana"`, `"path": "/a.md"`, `"type": "task"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("json list missing %s: %q", want, out)
+		}
+	}
+
+	// csv keeps the fixed canonical columns (arbitrary frontmatter is json-only)
+	out, _ = capture(t, func() int { return cmdList([]string{"--format", "csv"}) })
+	if !strings.Contains(out, "path,name,type,title,tags") || strings.Contains(out, "assignee") {
+		t.Errorf("csv should keep canonical columns only: %q", out)
 	}
 }
 

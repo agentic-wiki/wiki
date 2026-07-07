@@ -4,7 +4,7 @@ okf_version: "0.1"
 
 # Wiki CLI — Tasks
 
-Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki tasks`. Every entry: `wiki list --type task`. Debt only: `wiki list --type task --tag debt`.
+Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki tasks`. Every entry: `wiki list --where type=task`. Debt only: `wiki list --where type=task --where tags=debt`.
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
@@ -20,9 +20,12 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
-- [ ] [ignore_orphans: subtree-only, no full globs](/debt/005-ignore-orphans-globs.md)
 
 ## Done
+- [x] [unify filtering under --where](/2-query-surface/009-property-filter.md): one generic `--where key=value` filter on list/search (exact, repeatable=AND, arrays=includes, composite values), **replacing `--type`/`--tag`**; `--prefix` stays for paths; `--format json` now carries every frontmatter field (`Entry.MarshalJSON`; csv/tsv keep canonical columns). Docs + tests swept.
+- [x] [ignore/ignore_orphans full globs](/debt/005-ignore-orphans-globs.md): a small zero-dep matcher (`*`, `?`, `**` across segments, `internal/index/glob.go`) now backs **both** `ignore` and `ignore_orphans`; exact single-file patterns still work. Closes the subtree-only limitation from [conformance/006](/conformance/006-orphan-exempt-globs.md).
+- [x] [check warns on unknown wiki.toml keys](/conformance/007-unknown-config-keys.md): a typo or a renamed field (the old `skip`) is surfaced as a warning instead of silently ignored.
+- [x] workflow-feedback docs pass (from the stress-test LEARNINGS): scaffold `AGENTS.md`/`WORKFLOW.md` use root-absolute links (a fresh init is `tidy`-clean); AGENTS clarifies board-is-authored + `wiki tasks` (checkboxes) vs `list --type task` (entries) + json-as-reporting-surface; project-backlog WORKFLOW warns against folder-per-status (folders now active/backlog/archive; scheduling in board sections), moves queries to `--where`, points deps at real links, bounds reporting to the skill layer; fixed a stale `scaffold.go` doc comment (`generic`→`default`).
 - [x] [wiki.toml `ignore_orphans`](/conformance/006-orphan-exempt-globs.md): globs (subtree/exact) whose entries stay indexed but drop out of `wiki orphans`; wired into `project-backlog` (`backlog/**`, `archive/**`), replacing the folder-index workaround. Full-glob support is debt/005.
 - [x] [init: operating manual + selectable workflow](/3-graph-and-mutation/005-workflow-scaffold.md): `wiki init --workflow` scaffolds an `AGENTS.md` operating manual + editable `WORKFLOW.md` + a `CLAUDE.md` symlink + minimal `index.md`, `ignore` wired in. `default` shipped; more flavors + the framing rewrite are follow-ups.
 - [x] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md): removed the leftover leading sentence; the accurate one-`LinkRef`-per-occurrence description stays.

@@ -93,12 +93,32 @@ func cmdStatus(args []string) int {
 	return 0
 }
 
+// whereFilters collects repeated `--where key=value` flags into the property
+// filters Filter/Search apply; an entry must match every one (AND). It implements
+// flag.Value so `--where` can be given more than once. `type` and `tags` are
+// ordinary frontmatter fields, matched as `--where type=note` / `--where tags=bug`.
+type whereFilters []index.PropFilter
+
+func (w *whereFilters) String() string { return "" }
+
+func (w *whereFilters) Set(s string) error {
+	kRaw, vRaw, ok := strings.Cut(s, "=")
+	k := parse.Unquote(kRaw)
+	if !ok || k == "" {
+		return fmt.Errorf("--where must be key=value, got %q", s)
+	}
+	// Unquote the value the same way frontmatter is parsed, so a quote that
+	// survives the shell (--where 'k="v"') still compares equal to `k: "v"`.
+	*w = append(*w, index.PropFilter{Key: k, Value: parse.Unquote(vRaw)})
+	return nil
+}
+
 func cmdList(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
-	typ := fs.String("type", "", "filter by type")
-	tag := fs.String("tag", "", "filter by tag")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
+	var where whereFilters
+	fs.Var(&where, "where", "filter by frontmatter key=value (repeatable = AND; e.g. type=note, tags=bug)")
 	sortBy := fs.String("sort", "path", "sort order: path|timestamp (timestamp is newest-first)")
 	reverse := fs.Bool("reverse", false, "reverse the sort order")
 	fs.Parse(args)
@@ -107,7 +127,7 @@ func cmdList(args []string) int {
 		return code
 	}
 
-	entries := idx.Filter(*typ, *tag, *prefix)
+	entries := idx.Filter(*prefix, where)
 	switch *sortBy {
 	case "path":
 		sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
@@ -500,13 +520,13 @@ func cmdOutline(args []string) int {
 func cmdSearch(args []string) int {
 	fs := flag.NewFlagSet("search", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
-	typ := fs.String("type", "", "filter by type")
-	tag := fs.String("tag", "", "filter by tag")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
+	var where whereFilters
+	fs.Var(&where, "where", "filter by frontmatter key=value (repeatable = AND; e.g. type=note, tags=bug)")
 	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
 	query, ok := parseWithArg(fs, args)
 	if !ok || strings.TrimSpace(query) == "" {
-		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--type --tag --prefix --lines]  (quote a multi-word query)")
+		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--where key=value --prefix --lines]  (quote a multi-word query)")
 		return 2
 	}
 	idx, code := loadIndex()
@@ -514,7 +534,7 @@ func cmdSearch(args []string) int {
 		return code
 	}
 
-	hits := idx.Search(query, *typ, *tag, *prefix)
+	hits := idx.Search(query, *prefix, where)
 	var lines []string
 	if *showLines {
 		for _, h := range hits {

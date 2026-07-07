@@ -253,17 +253,22 @@ func TestFilter(t *testing.T) {
 		"finance/b.md":        "---\ntype: concept\ntags: [eu]\n---\n",
 		"tech/c.md":           "---\ntype: note\ntags: [go]\n---\n",
 	})
-	if got := len(idx.Filter("note", "", "")); got != 2 {
-		t.Errorf("--type note = %d, want 2", got)
+	if got := len(idx.Filter("", []PropFilter{{"type", "note"}})); got != 2 {
+		t.Errorf("type=note = %d, want 2", got)
 	}
-	if got := len(idx.Filter("", "eu", "")); got != 2 {
-		t.Errorf("--tag eu = %d, want 2", got)
+	if got := len(idx.Filter("", []PropFilter{{"tags", "eu"}})); got != 2 {
+		t.Errorf("tags=eu = %d, want 2", got)
 	}
-	if got := len(idx.Filter("", "", "finance/")); got != 2 {
+	if got := len(idx.Filter("finance/", nil)); got != 2 {
 		t.Errorf("--prefix finance/ = %d, want 2", got)
 	}
-	if got := idx.Filter("note", "eu", "finance/"); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
+	// prefix + two ANDed property filters
+	if got := idx.Filter("finance/", []PropFilter{{"type", "note"}, {"tags", "eu"}}); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
 		t.Errorf("combined filter = %+v", got)
+	}
+	// a missing key never matches
+	if got := idx.Filter("", []PropFilter{{"nope", "x"}}); len(got) != 0 {
+		t.Errorf("unknown key = %d, want 0", len(got))
 	}
 }
 
@@ -304,6 +309,30 @@ func TestCheckSeverity(t *testing.T) {
 	// A broken link is a warning per OKF (not-yet-written knowledge), so it never fails the lint.
 	if !hasWarning(idx.Check(), "/weird.md", "broken link") {
 		t.Errorf("broken link should be a warning, got %+v", idx.Check())
+	}
+}
+
+func TestCheckUnknownConfigKey(t *testing.T) {
+	// An unrecognized wiki.toml key (here the pre-rename `skip`) is inert but must
+	// be surfaced as a warning, not silently ignored.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "wiki.toml"),
+		[]byte("spec=\"0.1\"\ntypes=[\"note\"]\nskip=[\"AGENTS.md\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("---\ntype: note\n---\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := bundle.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Build(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(idx.Check(), "wiki.toml", "unknown wiki.toml key: skip") {
+		t.Errorf("unknown wiki.toml key should warn, got %+v", idx.Check())
 	}
 }
 
@@ -469,6 +498,48 @@ func TestIgnoreOrphans(t *testing.T) {
 	}
 }
 
+// A wiki.toml `ignore` pattern may be a glob, not just an exact filename: it
+// excludes every matching file from the index, while a plain name still matches
+// one file.
+func TestIgnoreGlob(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml":       "spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"drafts/**\", \"*.tmp.md\"]\n",
+		"index.md":        "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
+		"a.md":            "---\ntype: note\n---\nx\n",
+		"scratch.tmp.md":  "no type, ignored by *.tmp.md\n",
+		"drafts/one.md":   "no type, ignored by drafts/**\n",
+		"drafts/sub/x.md": "no type, ignored by drafts/**\n",
+	})
+	for _, p := range []string{"/scratch.tmp.md", "/drafts/one.md", "/drafts/sub/x.md"} {
+		if _, ok := idx.byPath[p]; ok {
+			t.Errorf("%s should be excluded from the index by an ignore glob", p)
+		}
+	}
+	if _, ok := idx.byPath["/a.md"]; !ok {
+		t.Errorf("a non-ignored entry must stay indexed")
+	}
+	if got := idx.Check(); len(got) != 0 {
+		t.Errorf("ignored files must generate no conformance issues, got %+v", got)
+	}
+}
+
+// ignore_orphans accepts arbitrary globs, not only dir/** subtrees.
+func TestIgnoreOrphansGlob(t *testing.T) {
+	files := map[string]string{
+		"wiki.toml":      "spec=\"0.1\"\ntypes=[\"note\"]\nignore_orphans=[\"**/scratch/*.md\"]\n",
+		"index.md":       "---\nokf_version: \"0.1\"\n---\n# Board\n",
+		"a/scratch/n.md": "---\ntype: note\n---\nparked deep\n",
+		"loose.md":       "---\ntype: note\n---\nunlinked, a real orphan\n",
+	}
+	idx := build(t, files)
+	if orphanHas(idx.Orphans(), "/a/scratch/n.md") {
+		t.Errorf("a glob-matched entry should be exempt from orphans; got %+v", idx.Orphans())
+	}
+	if !orphanHas(idx.Orphans(), "/loose.md") {
+		t.Errorf("an unmatched unlinked entry should still be an orphan; got %+v", idx.Orphans())
+	}
+}
+
 func orphanHas(orphans []*Entry, path string) bool {
 	for _, e := range orphans {
 		if e.Path == path {
@@ -599,7 +670,7 @@ func TestSearch(t *testing.T) {
 	})
 
 	// case-insensitive, across files, sorted by path
-	hits := idx.Search("income", "", "", "")
+	hits := idx.Search("income", "", nil)
 	if len(hits) != 2 || hits[0].Path != "/finance/income.md" || hits[1].Path != "/tech/notes.md" {
 		t.Fatalf("hits = %+v", hits)
 	}
@@ -609,22 +680,22 @@ func TestSearch(t *testing.T) {
 	}
 
 	// filters narrow the candidate set
-	if got := idx.Search("income", "note", "", ""); len(got) != 2 {
-		t.Errorf("--type note = %d want 2", len(got))
+	if got := idx.Search("income", "", []PropFilter{{"type", "note"}}); len(got) != 2 {
+		t.Errorf("type=note = %d want 2", len(got))
 	}
-	if got := idx.Search("income", "concept", "", ""); len(got) != 0 {
-		t.Errorf("--type concept = %d want 0", len(got))
+	if got := idx.Search("income", "", []PropFilter{{"type", "concept"}}); len(got) != 0 {
+		t.Errorf("type=concept = %d want 0", len(got))
 	}
-	if got := idx.Search("income", "", "", "finance/"); len(got) != 1 {
+	if got := idx.Search("income", "finance/", nil); len(got) != 1 {
 		t.Errorf("--prefix finance/ = %d want 1", len(got))
 	}
 
 	// frontmatter value (a tag) is searchable
-	if got := idx.Search("money", "", "", ""); len(got) != 1 || got[0].Path != "/finance/income.md" {
+	if got := idx.Search("money", "", nil); len(got) != 1 || got[0].Path != "/finance/income.md" {
 		t.Errorf("tag-value search = %+v", got)
 	}
 	// no match
-	if got := idx.Search("zzzznope", "", "", ""); len(got) != 0 {
+	if got := idx.Search("zzzznope", "", nil); len(got) != 0 {
 		t.Errorf("no-match = %d want 0", len(got))
 	}
 }

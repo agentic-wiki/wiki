@@ -10,7 +10,7 @@ This folder is an **agentic wiki bundle**: plain Markdown (someone's notes, docu
 
 `wiki` runs within the bundle (it walks up to find `wiki.toml`) or from anywhere with `wiki --root <dir>`. This file teaches *how to operate it*; run `wiki <command> -h` for a command's exact flags, and `wiki help` for the full list.
 
-**How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](WORKFLOW.md); read it next.**
+**How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](/WORKFLOW.md); read it next.**
 
 On a brand-new base, treat `WORKFLOW.md` as a starting template, not a finished spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second.
 
@@ -22,7 +22,7 @@ Three orthogonal axes classify every entry (keep them separate and the base stay
 - **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), declared in `wiki.toml`, required on every entry.
 - **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
 
-Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files listed in `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries; paths in `ignore_orphans` stay entries but are kept out of the `orphans` report (a parked backlog, say).
+Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries; paths matched by `ignore_orphans` stay entries but are kept out of the `orphans` report (a parked backlog, say). Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
 
 ## Get oriented
 
@@ -52,14 +52,15 @@ A query is only as good as the indexing preceding it: an entry nothing links to 
 ```sh
 wiki search "docker networking"                # literal, case-insensitive, over frontmatter + body
 wiki search "docker" --lines                   # matching lines as file:line
-wiki list --type concept --tag docker          # filter by kind and topic
-wiki list --type note --prefix personal/       # scope to a subtree
+wiki list --where type=concept --where tags=docker   # filter by kind and topic (repeatable = AND)
+wiki list --where type=task --where status=done       # any frontmatter field, one flag
+wiki list --where type=note --prefix personal/       # scope to a subtree
 wiki read /tech/infra/docker.md                # an entry's body, frontmatter stripped
 wiki outline /tech/infra/docker.md             # its heading map
 wiki table /finance/expenses.md --format csv   # extract a dataset's table, for jq/duckdb
 ```
 
-`--prefix <path>` scopes to a subtree and works on `list`, `search`, `tasks`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list` (it filters frontmatter fields) over `search`.
+`--prefix <path>` scopes to a subtree and works on `list`, `search`, `tasks`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which is a substring scan of the whole file and will also match body text.
 
 ### Follow the graph (what grep can't do)
 
@@ -78,7 +79,7 @@ Knowledge often arrives rough and matures in place. You write the file; `wiki` o
 2. **Refine**: read it back (`wiki read`), ask the user a sharpening question or two, fill it in.
 3. **Promote**: give it a real `type`, `wiki move` it into its domain, and **link it in** from the domain's `index.md` and related entries. An unlinked entry is lost knowledge.
 
-*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](WORKFLOW.md) choice.)*
+*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](/WORKFLOW.md) choice.)*
 
 ### Reshape safely
 
@@ -92,14 +93,16 @@ Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every b
 
 ### Track work
 
-A task is an entry of `type: task`; a board is an `index.md` of `- [ ]` checkboxes linking to them. Keep the checkbox and the entry's `status` in sync (checked exactly when `status` is `done`), updated in one change.
+A task is an entry of `type: task`; a board is an `index.md` of `- [ ]` checkboxes linking to them. These are two distinct surfaces, and it matters which you query:
 
 ```sh
-wiki tasks                # every open checkbox across the base
-wiki list --type task     # every markdown file with `type: task`
+wiki tasks                # scans boards for `- [ ]` checkboxes (not type:task entries)
+wiki list --where type=task   # every type:task entry, whether or not a board links it
 ```
 
-*(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](WORKFLOW.md).)*
+The board is **authored, not generated**: `wiki` never adds a task to it, ticks a box, or prunes a done one. You keep it current, and you keep each checkbox in agreement with its entry's `status` (checked exactly when `status` is `done`), both changed in one edit. A task with no board checkbox is invisible to `wiki tasks` (find it with `wiki list --where type=task`); reconcile that during grooming.
+
+*(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](/WORKFLOW.md).)*
 
 ## Keep it healthy
 
@@ -120,6 +123,6 @@ Git is optional but highly recommended: it is the undo for a base an agent edits
 
 - Every entry has a `type` (reserved `index.md`/`log.md`); slug filenames (lowercase, hyphenated, no spaces); shallow folders (2–3 levels).
 - Root-absolute links, no wikilinks. If you meet a `[[wikilink]]`, rewrite it as a standard Markdown link.
-- Every command takes `--format text|json|csv|tsv` (`json`/`csv`/`tsv` for structured output you can pipe).
+- Every command takes `--format text|json|csv|tsv` (`json`/`csv`/`tsv` for structured output you can pipe). `list --format json` carries each entry's full frontmatter (every field, not just the shown columns), so `wiki list --where type=task --format json | jq …` is the reporting surface for rollups the CLI does not compute itself; csv/tsv carry the canonical columns.
 - Exit codes: `0` ok (enumerations return `0` even when empty), `1` no match (`search`/`table`) or `check` errors, `2` a real error.
 - `wiki` not installed? `brew install agentic-wiki/tap/wiki`, or see the [wiki repo](https://github.com/agentic-wiki/wiki).

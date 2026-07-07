@@ -11,7 +11,7 @@ Underneath, it simply answers like a database. `wiki` CLI reads your markdown fo
 There's pleasantly little to it: no app to launch, no database, no daemon, no sync service, nothing that can lock you in. Just one static binary handling plain files that are yours, and that you will still be able to open in thirty years.
 
 ```sh
-wiki list --type dataset --tag finance      # query entries by type and topic
+wiki list --where type=dataset --where tags=finance  # query entries by type and topic
 wiki search "quarterly revenue"             # full-text search
 wiki backlinks /finance/income.md           # everything that points here
 wiki tasks                                  # every open checkbox, gathered
@@ -65,8 +65,8 @@ Everything is a fast, scriptable query over the folder.
 **Find things**
 
 ```sh
-wiki list --type concept --tag crypto --prefix tech/    # by kind, topic, and subtree
-wiki list --type note --sort=timestamp                  # most-recently-changed first (--reverse: oldest first)
+wiki list --where type=concept --where tags=crypto --prefix tech/   # by kind, topic, and subtree
+wiki list --where type=note --sort=timestamp            # most-recently-changed first (--reverse: oldest first)
 wiki search "language model" --lines                    # full-text over frontmatter + body
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
 wiki outline /tech/infra/hetzner.md                     # its heading map
@@ -88,7 +88,7 @@ That last one is quietly the favorite: a broken link is not an error here, it is
 
 ```sh
 wiki tasks                         # every open - [ ] checkbox, across the whole base
-wiki list --type task              # list task entries (detailed entries)
+wiki list --where type=task        # list task entries (detailed entries)
 wiki tags --counts --sort=count    # what you write about most
 wiki property status --counts      # how many open vs done, draft vs final
 ```
@@ -160,7 +160,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 |---|---|
 | `init [dir]` | Scaffold a new bundle (`--force` to write into a non-empty dir) |
 | `status` | Bundle and index summary |
-| `list` | Entries, filtered by `--type` / `--tag` / `--prefix` |
+| `list` | Entries, filtered by `--where key=value` / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
 | `outline <path>` | An entry's heading hierarchy |
@@ -185,7 +185,7 @@ There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives 
 ```sh
 cd backlog
 wiki tasks                           # what is left to build
-wiki list --type task --tag feature  # new features
+wiki list --where type=task --where tags=feature  # new features
 wiki check                           # the backlog stays conformant
 ```
 
