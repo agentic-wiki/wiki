@@ -28,8 +28,8 @@ func TestWrite(t *testing.T) {
 	}
 	// the meta files are declared non-entries in the scaffolded wiki.toml
 	toml, _ := os.ReadFile(filepath.Join(dir, "wiki.toml"))
-	if !strings.Contains(string(toml), "skip") {
-		t.Errorf("scaffolded wiki.toml should list a skip set:\n%s", toml)
+	if !strings.Contains(string(toml), "ignore") {
+		t.Errorf("scaffolded wiki.toml should list an ignore set:\n%s", toml)
 	}
 	// CLAUDE.md leads to AGENTS.md: a symlink mirrors its content, a stub points to it
 	claude, _ := os.ReadFile(filepath.Join(dir, "CLAUDE.md"))
@@ -110,7 +110,7 @@ func TestScaffoldIsOKFConformant(t *testing.T) {
 				t.Errorf("%s is reserved and must have no frontmatter, got %v", rel, fm)
 			}
 		case "AGENTS.md", "CLAUDE.md", "WORKFLOW.md":
-			// declared non-entries (wiki.toml `skip`): operating docs, no type
+			// declared non-entries (wiki.toml `ignore`): operating docs, no type
 		default:
 			// Every other entry MUST declare a non-empty type.
 			if parse.String(fm, "type") == "" {

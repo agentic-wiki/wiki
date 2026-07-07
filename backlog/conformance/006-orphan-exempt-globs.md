@@ -11,16 +11,16 @@ Parked or retired entries that nothing links to (a `project-backlog`'s `backlog/
 Instead, let `wiki.toml` list globs whose entries are **not reported as orphans**:
 
 ```toml
-orphan_skip = ["backlog/**", "archive/**"]
+ignore_orphans = ["backlog/**", "archive/**"]
 ```
 
 Those files stay fully indexed (searchable, listable, linkable, still checked for a valid `type`); only `wiki orphans` (and the `orphans` count in `status`) skips them.
 
-**Distinct from `skip`** ([non-entry files](/conformance/005-non-entry-files.md)): `skip` drops a path from the index entirely, whereas `orphan_skip` keeps it a normal entry (searchable, linkable, `type`-checked) and only leaves it out of the orphan report. Two skip-lists, two scopes; do not merge them.
+**Distinct from `ignore`** ([non-entry files](/conformance/005-non-entry-files.md)): `ignore` drops a path from the index entirely, whereas `ignore_orphans` keeps it a normal entry (searchable, linkable, `type`-checked) and only leaves it out of the orphan report. Different keys, different scopes; do not merge them.
 
 **Open questions:**
 
-- **Name.** `orphan_skip` (decided): parallels the existing `skip` key, a list of paths skipped, here by the orphan report rather than by indexing. Alternatives considered: `allow_orphans`, `skip_orphans`.
+- **Name.** `ignore_orphans` (decided): extends the `ignore` family with a scope suffix, `ignore` drops files from the index, `ignore_orphans` keeps them but drops them from the orphan report. Alternatives considered: `allow_orphans` (reads like a bool), `orphan_skip`.
 - **Glob syntax, zero-dep.** `filepath.Match` matches a single path segment only (no `**`); "everything under a folder" can be a simple path-prefix rule, or a tiny hand-rolled `**` matcher. Pick the minimal form that covers the folder case without a dependency.
 - **Scope.** Orphans only; leave `broken` / `unresolved` / the `type` check untouched.
 

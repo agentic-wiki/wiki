@@ -17,10 +17,10 @@ import (
 // Bundle is a located agentic-wiki bundle: a directory containing wiki.toml,
 // with the markdown content living directly inside it.
 type Bundle struct {
-	Dir   string   // the bundle directory (holds wiki.toml); also the content root
-	Spec  string   // spec version the bundle conforms to (from wiki.toml)
-	Types []string // content types declared in wiki.toml
-	Skip  []string // paths (relative to Dir) wiki treats as non-entries: indexed, but exempt from conformance reports; an out-of-bundle path silences that link's advisory
+	Dir    string   // the bundle directory (holds wiki.toml); also the content root
+	Spec   string   // spec version the bundle conforms to (from wiki.toml)
+	Types  []string // content types declared in wiki.toml
+	Ignore []string // paths (relative to Dir) wiki disregards: an in-bundle path is not indexed (not an entry); an out-of-bundle path silences that link's advisory
 }
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
@@ -50,12 +50,12 @@ func load(root, cfg string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	spec, types, skip := parseConfig(string(data))
+	spec, types, ignore := parseConfig(string(data))
 	return &Bundle{
-		Dir:   root,
-		Spec:  spec,
-		Types: types,
-		Skip:  skip,
+		Dir:    root,
+		Spec:   spec,
+		Types:  types,
+		Ignore: ignore,
 	}, nil
 }
 
@@ -78,8 +78,8 @@ func (b *Bundle) OKFVersion() (string, bool) {
 }
 
 // parseConfig reads the tiny wiki.toml we define: a `spec` string, and `types`
-// and `skip` arrays, each on one line. Deliberately minimal — no TOML dependency.
-func parseConfig(s string) (spec string, types, skip []string) {
+// and `ignore` arrays, each on one line. Deliberately minimal (no TOML dependency).
+func parseConfig(s string) (spec string, types, ignore []string) {
 	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -94,9 +94,9 @@ func parseConfig(s string) (spec string, types, skip []string) {
 			spec = parse.Unquote(val)
 		case "types":
 			types = parse.List(val)
-		case "skip":
-			skip = parse.List(val)
+		case "ignore":
+			ignore = parse.List(val)
 		}
 	}
-	return spec, types, skip
+	return spec, types, ignore
 }

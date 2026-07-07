@@ -41,7 +41,7 @@ func Workflows() []string {
 // (wiki.toml, index.md, WORKFLOW.md) flattened to the bundle root, then a
 // CLAUDE.md symlink -> AGENTS.md so Claude Code reads the same manual (a one-line
 // pointer file when the OS refuses a symlink, e.g. Windows without privilege).
-// The scaffolded wiki.toml lists AGENTS.md/CLAUDE.md/WORKFLOW.md in `skip`, so
+// The scaffolded wiki.toml lists AGENTS.md/CLAUDE.md/WORKFLOW.md in `ignore`, so
 // they are not indexed as entries. A non-empty dir is refused unless force is
 // set; a lone .git directory does not count as content. Returns the
 // slash-separated relative paths written.

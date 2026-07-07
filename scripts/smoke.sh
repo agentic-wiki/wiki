@@ -177,7 +177,7 @@ echo "--- init scaffolds a check-clean bundle with an operating manual ---"
 mkdir -p "$TMP/fresh"
 ( cd "$TMP/fresh" && $BIN init >/dev/null && $BIN check >/dev/null )
 for f in wiki.toml .gitignore index.md AGENTS.md CLAUDE.md WORKFLOW.md; do test -e "$TMP/fresh/$f"; done
-contains "$(cat "$TMP/fresh/wiki.toml")" "skip"             # meta files declared non-entries
+contains "$(cat "$TMP/fresh/wiki.toml")" "ignore"             # meta files declared non-entries
 ( cd "$TMP/fresh" && ! contains "$($BIN list)" "AGENTS" )   # ...so they are not indexed as entries
 
 echo "--- check warns on a filename with a space ---"
@@ -201,13 +201,13 @@ printf -- '---\ntype: note\n---\nhi\n[home](../index.md)\n' > "$TMP/fresh/notes/
 ( cd "$TMP/fresh" && $BIN tidy --links >/dev/null )                             # normalize to absolute
 contains "$(cat "$TMP/fresh/notes/example.md")" 'home](/index.md)'
 
-echo "--- skip: an out-of-bundle ref can be acknowledged in wiki.toml ---"
+echo "--- ignore: an out-of-bundle ref can be acknowledged in wiki.toml ---"
 OOB="$TMP/oob"; mkdir -p "$OOB"
 printf 'spec = "0.1"\ntypes = ["note"]\n' > "$OOB/wiki.toml"
 printf -- '---\nokf_version: "0.1"\n---\n[prd](../PRD.md)\n' > "$OOB/index.md"
 ( cd "$OOB" && contains "$($BIN check)" "out-of-bundle" )     # unacknowledged out-of-bundle ref warns
-printf 'spec = "0.1"\ntypes = ["note"]\nskip = ["../PRD.md"]\n' > "$OOB/wiki.toml"
-( cd "$OOB" && ! contains "$($BIN check)" "out-of-bundle" )   # once listed in skip, silenced
+printf 'spec = "0.1"\ntypes = ["note"]\nignore = ["../PRD.md"]\n' > "$OOB/wiki.toml"
+( cd "$OOB" && ! contains "$($BIN check)" "out-of-bundle" )   # once listed in ignore, silenced
 
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"

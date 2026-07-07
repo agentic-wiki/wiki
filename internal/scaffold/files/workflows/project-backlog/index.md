@@ -8,8 +8,7 @@ okf_version: "0.1"
 
 ## Now
 ## Next
-## Sometime
 
 ---
 
-_Group tasks under status or cycle headings as checkboxes linking to `type: task` entries (in `now/`, `next/`, …); for several teams, give each its own board under `teams/<team>/`. This base is operated with `wiki`: see `AGENTS.md` and `WORKFLOW.md`._
+_Scheduled work goes under `## Now` / `## Next` as checkboxes linking to `type: task` entries; unscheduled work lives in `backlog/` (its own `index.md`). Several teams? Give each a board under `teams/<team>/`. This base is operated with `wiki`: see `AGENTS.md` and `WORKFLOW.md`._

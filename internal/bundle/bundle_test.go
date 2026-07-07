@@ -36,10 +36,10 @@ func TestParseConfigMessy(t *testing.T) {
 	}
 }
 
-func TestParseConfigSkip(t *testing.T) {
-	_, _, skip := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nskip=[\"AGENTS.md\", \"../PRD.md\"]\n")
-	if !reflect.DeepEqual(skip, []string{"AGENTS.md", "../PRD.md"}) {
-		t.Errorf("skip=%#v", skip)
+func TestParseConfigIgnore(t *testing.T) {
+	_, _, ignore := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\n")
+	if !reflect.DeepEqual(ignore, []string{"AGENTS.md", "../PRD.md"}) {
+		t.Errorf("ignore=%#v", ignore)
 	}
 }
 
