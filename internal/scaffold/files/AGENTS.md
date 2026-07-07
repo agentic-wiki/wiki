@@ -22,7 +22,7 @@ Three orthogonal axes classify every entry (keep them separate and the base stay
 - **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), declared in `wiki.toml`, required on every entry.
 - **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
 
-Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files listed in `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries.
+Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files listed in `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries; paths in `ignore_orphans` stay entries but are kept out of the `orphans` report (a parked backlog, say).
 
 ## Get oriented
 

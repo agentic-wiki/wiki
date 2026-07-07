@@ -17,7 +17,7 @@ func TestOKFVersion(t *testing.T) {
 }
 
 func TestParseConfig(t *testing.T) {
-	spec, types, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
+	spec, types, _, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
 	if spec != "0.1" {
 		t.Errorf("spec=%q", spec)
 	}
@@ -28,18 +28,21 @@ func TestParseConfig(t *testing.T) {
 
 func TestParseConfigMessy(t *testing.T) {
 	// Spaces, bare + quoted tokens; internal space preserved; no spec line.
-	if _, types, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
+	if _, types, _, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
 		t.Errorf("types=%#v", types)
 	}
-	if spec, empty, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
+	if spec, empty, _, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
 		t.Errorf("spec=%q types=%#v, want empty", spec, empty)
 	}
 }
 
 func TestParseConfigIgnore(t *testing.T) {
-	_, _, ignore := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\n")
+	_, _, ignore, orphans := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\nignore_orphans=[\"backlog/**\"]\n")
 	if !reflect.DeepEqual(ignore, []string{"AGENTS.md", "../PRD.md"}) {
 		t.Errorf("ignore=%#v", ignore)
+	}
+	if !reflect.DeepEqual(orphans, []string{"backlog/**"}) {
+		t.Errorf("ignore_orphans=%#v", orphans)
 	}
 }
 

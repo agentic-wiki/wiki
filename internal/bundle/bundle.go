@@ -21,6 +21,9 @@ type Bundle struct {
 	Spec   string   // spec version the bundle conforms to (from wiki.toml)
 	Types  []string // content types declared in wiki.toml
 	Ignore []string // paths (relative to Dir) wiki disregards: an in-bundle path is not indexed (not an entry); an out-of-bundle path silences that link's advisory
+	// IgnoreOrphans lists paths (relative to Dir) whose entries stay indexed but are
+	// not reported by `wiki orphans`: a directory subtree or an exact path.
+	IgnoreOrphans []string
 }
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
@@ -50,12 +53,13 @@ func load(root, cfg string) (*Bundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	spec, types, ignore := parseConfig(string(data))
+	spec, types, ignore, ignoreOrphans := parseConfig(string(data))
 	return &Bundle{
-		Dir:    root,
-		Spec:   spec,
-		Types:  types,
-		Ignore: ignore,
+		Dir:           root,
+		Spec:          spec,
+		Types:         types,
+		Ignore:        ignore,
+		IgnoreOrphans: ignoreOrphans,
 	}, nil
 }
 
@@ -77,9 +81,10 @@ func (b *Bundle) OKFVersion() (string, bool) {
 	return v, ok
 }
 
-// parseConfig reads the tiny wiki.toml we define: a `spec` string, and `types`
-// and `ignore` arrays, each on one line. Deliberately minimal (no TOML dependency).
-func parseConfig(s string) (spec string, types, ignore []string) {
+// parseConfig reads the tiny wiki.toml we define: a `spec` string, and `types`,
+// `ignore`, and `ignore_orphans` arrays, each on one line. Deliberately minimal
+// (no TOML dependency).
+func parseConfig(s string) (spec string, types, ignore, ignoreOrphans []string) {
 	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -96,7 +101,9 @@ func parseConfig(s string) (spec string, types, ignore []string) {
 			types = parse.List(val)
 		case "ignore":
 			ignore = parse.List(val)
+		case "ignore_orphans":
+			ignoreOrphans = parse.List(val)
 		}
 	}
-	return spec, types, ignore
+	return spec, types, ignore, ignoreOrphans
 }

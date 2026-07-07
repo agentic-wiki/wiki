@@ -447,6 +447,37 @@ func TestIgnoreOutOfBundleAdvisory(t *testing.T) {
 	}
 }
 
+// wiki.toml `ignore_orphans` keeps parked/retired entries out of the orphan report
+// while they stay indexed; a directory subtree covers everything under it.
+func TestIgnoreOrphans(t *testing.T) {
+	files := map[string]string{
+		"index.md":        "---\nokf_version: \"0.1\"\n---\n# Board\n",
+		"backlog/idea.md": "---\ntype: note\n---\nparked, nothing links here\n",
+	}
+	// Without ignore_orphans, the unlinked backlog entry is an orphan.
+	if base := build(t, files); !orphanHas(base.Orphans(), "/backlog/idea.md") {
+		t.Errorf("without ignore_orphans, /backlog/idea.md should be an orphan; got %+v", base.Orphans())
+	}
+	// With ignore_orphans covering backlog/**, it is not reported, but still indexed.
+	files["wiki.toml"] = "spec=\"0.1\"\ntypes=[\"note\"]\nignore_orphans=[\"backlog/**\"]\n"
+	idx := build(t, files)
+	if orphanHas(idx.Orphans(), "/backlog/idea.md") {
+		t.Errorf("ignore_orphans should exempt /backlog/idea.md; got %+v", idx.Orphans())
+	}
+	if _, ok := idx.byPath["/backlog/idea.md"]; !ok {
+		t.Errorf("an ignore_orphans entry must still be indexed")
+	}
+}
+
+func orphanHas(orphans []*Entry, path string) bool {
+	for _, e := range orphans {
+		if e.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
 func TestFix(t *testing.T) {
 	readRoot := func(idx *Index) string {
 		b, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))

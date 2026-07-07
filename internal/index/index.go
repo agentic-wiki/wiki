@@ -81,11 +81,12 @@ func (e *Entry) Body() (string, error) {
 
 // Index is the built model of a bundle.
 type Index struct {
-	Bundle    *bundle.Bundle
-	Entries   []*Entry
-	byPath    map[string]*Entry
-	ignoreIn  map[string]bool // wiki.toml `ignore` entries resolving inside: bundle path -> exempt from conformance/orphans/broken
-	ignoreOut map[string]bool // wiki.toml `ignore` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
+	Bundle       *bundle.Bundle
+	Entries      []*Entry
+	byPath       map[string]*Entry
+	ignoreIn     map[string]bool // wiki.toml `ignore` entries resolving inside: bundle path -> exempt from conformance/orphans/broken
+	ignoreOut    map[string]bool // wiki.toml `ignore` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
+	orphanIgnore []string        // wiki.toml `ignore_orphans` as "/dir" prefixes (or exact paths): matched entries stay indexed but are not reported as orphans
 }
 
 // Build scans the bundle directory and parses every .md file.
@@ -142,6 +143,13 @@ func (idx *Index) resolveIgnore() {
 		} else {
 			idx.ignoreOut[p] = true
 		}
+	}
+	for _, pat := range idx.Bundle.IgnoreOrphans {
+		d := strings.TrimPrefix(filepath.ToSlash(pat), "/")
+		d = strings.TrimSuffix(d, "/**")
+		d = strings.TrimSuffix(d, "/*")
+		d = strings.TrimSuffix(d, "/")
+		idx.orphanIgnore = append(idx.orphanIgnore, "/"+d)
 	}
 }
 
@@ -418,9 +426,10 @@ func (idx *Index) Broken() []BrokenLink {
 	return out
 }
 
-// Orphans returns entries with no incoming internal links, excluding the
-// reserved files index.md (navigation entry points) and log.md (side narrative),
-// neither of which is linkable content expected to have inbound links.
+// Orphans returns entries with no incoming internal links, excluding the reserved
+// files index.md (navigation entry points) and log.md (side narrative), and any
+// path covered by wiki.toml `ignore_orphans` (parked or retired work kept out of
+// the report).
 func (idx *Index) Orphans() []*Entry {
 	incoming := map[string]int{}
 	for _, e := range idx.Entries {
@@ -430,7 +439,7 @@ func (idx *Index) Orphans() []*Entry {
 	}
 	var out []*Entry
 	for _, e := range idx.Entries {
-		if e.Name == "index.md" || e.Name == "log.md" {
+		if e.Name == "index.md" || e.Name == "log.md" || idx.orphanExempt(e.Path) {
 			continue
 		}
 		if incoming[e.Path] == 0 {
@@ -438,6 +447,18 @@ func (idx *Index) Orphans() []*Entry {
 		}
 	}
 	return out
+}
+
+// orphanExempt reports whether p is covered by a wiki.toml `ignore_orphans` entry:
+// an exact path, or anything under a listed directory subtree. Finer globs (`*.md`,
+// `a/**/b.md`) are not matched yet (see backlog debt/005).
+func (idx *Index) orphanExempt(p string) bool {
+	for _, pre := range idx.orphanIgnore {
+		if p == pre || strings.HasPrefix(p, pre+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // LinkRef is a directed internal link between two entries.

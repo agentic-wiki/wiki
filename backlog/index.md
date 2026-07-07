@@ -16,13 +16,14 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## Conformance
 - [ ] [detect & convert wikilinks](/conformance/003-wikilink-detection.md)
-- [ ] [wiki.toml globs exempt from orphan reporting](/conformance/006-orphan-exempt-globs.md)
 
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
+- [ ] [ignore_orphans: subtree-only, no full globs](/debt/005-ignore-orphans-globs.md)
 
 ## Done
+- [x] [wiki.toml `ignore_orphans`](/conformance/006-orphan-exempt-globs.md): globs (subtree/exact) whose entries stay indexed but drop out of `wiki orphans`; wired into `project-backlog` (`backlog/**`, `archive/**`), replacing the folder-index workaround. Full-glob support is debt/005.
 - [x] [init: operating manual + selectable workflow](/3-graph-and-mutation/005-workflow-scaffold.md): `wiki init --workflow` scaffolds an `AGENTS.md` operating manual + editable `WORKFLOW.md` + a `CLAUDE.md` symlink + minimal `index.md`, `ignore` wired in. `default` shipped; more flavors + the framing rewrite are follow-ups.
 - [x] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md): removed the leftover leading sentence; the accurate one-`LinkRef`-per-occurrence description stays.
 - [x] [wiki.toml `ignore` list](/conformance/005-non-entry-files.md): meta files (e.g. `AGENTS.md`) are excluded from the index entirely (not entries; a link to one still resolves), and out-of-bundle refs (`../PRD.md`) have their advisory silenced. Root-relative, resolved; one list, `bundle` parse + `index` ignoreIn/ignoreOut. Unblocks the scaffolding epic.

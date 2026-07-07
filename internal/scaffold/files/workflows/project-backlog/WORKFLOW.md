@@ -27,10 +27,8 @@ my-backlog/
 ├── log.md            # optional: notable decisions and changes, dated
 ├── now/              # active issues (type: task)
 ├── next/             # committed for the upcoming cycle
-├── backlog/          # unscheduled work
-│   └── index.md      # the parking-lot list (keeps these linked; see below)
-├── archive/          # shipped or dropped
-│   └── index.md      # optional: lists retained items
+├── backlog/          # unscheduled work (ignore_orphans'd; see wiki.toml)
+├── archive/          # shipped or dropped (ignore_orphans'd)
 ├── epics/            # optional: type: epic, large bodies of work
 ├── milestones/       # optional: type: milestone, releases / targets
 └── notes/            # specs, designs, retros (type: note)
@@ -42,16 +40,16 @@ Several teams? Give each its own board (see *Multiple teams*).
 
 Three things track a task, and they stay in agreement: its **folder is the lane** (where it is in the journey), the **board (`index.md`) is the live view** of the scheduled lanes, and **`status` frontmatter is the finer state** within a lane. Let the tool do the moving:
 
-1. **Capture.** A new item is a `type: task` file in `backlog/` (or straight into `next/` if already committed). Link it from `backlog/index.md` so it stays findable and is not a false orphan. `wiki list --type task --prefix backlog/` is the raw backlog.
-2. **Schedule.** When you commit to an item, `wiki move` it into `next/` (or `now/`), add its `- [ ]` checkbox to the board, and drop it from `backlog/index.md`. `wiki move` rewrites every link to it, so nothing dangles.
+1. **Capture.** A new item is a `type: task` file in `backlog/` (or straight into `next/` if already committed). `wiki list --type task --prefix backlog/` is the raw backlog; keep a `backlog/index.md` too if you want a browsable list.
+2. **Schedule.** When you commit to an item, `wiki move` it into `next/` (or `now/`) and add its `- [ ]` checkbox to the board. `wiki move` rewrites every link to it, so nothing dangles.
 3. **Work.** Inside a lane, update `status` in place (`todo`, `in-progress`, `in-review`, `blocked`); no file move needed. When it becomes active, `wiki move` it `next/` to `now/` and move its checkbox in the same change.
 4. **Finish.** Set `status: done`, check its board box, then retire it (below).
 
 The rule: **only scheduled work (Now / Next) sits on the board.** The unscheduled backlog lives in `backlog/`, listed by `backlog/index.md`.
 
-## Keep everything linked
+## Orphans and parked work
 
-`wiki orphans` is only useful if a hit means a real mistake, not just parked work. So **every issue is linked from exactly one list**: scheduled issues from the board (`index.md`), unscheduled ones from `backlog/index.md`, archived ones from `archive/index.md`. An `index.md` is itself exempt from `orphans`, so listing entries there keeps the signal clean. Add or move an issue, and update the list it belongs to in the same change; then `wiki orphans` only ever surfaces a genuine filing slip, not your whole backlog.
+`wiki orphans` is only useful if a hit means a real mistake, not just parked work. The scaffolded `wiki.toml` sets `ignore_orphans = ["backlog/**", "archive/**"]`, so unscheduled and retired issues never show up as orphans even though nothing links to them (they stay fully indexed and searchable). That keeps `wiki orphans` a clean signal: a hit is an *active* issue that lost its board link, not your whole backlog. Link entries for navigation when it helps, but never just to appease the report; extend `ignore_orphans` if you add more parked lanes.
 
 ## Issues
 
@@ -134,7 +132,7 @@ Keep the board an honest, lean snapshot of what's next, and the base discoverabl
 
 - Run `wiki check` and fix what it flags; reconcile any checkbox that disagrees with its entry's `status`.
 - Review **stale** work (`wiki list --type task --sort=timestamp --reverse`), **blocked** work, and accumulating **debt** (`--tag debt`): is each still real? unblock, defer, drop, or schedule.
-- `wiki orphans`: with everything linked (see *Keep everything linked*), a hit here is a real filing slip, so link it or retire it.
+- `wiki orphans`: `backlog/` and `archive/` are `ignore_orphans`'d, so a hit here is an active issue that lost its board link; re-link or retire it.
 - **Retire done work** promptly (see *Retiring done work*), so the active board stays a snapshot of what is next.
 
 ## Retiring done work
@@ -142,7 +140,7 @@ Keep the board an honest, lean snapshot of what's next, and the base discoverabl
 The board is a lean snapshot of what is next, so finished and cancelled work leaves it. Per task, pick one (in batches, during grooming):
 
 - **Delete it** (default for routine work): git keeps the history, and anything lasting (a decision, a shipped result) goes as a dated line in `log.md` or a promoted knowledge entry. Remove its board checkbox in the same change.
-- **Archive it**: `wiki move` it to `archive/` and list it in `archive/index.md` (so it stays discoverable and is not an orphan), when a browsable record is worth keeping. Find archived work with `wiki list --type task --prefix archive/`.
+- **Archive it**: `wiki move` it to `archive/`, when a browsable record is worth keeping. `archive/` is `ignore_orphans`'d, so it will not clutter `wiki orphans`; find archived work with `wiki list --type task --prefix archive/`.
 
 ## Make it yours
 
