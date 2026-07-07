@@ -56,6 +56,8 @@ wiki check                        # is it healthy? (links resolve, entries typed
 wiki list                         # every entry
 ```
 
+`wiki init` scaffolds from a starter `--workflow`: **`default`** (a general knowledge base with a light backlog) or **`project-backlog`** (a plain-Markdown kanban tracker). It defaults to `default`; `wiki init -h` lists the choices. Each is a starting point you then edit to fit.
+
 That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest. If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Absolute path in vault*, turn on **Automatically update internal links**. (`wiki` ignores `[[wikilinks]]`.) See the [format spec](https://github.com/agentic-wiki/spec#links).
 
 ## What you can ask it
@@ -158,8 +160,8 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 
 | Command | What it does |
 |---|---|
-| `init [dir]` | Scaffold a new bundle (`--force` to write into a non-empty dir) |
-| `status` | Bundle and index summary |
+| `init [dir]` | Scaffold a new bundle from a `--workflow` starter (`--force` to write into a non-empty dir) |
+| `status` | Bundle counts: entries, links, tags, tasks, broken links, orphans |
 | `list` | Entries, filtered by `--where key=value` / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |

@@ -19,8 +19,8 @@ const usage = `Wiki: query an agentic-wiki bundle
 Usage: wiki [--root <dir>] <command> [flags]
 
 Commands:
-  init          scaffold a new bundle (--workflow <name>, --force)
-  status        bundle + index summary
+  init          scaffold a new bundle (--workflow <name>, --force; 'init -h' lists workflows)
+  status        bundle counts: entries, links, tags, tasks, broken, orphans
   list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy

@@ -4,6 +4,8 @@ This is the **workflow** layer: the conventions for *this* base, on top of what 
 
 This is the `default` workflow: a general-purpose knowledge base (notes, concepts, datasets) with a task backlog. Other starter workflows will exist (`wiki init --workflow <name>`); or just reshape this file.
 
+**This base is git-managed.** Commits are its history and its undo, and the workflow assumes it: an agent can capture, move, and groom freely, and you can always revert. Pull before editing, and commit in batches once `wiki check` passes.
+
 ## Structure
 
 - **Group by domain, not by type.** A travel plan (`concept`), its flights (`dataset`), and the trip (`event`) sit together in `personal/travel/`, sliced by `type` on demand, not scattered across `concepts/ datasets/ events/`.

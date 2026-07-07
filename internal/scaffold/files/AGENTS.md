@@ -12,7 +12,7 @@ This folder is an **agentic wiki bundle**: plain Markdown (someone's notes, docu
 
 **How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](/WORKFLOW.md); read it next.**
 
-On a brand-new base, treat `WORKFLOW.md` as a starting template, not a finished spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second.
+On a brand-new base, treat `WORKFLOW.md` as the starting point, not the final spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second. (This base came from a `--workflow` starter; `wiki init -h` lists the others, and both this file and `WORKFLOW.md` are yours to reshape.)
 
 ## The model
 
@@ -22,7 +22,7 @@ Three orthogonal axes classify every entry (keep them separate and the base stay
 - **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), declared in `wiki.toml`, required on every entry.
 - **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
 
-Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries; paths matched by `ignore_orphans` stay entries but are kept out of the `orphans` report (a parked backlog, say). Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
+Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no `type`: `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle). Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries: absent from the index and from `check`. Paths matched by `ignore_orphans` stay full entries (indexed and `check`ed), only kept out of the `orphans` report (a parked backlog, say). So a file you want left out entirely (a `LEARNINGS.md`, a `README`) goes in `ignore`, not `ignore_orphans`. Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
 
 ## Get oriented
 
@@ -33,7 +33,7 @@ wiki status                                # entries, links, tags, tasks, broken
 wiki list --sort=timestamp | head -n 40    # what changed recently (--reverse for the stalest)
 wiki property type --counts                # what kinds of entries exist
 wiki tags --counts --sort=count            # dominant topics
-find -maxdepth 1 -type d
+find -maxdepth 2 -type d | grep -v .git/
 ```
 
 Then follow `/index.md` and its links down, rather than grepping in the dark.

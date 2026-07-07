@@ -18,7 +18,7 @@ import (
 func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	force := fs.Bool("force", false, "write into a non-empty directory")
-	workflow := fs.String("workflow", "", "starter workflow (default: default)")
+	workflow := fs.String("workflow", "", fmt.Sprintf("starter workflow: %s (default: %s)", strings.Join(scaffold.Workflows(), ", "), scaffold.DefaultWorkflow))
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	dir := "."

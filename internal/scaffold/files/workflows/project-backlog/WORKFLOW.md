@@ -4,6 +4,8 @@ This is the **workflow** layer for a `project-backlog` wiki bundle: the conventi
 
 The whole bundle is a **backlog**: a kanban-style tracker in plain Markdown. An issue is a file, a board is an `index.md`, and everything a tracker gives you (status, priority, epics, dependencies, cycles, teams) is frontmatter, tags, folders, and links: queryable with `wiki`, and yours forever.
 
+**This bundle is git-managed.** Commits are its history and its undo, and the workflow assumes it: retiring a task by deleting it loses nothing (git keeps the record), and every `wiki move` or edit is reversible. Pull before editing, and commit in batches once `wiki check` passes.
+
 ## First run: pin your conventions
 
 This file ships as a **template with options**. Before creating real issues, sit with the user and commit the primitives, then **edit this file to lock the choices** (delete the paths you will not take), so it becomes the team's actual playbook rather than a menu. Decide together:
@@ -84,6 +86,7 @@ Each `index.md` is a board: overarching **goal(s)** at the top, then sections of
 - Want progress at a glance? A leading emoji (🔵 in progress, 🔴 blocked) or a `## Doing` grouping carries it; the truth stays in `status`, queryable with `--where`.
 - The board carries committed work only (everything in `active/`); the parked backlog is `backlog/index.md`. Link to it from the board so it stays one click away.
 - The board's links are real edges, so an `active/` task you forget to add surfaces under `wiki orphans` (active/ is not `ignore_orphans`'d): your signal that scheduled work is missing from the board.
+- Keep the board **curated and lean**, goals plus the *notable* pointers, not a mirror of every task. For the exhaustive list, run a query (`wiki list --where type=task --prefix active/`); a hand-maintained full list is upkeep *and* churns, since every `wiki move` rewrites its links. Same for an optional `backlog/index.md`: fine for browsing, but `wiki list --prefix backlog/` needs none.
 
 ## Epics and milestones (optional)
 
@@ -125,7 +128,7 @@ Most questions are a query plus a moment of judgment: `wiki` narrows the set, yo
 - **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki tasks`, a checkbox scanner, is not used here.)
 - **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
-- **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked` to list them.
+- **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked --prefix active/` for the committed ones blocking now. (`--where` is bundle-wide unless you add `--prefix`; drop it to include parked `backlog/` items too.)
 - **"What's in the backlog?"**: `wiki list --where type=task --prefix backlog/`.
 - **"How much debt are we carrying?"**: `wiki list --where type=task --where tags=debt`.
 - **"What's left for v1?"**: `wiki backlinks /milestones/v1.md` gives its epics; roll up each epic's tasks (`wiki backlinks`) and drop the `done` ones, a two-hop query (a small skill).
@@ -143,10 +146,10 @@ Keep the board an honest, lean snapshot of what's next, and the base discoverabl
 
 ## Retiring done work
 
-The board is a lean snapshot of what is next, so finished and cancelled work leaves it. Per task, pick one (in batches, during grooming):
+The board is a lean snapshot of what is next, so finished and cancelled work leaves it. **Order matters: remove the task's board line first, then dispose of the file.** `wiki move` faithfully rewrites *every* link to a file it moves, so if you move a still-linked task to `archive/`, its board link is rewritten to point into `archive/` (leaving board→archive links to clean up by hand). Take it off the board first and there is nothing to rewrite. Per task, pick one (in batches, during grooming):
 
-- **Delete it** (default for routine work): git keeps the history, and anything lasting (a decision, a shipped result) goes as a dated line in `log.md` or a promoted knowledge entry. Remove its board link in the same change.
-- **Archive it**: `wiki move` it to `archive/`, when a browsable record is worth keeping. `archive/` is `ignore_orphans`'d, so it will not clutter `wiki orphans`; find archived work with `wiki list --where type=task --prefix archive/`.
+- **Delete it** (default for routine work): remove its board line, then delete the file. Git keeps the history, and anything lasting (a decision, a shipped result) goes as a dated line in `log.md` or a promoted knowledge entry.
+- **Archive it** (when a browsable record is worth keeping): remove its board line, then `wiki move` it to `archive/`. `archive/` is `ignore_orphans`'d, so it will not clutter `wiki orphans`; find archived work with `wiki list --where type=task --prefix archive/`.
 
 ## Make it yours
 
