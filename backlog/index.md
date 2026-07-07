@@ -16,10 +16,10 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
-- [ ] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md)
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md): removed the leftover leading sentence; the accurate one-`LinkRef`-per-occurrence description stays.
 - [x] [wiki.toml `skip` list](/conformance/005-non-entry-files.md): meta files (e.g. `AGENTS.md`) are excluded from the index entirely (not entries; a link to one still resolves), and out-of-bundle refs (`../PRD.md`) have their advisory silenced. Root-relative, resolved; one list, `bundle` parse + `index` skipIn/skipOut. Unblocks the scaffolding epic.
 - [x] [out-of-bundle links warn, not "broken"](/conformance/004-out-of-bundle-links.md): a link resolving above the bundle root (e.g. `../PRD.md` from a nested bundle) is no longer clamped to a fake in-bundle target and mislabeled broken. `normalizeLink` now decides in/out via `withinDir` (one containment check, shared with `FileExists`); out-of-bundle links get their own `check` advisory (`out-of-bundle link -> …`, warning, exit `0`) and `tidy --links` leaves them untouched. The path-traversal guard is preserved.
 - [x] bug fix: `wiki tasks` / `wiki outline` no longer strip inline code spans from checkbox and heading text (they reused the link scanner's masking, which blanks inline code). Task/heading text now keeps `` `code` `` verbatim; only fenced blocks are still skipped. (`parse.maskedLines` + tests)

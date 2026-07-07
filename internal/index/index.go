@@ -464,8 +464,6 @@ func (idx *Index) OutLinks(e *Entry) []LinkRef {
 	return refs
 }
 
-// Backlinks returns the unique entries that link to the given root-absolute path
-// (the first link from each source), sorted by source path.
 // Backlinks returns every internal link that points to target, one LinkRef per
 // occurrence (a source that links several times appears once per link), sorted
 // by source path then line. Relative links count, they resolve to the same target.
