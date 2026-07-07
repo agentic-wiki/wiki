@@ -1,0 +1,4 @@
+spec = "0.1"
+types = ["note", "concept", "entity", "person", "team", "client", "product", "project", "decision", "meeting", "process", "source", "draft"]
+ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
+ignore_orphans = ["inbox/**"]

@@ -78,10 +78,17 @@ func TestWriteToleratesGitDir(t *testing.T) {
 
 // TestScaffoldIsOKFConformant locks the OKF v0.1 MUST-level rules on the bundle
 // `wiki init` emits, independently of `wiki check` (which is an opt-in lint, not
-// an OKF gate). A future edit to files/ that breaks conformance fails here.
+// an OKF gate). It runs for every workflow, so a new starter that breaks
+// conformance fails here.
 func TestScaffoldIsOKFConformant(t *testing.T) {
+	for _, wf := range Workflows() {
+		t.Run(wf, func(t *testing.T) { assertOKFConformant(t, wf) })
+	}
+}
+
+func assertOKFConformant(t *testing.T, workflow string) {
 	dir := t.TempDir()
-	if _, err := Write(dir, "default", false); err != nil {
+	if _, err := Write(dir, workflow, false); err != nil {
 		t.Fatal(err)
 	}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
