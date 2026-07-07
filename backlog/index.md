@@ -9,13 +9,14 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
-- [ ] [more workflows + init selector](/3-graph-and-mutation/010-curated-workflows.md)
+- [ ] [org-wiki + product-docs workflows](/3-graph-and-mutation/010-curated-workflows.md)
 
 ## 4 — Release & docs
 - [ ] [reframe stack: format + tool + workflow](/4-release-and-docs/003-stack-framing.md)
 
 ## Conformance
 - [ ] [detect & convert wikilinks](/conformance/003-wikilink-detection.md)
+- [ ] [wiki.toml globs exempt from orphan reporting](/conformance/006-orphan-exempt-globs.md)
 
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)

@@ -1,13 +1,18 @@
 ---
 type: task
-title: "more workflows beyond default + interactive init selector"
+title: "org-wiki + product-wiki starter workflows"
 status: todo
 priority: low
 tags: [feature, scaffold]
 ---
 
-`wiki init --workflow` ships with only `default` ([workflow scaffold](/3-graph-and-mutation/005-workflow-scaffold.md)). Two related pieces:
+Two more curated starters beyond `default` and `project-backlog` ([workflow scaffold](/3-graph-and-mutation/005-workflow-scaffold.md)). Each is an embedded `internal/scaffold/files/workflows/<name>/` dir (a `wiki.toml` with types + `skip`, a seed `index.md`, and a `WORKFLOW.md`); `AGENTS.md` stays shared. Keep each seed minimal (index.md + meta only) so scaffolds stay `check`-clean.
 
-**More curated workflows.** Add starters as embedded `internal/scaffold/files/workflows/<name>/` dirs — each a `wiki.toml` (types + `skip`), an `index.md`, and a `WORKFLOW.md`. `AGENTS.md` stays shared and workflow-independent; only `WORKFLOW.md`, the type vocabulary, and any seed structure vary. Candidates from the design session: `org-wiki`, `project-backlog` (a kanban board), `product-docs`, `personal`. Add on real need, not speculatively — one good second flavor (likely `project-backlog`, mirroring this repo's own `backlog/`) validates the shape.
+- **`org-wiki`**: a team/company knowledge base. Types `note, concept, entity, process, decision, meeting, project, source, draft`; folders `teams/ people/ processes/ decisions/ meetings/ projects/`.
+- **`product-wiki`**: **wiki-first** product documentation. Atomic, linked `concept`/`reference` entries are the substance, with an optional parallel `guides/` layer that links *into* them (never duplicating). Named `product-wiki` (not `product-docs`) to signal wiki-first and to parallel `org-wiki`. Types `concept, reference, guide, decision, note, source, draft`.
 
-**Interactive selector on `init`.** Once more than one workflow exists, `wiki init` with no `--workflow` should, on an interactive terminal, show a numbered selector; a single workflow (today's case) is used straight away, and a non-interactive run (piped / CI) falls back to `default` without prompting. Detect the TTY zero-dep via `os.Stdin.Stat()` + `os.ModeCharDevice` (no `x/term` dependency); a plain numbered prompt fits the tool's minimalism (no TUI library). Deferred here because with one workflow it can't trigger or be exercised.
+Each new workflow ships a **First run: pin your conventions** section (like `project-backlog`), so an agent consolidates the template with the user (prune options, lock choices, scaffold a validated skeleton) before populating the base.
+
+`personal` was dropped as too close to `default`.
+
+**Done (2026-07-07):** `project-backlog` (kanban-style, multi-team; debt; everyday-question recipes; explicit lifecycle; a first-run consolidation step) shipped. An interactive `init` picker was prototyped and **removed**: zero-dep TTY detection (`os.ModeCharDevice`) can't tell `/dev/null` from a real terminal, so `wiki init >/dev/null` spuriously prompted (and could hang). Instead `--workflow` is optional and defaults to `default` with a `Using 'default' workflow` notice; a picker could return only with a proper zero-dep `isatty`.

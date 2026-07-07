@@ -6,7 +6,7 @@ This is the `default` workflow: a general-purpose knowledge base (notes, concept
 
 ## Structure
 
-- **Group by domain, not by type.** A travel plan (`concept`), its flights (`dataset`), and the trip (`event`) sit together in `personal/travel/`, sliced by `type` on demand — not scattered across `concepts/ datasets/ events/`.
+- **Group by domain, not by type.** A travel plan (`concept`), its flights (`dataset`), and the trip (`event`) sit together in `personal/travel/`, sliced by `type` on demand, not scattered across `concepts/ datasets/ events/`.
 - **Keep the top levels stable and relatively shallow** (2–3 folders deep). Each folder gets an `index.md` linking to what is inside, so you and an agent read top-down.
 - The starting `type` vocabulary is in `wiki.toml`; extend it as you introduce new kinds.
 
@@ -84,7 +84,7 @@ Little and often. Aim for a base that gets **more discoverable** over time, so *
 - Run `wiki check` and fix what it flags. Turn `wiki unresolved` links into entries when it helps. Re-home `wiki orphans`.
 - **Surface redundancy:** duplicate or near-duplicate entries to merge, `k8s`/`kubernetes`-style tag variants to consolidate, a cluster of entries circling a missing hub that wants its own `index.md`.
 - Skim the stalest entries (`wiki list --sort=timestamp --reverse`) and add the links between related ones that were never made.
-- Optionally keep a root `LEARNINGS.md` (give it a `type`) — a running list of gaps and inconsistencies you notice while working, to batch-fix later.
+- Optionally keep a root `LEARNINGS.md` (give it a `type`): a running list of gaps and inconsistencies you notice while working, to batch-fix later.
 - When grooming reclassifies or merges entries, an optional dated note in the folder's `log.md` records *why*.
 
 ## Make it yours

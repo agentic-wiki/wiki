@@ -12,6 +12,8 @@ This folder is an **agentic wiki bundle**: plain Markdown (someone's notes, docu
 
 **How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](WORKFLOW.md); read it next.**
 
+On a brand-new base, treat `WORKFLOW.md` as a starting template, not a finished spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second.
+
 ## The model
 
 Three orthogonal axes classify every entry (keep them separate and the base stays friction-free):
@@ -72,11 +74,11 @@ wiki orphans                          # nothing links in: knowledge to index
 
 Knowledge often arrives rough and matures in place. You write the file; `wiki` only queries it.
 
-1. **Capture** the rough thought as an entry now — don't lose it to a scratchpad.
+1. **Capture** the rough thought as an entry now (don't lose it to a scratchpad).
 2. **Refine**: read it back (`wiki read`), ask the user a sharpening question or two, fill it in.
 3. **Promote**: give it a real `type`, `wiki move` it into its domain, and **link it in** from the domain's `index.md` and related entries. An unlinked entry is lost knowledge.
 
-*(How this base holds unclassified thoughts — an inbox, a `draft` type — is a [WORKFLOW.md](WORKFLOW.md) choice.)*
+*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](WORKFLOW.md) choice.)*
 
 ### Reshape safely
 
@@ -108,11 +110,11 @@ wiki check        # warnings (e.g. a broken link) exit 0; errors (missing/unknow
 wiki check --fix  # apply the safe auto-repairs (e.g. okf_version sync)
 ```
 
-Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge duplicates, consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable — never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it).
+Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge duplicates, consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it).
 
 ## Git and safety
 
-Git is optional but highly recommended — it is the undo for a base an agent edits. When the base is at the root of a repo: pull before editing (otherwise ask the user), and after `wiki check` passes, commit the batch with a clear message; resolve conflicts by preserving both sides' intent and merging frontmatter sensibly. **Without git there is no undo — so don't groom or restructure unattended; make the change you were asked for and leave sweeping grooming for when the user is present.**
+Git is optional but highly recommended: it is the undo for a base an agent edits. When the base is at the root of a repo: pull before editing (otherwise ask the user), and after `wiki check` passes, commit the batch with a clear message; resolve conflicts by preserving both sides' intent and merging frontmatter sensibly. **Without git there is no undo, so don't groom or restructure unattended; make the change you were asked for and leave sweeping grooming for when the user is present.**
 
 ## Conventions
 

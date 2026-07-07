@@ -18,13 +18,17 @@ import (
 func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	force := fs.Bool("force", false, "write into a non-empty directory")
-	workflow := fs.String("workflow", scaffold.DefaultWorkflow, "starter workflow")
+	workflow := fs.String("workflow", "", "starter workflow (default: default)")
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
 	dir := "."
 	if fs.NArg() >= 1 {
 		dir = fs.Arg(0)
 		fs.Parse(fs.Args()[1:]) // pick up flags that followed the path
+	}
+	if *workflow == "" {
+		*workflow = scaffold.DefaultWorkflow
+		fmt.Fprintf(os.Stderr, "Using '%s' workflow.\n", *workflow)
 	}
 	written, err := scaffold.Write(dir, *workflow, *force)
 	if err != nil {
