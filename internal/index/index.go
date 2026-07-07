@@ -34,7 +34,7 @@ type Entry struct {
 	Title    string          `json:"title"`
 	Tags     []string        `json:"tags"`
 	Links    []Link          `json:"-"` // internal links, resolved to root-absolute: the graph edges
-	Outside  []Link          `json:"-"` // links resolving outside the bundle (Raw kept, no Target)
+	Outside  []Link          `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for skip matching)
 	Tasks    []parse.Task    `json:"-"`
 	Headings []parse.Heading `json:"-"`
 	abs      string
@@ -84,11 +84,14 @@ type Index struct {
 	Bundle  *bundle.Bundle
 	Entries []*Entry
 	byPath  map[string]*Entry
+	skipIn  map[string]bool // wiki.toml `skip` entries resolving inside: bundle path -> exempt from conformance/orphans/broken
+	skipOut map[string]bool // wiki.toml `skip` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
 }
 
 // Build scans the bundle directory and parses every .md file.
 func Build(b *bundle.Bundle) (*Index, error) {
 	idx := &Index{Bundle: b, byPath: map[string]*Entry{}}
+	idx.resolveSkip()
 	err := filepath.WalkDir(b.Dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -102,6 +105,10 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
+		rel, _ := filepath.Rel(b.Dir, path)
+		if idx.skipIn["/"+filepath.ToSlash(rel)] {
+			return nil // wiki.toml `skip`: a declared non-entry, excluded from the content index
+		}
 		e, err := parseEntry(b, path)
 		if err != nil {
 			return err
@@ -114,6 +121,28 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		return nil, err
 	}
 	return idx, nil
+}
+
+// resolveSkip resolves the bundle's wiki.toml `skip` list into two lookup sets:
+// entries resolving inside the bundle (skipIn, keyed by bundle path) are indexed
+// but exempt from every conformance report; entries resolving outside (skipOut,
+// keyed by absolute fs path) acknowledge an out-of-bundle link so its advisory is
+// silenced. Each entry is a path relative to the bundle root; matching is pure
+// lexical arithmetic, so an outside path is never stat'd or read.
+func (idx *Index) resolveSkip() {
+	idx.skipIn = map[string]bool{}
+	idx.skipOut = map[string]bool{}
+	root := idx.Bundle.Dir
+	for _, s := range idx.Bundle.Skip {
+		s = strings.TrimPrefix(filepath.ToSlash(s), "/")
+		p := filepath.Join(root, filepath.FromSlash(s))
+		if withinDir(root, p) {
+			rel, _ := filepath.Rel(root, p)
+			idx.skipIn["/"+filepath.ToSlash(rel)] = true
+		} else {
+			idx.skipOut[p] = true
+		}
+	}
 }
 
 func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
@@ -180,7 +209,7 @@ func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset
 		for _, l := range bucket {
 			target, escapes := normalizeLink(bundleRoot, entryPath, l.Target)
 			if escapes {
-				outside = append(outside, Link{Text: l.Text, Raw: l.Target, Line: l.Line + offset})
+				outside = append(outside, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
 				continue
 			}
 			if h := strings.IndexByte(target, '#'); h >= 0 {
@@ -214,7 +243,7 @@ func normalizeLink(bundleRoot, fromPath, target string) (abs string, escapes boo
 	}
 	p := filepath.Join(base, filepath.FromSlash(strings.TrimPrefix(target, "/")))
 	if !withinDir(bundleRoot, p) {
-		return "", true // final path is outside the bundle: an out-of-bundle reference
+		return p, true // outside the bundle: return the resolved fs path (for skip matching); never resolved on disk
 	}
 	rel, _ := filepath.Rel(bundleRoot, p) // no error: withinDir confirmed p is under bundleRoot
 	if rel == "." {
@@ -634,6 +663,9 @@ func (idx *Index) Check() []Issue {
 	// reference the out-of-bundle file as a code span or a full URL, not a link.
 	for _, e := range idx.Entries {
 		for _, l := range e.Outside {
+			if idx.skipOut[l.Target] {
+				continue // acknowledged in wiki.toml `skip`
+			}
 			issues = append(issues, Issue{"warning", e.Path, "out-of-bundle link -> " + l.Raw})
 		}
 	}

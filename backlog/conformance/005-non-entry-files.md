@@ -1,20 +1,25 @@
 ---
 type: task
-title: "wiki.toml field to exempt meta files from conformance reports"
-status: todo
+title: "wiki.toml skip list — exempt meta files and acknowledged out-of-bundle links"
+status: done
 priority: medium
 tags: [conformance, config, dx]
 ---
 
-`init` will drop `AGENTS.md`, `CLAUDE.md`, `WORKFLOW.md` at the bundle root (= the content root). These are operating docs, not knowledge entries: they still get **indexed** (searchable, listable, linkable) — they just should not be *reported* against conformance. Today `check` would flag each "missing required `type`" and `orphans` would list them (and a `CLAUDE.md` → `AGENTS.md` symlink shows up as a second entry of the same content, a minor listing dupe).
+`init` will drop `AGENTS.md`, `CLAUDE.md`, `WORKFLOW.md` at the bundle root (= the content root). These are operating docs, not knowledge entries: the tool should treat them as non-content and leave them out of the index entirely (a link *to* one still resolves on disk, so nothing breaks). Today `check` would flag each "missing required `type`" and `orphans` would list them (and a `CLAUDE.md` → `AGENTS.md` symlink would index as a second entry of the same content).
 
-This is exactly the treatment reserved files already get: `Check` and `Orphans` hardcode-exempt `index.md`/`log.md`. Generalize that into a configurable list.
+Reserved files (`index.md`/`log.md`) are indexed but exempt; `skip` goes one step further — the listed paths are not indexed at all. Add it as a configurable list (`skip` matches exact root-relative paths; the OKF `index.md`/`log.md` basename handling stays).
 
 **Decided (design session 2026-07-06):** add a **`skip`** field to `wiki.toml` naming the files exempt from conformance reporting — indexed like any entry, but skipped by the "missing `type`" error, the orphan report, etc. (`skip` reads as skip-from-checks; the files are **not** skipped from the walker, so they stay searchable and linkable.) A warning you already know about and won't change is noise; this removes it and doubles as an escape hatch for any meta file (`README.md`, `LICENSE`, ...).
 
-**Open decisions:**
+**Decided (2026-07-07):**
 
-- **Match form.** Exact paths vs globs (`*.md`, `docs/*`). Keep minimal if exact paths cover the scaffolded set.
-- **Unify with out-of-bundle links?** (open question from the design session.) The same list could also acknowledge out-of-bundle link targets like `../PRD.md` and silence the `out-of-bundle link -> …` advisory (see [out-of-bundle links](/conformance/004-out-of-bundle-links.md)). Two effects from one list: a match on an entry → exempt it from conformance reports; a match on a link target resolving outside the bundle → suppress its advisory. Same "not wiki's concern" intent. Decide: one unified field, or two (e.g. `meta` for files + `external`/`allow` for links).
+- **Exact paths, no globs.** `skip = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]`. Glob support only if a real need appears.
+- **Entries are relative to `wiki.toml` (the bundle root), and the list is unified** — one `skip`, two effects:
+  - a path resolving **inside** the bundle → that file is excluded from the content index (not an entry: absent from `list`/`search`/the graph, no `check` issue; a link to it still resolves on disk, so it is not broken);
+  - a path resolving **outside** the bundle (e.g. `../PRD.md`) → any out-of-bundle link whose target resolves to it has its `out-of-bundle link -> …` advisory suppressed (see [out-of-bundle links](/conformance/004-out-of-bundle-links.md)).
+- **Root-relative and resolved, not raw-string match:** the same external file is spelled differently from different entries (`../PRD.md` from a root entry vs `../../PRD.md` from a subfolder resolve to the same file). Resolving each link target and each `skip` entry to a canonical absolute path and comparing collapses the spellings; matching the as-written string would not. Matching stays pure lexical path arithmetic — `wiki` never stats or reads anything outside the bundle (the containment guard holds). In-bundle matches are exact root-relative paths (`/AGENTS.md`), not basename-anywhere.
 
-Touches `index.Check` and `index.Orphans` (consult the list instead of the hardcoded `index.md`/`log.md` names) and `bundle.parseConfig` (read the field). The walker (`index.Build`) is unchanged — files stay indexed. **Needs a spec note** (`wiki.toml` gains a field). Unblocks [workflow scaffold](/3-graph-and-mutation/005-workflow-scaffold.md).
+Touches: `bundle.parseConfig` (read `skip`); `index.Check`/`index.Orphans`/`index.Broken` (fully exempt listed in-bundle entries, alongside the OKF reserved `index.md`/`log.md`); the out-of-bundle advisory in `Check` (suppress listed targets); and `resolveLinks`/`Entry.Outside` (retain each out-of-bundle link's lexical resolved path to compare — `normalizeLink` already computes it before discarding). The walker (`index.Build`) is unchanged — files stay indexed (searchable/listable). **Needs a spec note** (`wiki.toml` gains a `skip` field). Unblocks [workflow scaffold](/3-graph-and-mutation/005-workflow-scaffold.md).
+
+**Done (2026-07-07):** `wiki.toml` gains `skip = [...]` (`bundle.parseConfig` + `Bundle.Skip`). `index.resolveSkip` resolves each entry relative to the bundle root into `skipIn` (bundle paths) / `skipOut` (absolute fs paths). In-bundle `skip` paths are **excluded from the walk** — not indexed, so absent from `list`/`search`/the graph and raising no `check` issue (a link *to* one still resolves via `FileExists`' disk stat, so it is not broken). Out-of-bundle `skip` paths suppress the `out-of-bundle link` advisory (`normalizeLink` returns the resolved outside path so `Entry.Outside` carries it, matching every spelling of the same file). Kept as **one** list (intent: "not part of the content graph"; the tool routes by where the path lands). Tests: `bundle` (`TestParseConfigSkip`), `index` (`TestSkipExcludesFromIndex`/`TestSkipAbsentStillFlags`/`TestSkipOutOfBundleAdvisory`), plus a smoke section; vet + smoke green. Spec updated (`../spec` README). **Follow-up:** wiring `skip` into `init` scaffolding is [workflow scaffold](/3-graph-and-mutation/005-workflow-scaffold.md).

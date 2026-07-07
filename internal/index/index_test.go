@@ -375,6 +375,78 @@ func hasWarning(issues []Issue, entry, substr string) bool {
 	return false
 }
 
+func hasError(issues []Issue, entry, substr string) bool {
+	for _, is := range issues {
+		if is.Level == "error" && is.Entry == entry && strings.Contains(is.Msg, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// A wiki.toml `skip` entry excludes a meta file from the content index: not an
+// entry (absent from list/search/graph), no conformance issue — yet a link *to*
+// it still resolves on disk, so it is not broken.
+func TestSkipExcludesFromIndex(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml": "spec=\"0.1\"\ntypes=[\"note\"]\nskip=[\"AGENTS.md\"]\n",
+		"index.md":  "---\nokf_version: \"0.1\"\n---\n[a](/a.md) and the [manual](/AGENTS.md)\n",
+		"a.md":      "---\ntype: note\n---\nx\n",
+		"AGENTS.md": "# How to operate\n", // no type
+	})
+	if _, ok := idx.byPath["/AGENTS.md"]; ok {
+		t.Errorf("skip'd file must not be indexed as an entry")
+	}
+	if got := idx.Check(); len(got) != 0 {
+		t.Errorf("skip'd file must generate no conformance issues, got %+v", got)
+	}
+	// the link to /AGENTS.md must still resolve (FileExists stats disk), not broken
+	for _, b := range idx.Broken() {
+		if b.Target == "/AGENTS.md" {
+			t.Errorf("a link to a skip'd file must not be reported broken: %+v", b)
+		}
+	}
+}
+
+// Control: the same file WITHOUT skip is flagged (missing type) and orphaned —
+// proving the exemption is what silences it.
+func TestSkipAbsentStillFlags(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml": "spec=\"0.1\"\ntypes=[\"note\"]\n",
+		"index.md":  "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
+		"a.md":      "---\ntype: note\n---\nx\n",
+		"AGENTS.md": "# How to operate\n",
+	})
+	if !hasError(idx.Check(), "/AGENTS.md", "type") {
+		t.Errorf("without skip, AGENTS.md should error on missing type, got %+v", idx.Check())
+	}
+	orphaned := false
+	for _, o := range idx.Orphans() {
+		if o.Path == "/AGENTS.md" {
+			orphaned = true
+		}
+	}
+	if !orphaned {
+		t.Errorf("without skip, AGENTS.md should be an orphan, got %+v", idx.Orphans())
+	}
+}
+
+// A `skip` entry resolving outside the bundle silences the out-of-bundle advisory
+// for every spelling that resolves to the same external file.
+func TestSkipOutOfBundleAdvisory(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml":   "spec=\"0.1\"\ntypes=[\"note\"]\nskip=[\"../PRD.md\"]\n",
+		"index.md":    "---\nokf_version: \"0.1\"\n---\n[prd](../PRD.md) [b](/b.md)\n", // ../PRD.md from root
+		"sub/page.md": "---\ntype: note\n---\n[prd](../../PRD.md)\n",                    // ../../PRD.md from a subdir: same file
+		"b.md":        "---\ntype: note\n---\nx\n",
+	})
+	for _, is := range idx.Check() {
+		if strings.Contains(is.Msg, "out-of-bundle") {
+			t.Errorf("skip should silence the out-of-bundle advisory for both spellings, got %+v", is)
+		}
+	}
+}
+
 func TestFix(t *testing.T) {
 	readRoot := func(idx *Index) string {
 		b, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))

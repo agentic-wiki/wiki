@@ -199,6 +199,17 @@ printf '\n[home](../index.md)\n' >> "$TMP/fresh/notes/welcome.md"
 ( cd "$TMP/fresh" && $BIN tidy --links >/dev/null )                             # normalize to absolute
 contains "$(cat "$TMP/fresh/notes/welcome.md")" 'home](/index.md)'
 
+echo "--- skip: listed meta / out-of-bundle paths are treated as non-entries ---"
+printf '# How an agent operates this base\nSee [home](/index.md).\n' > "$TMP/fresh/AGENTS.md"
+printf -- '\n[prd](../PRD.md) and the [manual](/AGENTS.md)\n' >> "$TMP/fresh/index.md"  # sibling-repo ref + a link to the meta file
+( cd "$TMP/fresh" && contains "$($BIN check)" "/AGENTS.md" )        # untyped meta file is flagged...
+( cd "$TMP/fresh" && contains "$($BIN check)" "out-of-bundle" )     # ...and the out-of-bundle ref warns
+( cd "$TMP/fresh" && ! $BIN check >/dev/null )                      # missing type is an error => exit 1
+printf 'skip = ["AGENTS.md", "../PRD.md"]\n' >> "$TMP/fresh/wiki.toml"
+( cd "$TMP/fresh" && $BIN check >/dev/null )                        # both silenced => clean, exit 0
+( cd "$TMP/fresh" && ! contains "$($BIN list)" "AGENTS.md" )        # excluded from the index (not an entry)...
+( cd "$TMP/fresh" && ! contains "$($BIN unresolved)" "AGENTS.md" )  # ...yet the link to it still resolves (not broken)
+
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"
 test -f "$TMP/finance/expenses.md"

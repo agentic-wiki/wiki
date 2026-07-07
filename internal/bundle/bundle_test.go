@@ -17,7 +17,7 @@ func TestOKFVersion(t *testing.T) {
 }
 
 func TestParseConfig(t *testing.T) {
-	spec, types := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
+	spec, types, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
 	if spec != "0.1" {
 		t.Errorf("spec=%q", spec)
 	}
@@ -28,11 +28,18 @@ func TestParseConfig(t *testing.T) {
 
 func TestParseConfigMessy(t *testing.T) {
 	// Spaces, bare + quoted tokens; internal space preserved; no spec line.
-	if _, types := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
+	if _, types, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
 		t.Errorf("types=%#v", types)
 	}
-	if spec, empty := parseConfig("types = []\n"); spec != "" || empty != nil {
+	if spec, empty, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
 		t.Errorf("spec=%q types=%#v, want empty", spec, empty)
+	}
+}
+
+func TestParseConfigSkip(t *testing.T) {
+	_, _, skip := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nskip=[\"AGENTS.md\", \"../PRD.md\"]\n")
+	if !reflect.DeepEqual(skip, []string{"AGENTS.md", "../PRD.md"}) {
+		t.Errorf("skip=%#v", skip)
 	}
 }
 
