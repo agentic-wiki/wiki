@@ -56,38 +56,38 @@ func cmdStatus(args []string) int {
 		return code
 	}
 
-	links, tasks := 0, 0
+	links, checkboxes := 0, 0
 	tagset := map[string]bool{}
 	for _, e := range idx.Entries {
 		links += len(e.Links)
-		tasks += len(e.Tasks)
+		checkboxes += len(e.Checkboxes)
 		for _, t := range e.Tags {
 			tagset[t] = true
 		}
 	}
 	s := struct {
-		Dir     string `json:"dir"`
-		Spec    string `json:"spec"`
-		Entries int    `json:"entries"`
-		Links   int    `json:"links"`
-		Tags    int    `json:"tags"`
-		Tasks   int    `json:"tasks"`
-		Broken  int    `json:"broken"`
-		Orphans int    `json:"orphans"`
+		Dir        string `json:"dir"`
+		Spec       string `json:"spec"`
+		Entries    int    `json:"entries"`
+		Links      int    `json:"links"`
+		Tags       int    `json:"tags"`
+		Checkboxes int    `json:"checkboxes"` // GFM `- [ ]` items, not type:task entries (use `list --where type=task`)
+		Broken     int    `json:"broken"`
+		Orphans    int    `json:"orphans"`
 	}{
 		idx.Bundle.Dir, idx.Bundle.Spec,
-		len(idx.Entries), links, len(tagset), tasks,
+		len(idx.Entries), links, len(tagset), checkboxes,
 		len(idx.Broken()), len(idx.Orphans()),
 	}
 	lines := []string{
-		"Dir:      " + s.Dir,
-		"Spec:     " + s.Spec,
-		fmt.Sprintf("Entries:  %d", s.Entries),
-		fmt.Sprintf("Links:    %d", s.Links),
-		fmt.Sprintf("Tags:     %d", s.Tags),
-		fmt.Sprintf("Tasks:    %d", s.Tasks),
-		fmt.Sprintf("Broken:   %d", s.Broken),
-		fmt.Sprintf("Orphans:  %d", s.Orphans),
+		"Dir:        " + s.Dir,
+		"Spec:       " + s.Spec,
+		fmt.Sprintf("Entries:    %d", s.Entries),
+		fmt.Sprintf("Links:      %d", s.Links),
+		fmt.Sprintf("Tags:       %d", s.Tags),
+		fmt.Sprintf("Checkboxes: %d", s.Checkboxes),
+		fmt.Sprintf("Broken:     %d", s.Broken),
+		fmt.Sprintf("Orphans:    %d", s.Orphans),
 	}
 	output.Emit(os.Stdout, *format, lines, s)
 	return 0
@@ -249,8 +249,8 @@ func cmdProperty(args []string) int {
 	return emitCounts(*format, sortedCounts(idx.PropertyValueCounts(name, *prefix), *sortBy), *counts)
 }
 
-func cmdTasks(args []string) int {
-	fs := flag.NewFlagSet("tasks", flag.ExitOnError)
+func cmdCheckboxes(args []string) int {
+	fs := flag.NewFlagSet("checkboxes", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	all := fs.Bool("all", false, "include done tasks")
 	done := fs.Bool("done", false, "only done tasks")
@@ -263,7 +263,7 @@ func cmdTasks(args []string) int {
 		target = fs.Arg(0)
 		fs.Parse(fs.Args()[1:])
 		if fs.NArg() != 0 {
-			fmt.Fprintln(os.Stderr, "usage: wiki tasks [file] [--all --done --prefix]")
+			fmt.Fprintln(os.Stderr, "usage: wiki checkboxes [file] [--all --done --prefix]")
 			return 2
 		}
 	}
@@ -294,7 +294,7 @@ func cmdTasks(args []string) int {
 		if target == "" && *prefix != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*prefix, "/")) {
 			continue
 		}
-		for _, t := range e.Tasks {
+		for _, t := range e.Checkboxes {
 			switch {
 			case *done && !t.Done:
 				continue

@@ -14,8 +14,8 @@ type Link struct {
 	Line   int    `json:"line"`
 }
 
-// Task is a GFM checkbox item.
-type Task struct {
+// Checkbox is a GFM checkbox item.
+type Checkbox struct {
 	Done bool   `json:"done"`
 	Text string `json:"text"`
 	Line int    `json:"line"`
@@ -187,7 +187,7 @@ func Strings(fm map[string]any, key string) []string {
 
 var (
 	linkRe       = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
-	taskRe       = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]\s+(.*)$`)
+	checkboxRe   = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]\s+(.*)$`)
 	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	inlineCodeRe = regexp.MustCompile("`[^`]*`")
 	// tableDelimRe matches a GFM table's delimiter row: dash cells with optional
@@ -275,19 +275,19 @@ func hasURLScheme(target string) bool {
 	return true
 }
 
-// Tasks returns checkbox items, ignoring fenced code.
-func Tasks(body string) []Task {
-	var tasks []Task
+// Checkboxes returns checkbox items, ignoring fenced code.
+func Checkboxes(body string) []Checkbox {
+	var checkboxes []Checkbox
 	for i, line := range maskedLines(body) {
-		if m := taskRe.FindStringSubmatch(line); m != nil {
-			tasks = append(tasks, Task{
+		if m := checkboxRe.FindStringSubmatch(line); m != nil {
+			checkboxes = append(checkboxes, Checkbox{
 				Done: m[1] == "x" || m[1] == "X",
 				Text: strings.TrimSpace(m[2]),
 				Line: i + 1,
 			})
 		}
 	}
-	return tasks
+	return checkboxes
 }
 
 // Headings returns ATX headings, ignoring fenced code.

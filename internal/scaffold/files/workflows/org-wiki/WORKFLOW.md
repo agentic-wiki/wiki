@@ -59,7 +59,7 @@ wiki links /projects/acme-migration.md   # what that project points to
 **How you record a relationship is a recipe, pick one per relationship and keep it** (the same trade-off as epic links elsewhere):
 
 - **Body link** (`[Acme](/clients/acme.md)` in the prose): a real graph edge that `wiki backlinks` follows, and it keeps the target off `wiki orphans`. Best for the org graph, which is the whole point here, so this is the default.
-- **Frontmatter field** (`client: /clients/acme.md`): filterable with `wiki list --where client=/clients/acme.md`, but *not* an edge (`backlinks` won't see it, and the target still needs a link from somewhere to stay off `orphans`). Reach for it when you want to filter by the relationship.
+- **Frontmatter field** (`client: /clients/acme.md`): filterable with `wiki list --where client=/clients/acme.md`, but *not* an edge, so `backlinks` won't see it, the target still needs a link from somewhere to stay off `orphans`, and `wiki move` won't rewrite the field if you move the target (the reference dangles). Reach for it when you want to filter by the relationship.
 
 ## Capture then promote
 
@@ -89,7 +89,7 @@ Migrate Acme off the legacy stack. Client: [Acme](/clients/acme.md). Product: [V
 - [ ] Cutover
 ```
 
-`wiki tasks /projects/acme-migration.md` then shows that project's checklist. Keep this **light**: when a project needs real task-tracking (many tasks, assignees, sprints, a board), give it its own **`project-backlog` bundle** (a sub-folder or a sibling repo) and link to it from the project entry, that is the tool for the job. org-wiki stays the knowledge layer; don't grow a full backlog in here.
+`wiki checkboxes /projects/acme-migration.md` then shows that project's checklist. Keep this **light**: when a project needs real task-tracking (many tasks, assignees, sprints, a board), give it its own **`project-backlog` bundle** (a sub-folder or a sibling repo) and link to it from the project entry, that is the tool for the job. org-wiki stays the knowledge layer; don't grow a full backlog in here.
 
 ## Decisions and meetings (optional)
 
@@ -104,19 +104,53 @@ Little and often, aim for a base that gets **more discoverable** over time.
 - `wiki orphans`: `inbox/` is `ignore_orphans`'d, so a hit is a *filed* entry nothing links to, wire it into its domain (a client with no project? a person on no team?). This is how an org KB rots: entries that never got linked.
 - `wiki unresolved`: links to entities not yet written, a to-write list (the client you referenced but never gave a page).
 - Skim the stalest entries (`wiki list --sort=timestamp --reverse`) and add the links between related ones that were never made.
-- Consolidate duplicates (two pages for one client) with `wiki move`.
+- Consolidate duplicates (two pages for one client) by hand, `wiki` can't merge: fold one entry's content into the other, run `wiki backlinks` on the one you're dropping to find its references and repoint them, then delete it. (`wiki move` relocates or renames; it does not merge.)
 
 ## Answering everyday questions
 
-Most questions are a query plus judgment: `wiki` narrows the set, you read and decide.
+Most questions are a query plus judgment: `wiki` narrows the set, you read and decide. The palette, roughly grouped:
 
-- **"What do we have on Acme?"**: `wiki backlinks /clients/acme.md` (everything pointing at them), plus `wiki read /clients/acme.md`.
-- **"What is Dana working on?"**: `wiki backlinks /people/dana.md`.
-- **"Which projects are active?"**: `wiki list --where type=project --where status=active`.
-- **"What decisions affect Vault?"**: `wiki backlinks /products/vault.md`, and read the decisions among them.
-- **"What's unwritten?"**: `wiki unresolved`.
+**Recall a specific thing**
 
-Anything beyond a filter (a roll-up, a report) is a small skill over `wiki list --format json`, not a `wiki` feature.
+```sh
+wiki read /projects/acme-migration.md          # its body (frontmatter stripped)
+wiki search "postgres migration"               # free-text over every entry (frontmatter + body)
+wiki search "gdpr" --lines                     # matching lines as file:line
+```
+
+**Filter the set** (any frontmatter field; repeat `--where` for AND; `--prefix` scopes to a subtree)
+
+```sh
+wiki list --where type=project --where status=active      # active projects
+wiki list --where type=project --where tags=security      # by topic tag
+wiki list --where type=person --where team=/teams/web.md  # a team's people (if you use a team field)
+wiki list --where type=task --prefix projects/acme-migration/   # scope to one project's subtree
+```
+
+**Follow the graph** (what links to what)
+
+```sh
+wiki backlinks /clients/acme.md      # every project, meeting, decision touching Acme
+wiki backlinks /people/dana.md       # what Dana is on
+wiki links /projects/acme-migration.md   # what that project references
+```
+
+**Export and report** (the tool narrows; a skill does the rest)
+
+```sh
+wiki table /clients/acme/headcount.md --format csv          # a dataset's table, for a sheet or duckdb
+wiki list --where type=project --format json \             # a status roll-up
+  | jq -r '.[] | [.title, .status, .lead] | @csv'
+```
+
+Worked examples:
+
+- **"Who leads the Acme migration?"**: `wiki read /projects/acme-migration.md` and read its lead link; or, if you keep a `lead:` field, `wiki list --where type=project --where lead=/people/dana.md` for everything Dana leads.
+- **"What do we have on Acme?"**: `wiki backlinks /clients/acme.md`, plus `wiki read /clients/acme.md`.
+- **"Which projects are blocked?"**: `wiki list --where type=project --where status=blocked`.
+- **"What's unwritten?"**: `wiki unresolved` (a client or person you referenced but never gave a page).
+
+Anything beyond a filter (a roll-up, a burndown, a report) is a small skill over `wiki list --format json` (which carries every frontmatter field), not a `wiki` feature. The tool finds the candidates; you and the skill do the judgment and the math.
 
 ## Make it yours
 

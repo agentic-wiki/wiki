@@ -81,7 +81,7 @@ The board section says *when*, `status` says *how far*, and they move independen
 Each `index.md` is a board: overarching **goal(s)** at the top, then sections of **plain links** to the issue entries. A link is a reference, not a copy of state: the linked entry owns its `status`, the single source of truth for progress, so the board is a curated *view* with nothing to keep in sync and nothing to drift (a board checkbox would be a second copy of the entry's done-ness).
 
 - Group sections by scheduling (`## Now` / `## Next`), by cycle (`## 2026-w27`), or, for classic kanban, by progress (`## Doing` / `## Review`); add a `## Debt` section if you keep one. Keep the active section short and truly current.
-- A `- [ ]` on the board is only for a **trivial** to-do not worth its own entry (a checklist item owned by the board); anything you'll query gets a `type: task` entry and a plain link. Inside a task entry, `- [ ]` items are *its* subtasks (`wiki tasks /active/that-task.md`).
+- A `- [ ]` on the board is only for a **trivial** to-do not worth its own entry (a checklist item owned by the board); anything you'll query gets a `type: task` entry and a plain link. Inside a task entry, `- [ ]` items are *its* subtasks (`wiki checkboxes /active/that-task.md`).
 - **Done work leaves the board:** set `status: done` and remove the line (then archive or delete the file), rather than leaving a ticked box behind. The board only ever shows open, scheduled work.
 - Want progress at a glance? A leading emoji (🔵 in progress, 🔴 blocked) or a `## Doing` grouping carries it; the truth stays in `status`, queryable with `--where`.
 - The board carries committed work only (everything in `active/`); the parked backlog is `backlog/index.md`. Link to it from the board so it stays one click away.
@@ -95,7 +95,7 @@ Most tasks need neither, reach for them only when they earn their keep. Whicheve
 Two recipes, pick by how you'll query (you can even use both, at the cost of recording the parent twice):
 
 - **Body link + `backlinks`.** The task body-links its epic, `[Onboarding](/epics/onboarding.md)`. Then `wiki backlinks /epics/onboarding.md` lists the tasks under it, and because the link is a real edge it also keeps the epic off `wiki orphans`. Good for one-hop graph traversal; not combinable with other filters.
-- **`epic:` field + `--where`.** The task carries `epic: /epics/onboarding.md`. Then `wiki list --where epic=/epics/onboarding.md` lists them, and you can AND other filters (`--where epic=… --where status=todo`). A field is *not* a graph edge, so `backlinks` won't follow it and the epic needs a link from somewhere (a board, its milestone) to stay off `wiki orphans`.
+- **`epic:` field + `--where`.** The task carries `epic: /epics/onboarding.md`. Then `wiki list --where epic=/epics/onboarding.md` lists them, and you can AND other filters (`--where epic=… --where status=todo`). Caveats, because a field is *not* a graph edge: `backlinks` won't follow it, the epic needs a link from somewhere (a board, its milestone) to stay off `wiki orphans`, and **`wiki move` won't rewrite the field** if you move the epic (the reference dangles). Body links avoid all three.
 
 A **milestone** (`type: milestone`) is a release or target; an epic (or a lone task with no epic) points up to it by whichever recipe you chose.
 
@@ -125,7 +125,7 @@ Keep statuses, priorities, and work-kind tags consistent across teams, so `wiki 
 
 Most questions are a query plus a moment of judgment: `wiki` narrows the set, you read and decide.
 
-- **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki tasks`, a checkbox scanner, is not used here.)
+- **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki checkboxes`, a checkbox scanner, is not used here.)
 - **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
 - **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked --prefix active/` for the committed ones blocking now. (`--where` is bundle-wide unless you add `--prefix`; drop it to include parked `backlog/` items too.)

@@ -71,8 +71,8 @@ contains() { echo "$1" | grep -q "$2"; }
 cd "$TMP/finance"   # deep dir: discovery must walk up
 
 echo "--- status ---"
-contains "$($BIN status)" "Entries:  6"
-contains "$($BIN status)" "Broken:   1"
+contains "$($BIN status)" "Entries:    6"
+contains "$($BIN status)" "Broken:     1"
 
 echo "--- check: broken link is a warning, not an error (exit 0) ---"
 $BIN check >/dev/null   # broken link no longer fails the lint
@@ -116,13 +116,13 @@ contains "$($BIN property status)" "open"
 echo "--- property unknown key => empty, exit 0 (like ls) ---"
 $BIN property zzznope >/dev/null
 
-echo "--- tasks default = open only ---"
-OPEN="$($BIN tasks)"
+echo "--- checkboxes default = open only ---"
+OPEN="$($BIN checkboxes)"
 contains "$OPEN" "reconcile the bank statement"
 ! contains "$OPEN" "file the Q1 report"
 
-echo "--- tasks --done ---"
-DONE="$($BIN tasks --done)"
+echo "--- checkboxes --done ---"
+DONE="$($BIN checkboxes --done)"
 contains "$DONE" "file the Q1 report"
 ! contains "$DONE" "reconcile the bank statement"
 

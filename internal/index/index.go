@@ -29,17 +29,17 @@ type Link struct {
 
 // Entry is one markdown file in the content tree.
 type Entry struct {
-	Path     string          `json:"path"` // root-absolute, e.g. /finance/income/index.md
-	Name     string          `json:"name"` // base name, e.g. index.md
-	Type     string          `json:"type"`
-	Title    string          `json:"title"`
-	Tags     []string        `json:"tags"`
-	Links    []Link          `json:"-"` // internal links, resolved to root-absolute: the graph edges
-	Outside  []Link          `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
-	Tasks    []parse.Task    `json:"-"`
-	Headings []parse.Heading `json:"-"`
-	abs      string
-	fm       map[string]any
+	Path       string           `json:"path"` // root-absolute, e.g. /finance/income/index.md
+	Name       string           `json:"name"` // base name, e.g. index.md
+	Type       string           `json:"type"`
+	Title      string           `json:"title"`
+	Tags       []string         `json:"tags"`
+	Links      []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
+	Outside    []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
+	Checkboxes []parse.Checkbox `json:"-"`
+	Headings   []parse.Heading  `json:"-"`
+	abs        string
+	fm         map[string]any
 }
 
 // Depth is the number of folders below the content root (a top-level file is 0).
@@ -185,7 +185,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	rel, _ := filepath.Rel(b.Dir, abs)
 	content := string(data)
 	fm, body := parse.Frontmatter(content)
-	// Links/tasks/headings are parsed from the frontmatter-stripped body, so
+	// Links/checkboxes/headings are parsed from the frontmatter-stripped body, so
 	// their line numbers are body-relative; offset by the frontmatter's length
 	// to make them file-relative (what `unresolved`/`backlinks`/`tasks` report).
 	offset := strings.Count(content[:len(content)-len(body)], "\n")
@@ -193,25 +193,25 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// entryPath is its root-absolute bundle id ("/finance/income.md").
 	entryPath := "/" + filepath.ToSlash(rel)
 	links, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
-	tasks, heads := parse.Tasks(body), parse.Headings(body)
-	for i := range tasks {
-		tasks[i].Line += offset
+	checkboxes, heads := parse.Checkboxes(body), parse.Headings(body)
+	for i := range checkboxes {
+		checkboxes[i].Line += offset
 	}
 	for i := range heads {
 		heads[i].Line += offset
 	}
 	return &Entry{
-		Path:     entryPath,
-		Name:     filepath.Base(abs),
-		Type:     parse.String(fm, "type"),
-		Title:    parse.String(fm, "title"),
-		Tags:     parse.Strings(fm, "tags"),
-		Links:    links,
-		Outside:  outside,
-		Tasks:    tasks,
-		Headings: heads,
-		abs:      abs,
-		fm:       fm,
+		Path:       entryPath,
+		Name:       filepath.Base(abs),
+		Type:       parse.String(fm, "type"),
+		Title:      parse.String(fm, "title"),
+		Tags:       parse.Strings(fm, "tags"),
+		Links:      links,
+		Outside:    outside,
+		Checkboxes: checkboxes,
+		Headings:   heads,
+		abs:        abs,
+		fm:         fm,
 	}, nil
 }
 

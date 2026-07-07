@@ -46,12 +46,12 @@ func TestBuildParsesEntry(t *testing.T) {
 	if e.Path != "/a.md" || e.Type != "note" || e.Title != "A" {
 		t.Errorf("entry = %+v", e)
 	}
-	if len(e.Tags) != 2 || len(e.Links) != 1 || len(e.Tasks) != 1 || len(e.Headings) != 1 {
-		t.Errorf("counts: tags=%v links=%v tasks=%v headings=%v", e.Tags, e.Links, e.Tasks, e.Headings)
+	if len(e.Tags) != 2 || len(e.Links) != 1 || len(e.Checkboxes) != 1 || len(e.Headings) != 1 {
+		t.Errorf("counts: tags=%v links=%v checkboxes=%v headings=%v", e.Tags, e.Links, e.Checkboxes, e.Headings)
 	}
 	// line numbers are file-relative: 5 frontmatter lines, then # H, link, task
-	if e.Headings[0].Line != 6 || e.Links[0].Line != 7 || e.Tasks[0].Line != 8 {
-		t.Errorf("file-relative lines: heading=%d link=%d task=%d (want 6/7/8)", e.Headings[0].Line, e.Links[0].Line, e.Tasks[0].Line)
+	if e.Headings[0].Line != 6 || e.Links[0].Line != 7 || e.Checkboxes[0].Line != 8 {
+		t.Errorf("file-relative lines: heading=%d link=%d checkbox=%d (want 6/7/8)", e.Headings[0].Line, e.Links[0].Line, e.Checkboxes[0].Line)
 	}
 }
 

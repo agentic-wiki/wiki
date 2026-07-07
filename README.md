@@ -14,7 +14,7 @@ There's pleasantly little to it: no app to launch, no database, no daemon, no sy
 wiki list --where type=dataset --where tags=finance  # query entries by type and topic
 wiki search "quarterly revenue"             # full-text search
 wiki backlinks /finance/income.md           # everything that points here
-wiki tasks                                  # every open checkbox, gathered
+wiki checkboxes                             # every open checkbox, gathered
 ```
 
 ## Why this exists
@@ -89,7 +89,7 @@ That last one is quietly the favorite: a broken link is not an error here, it is
 **See your work and your vocabulary**
 
 ```sh
-wiki tasks                         # every open - [ ] checkbox, across the whole base
+wiki checkboxes                    # every open - [ ] checkbox, across the whole base
 wiki list --where type=task        # list task entries (detailed entries)
 wiki tags --counts --sort=count    # what you write about most
 wiki property status --counts      # how many open vs done, draft vs final
@@ -161,13 +161,13 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | Command | What it does |
 |---|---|
 | `init [dir]` | Scaffold a new bundle from a `--workflow` starter (`--force` to write into a non-empty dir) |
-| `status` | Bundle counts: entries, links, tags, tasks, broken links, orphans |
+| `status` | Bundle counts: entries, links, tags, checkboxes, broken links, orphans |
 | `list` | Entries, filtered by `--where key=value` / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
 | `outline <path>` | An entry's heading hierarchy |
 | `table <path>` | Extract a dataset's markdown table as text/csv/json (`--n` to pick one) |
-| `tasks` | Open `- [ ]` checkboxes (`--all`, `--done`) |
+| `checkboxes` | Open `- [ ]` items, not `type: task` entries (`--all`, `--done`; `[file]` scopes to one entry) |
 | `tags` / `properties` / `property <key>` | The base's vocabulary (`--counts`, `--sort=name\|count`) |
 | `links <path>` / `backlinks <path>` | Outgoing / incoming links |
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
@@ -186,7 +186,7 @@ There is no issue tracker and no "TASKS.md" here: this repo's own backlog lives 
 
 ```sh
 cd backlog
-wiki tasks                           # what is left to build
+wiki checkboxes                      # what is left to build
 wiki list --where type=task --where tags=feature  # new features
 wiki check                           # the backlog stays conformant
 ```

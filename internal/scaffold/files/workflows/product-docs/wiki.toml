@@ -1,4 +1,4 @@
 spec = "0.1"
-types = ["concept", "reference", "guide", "note", "decision", "source", "draft"]
+types = ["concept", "reference", "guide", "example", "note", "decision", "source", "draft"]
 ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
 ignore_orphans = ["inbox/**"]

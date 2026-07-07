@@ -204,9 +204,9 @@ func TestLinkSchemeEdges(t *testing.T) {
 	}
 }
 
-func TestTasks(t *testing.T) {
+func TestCheckboxes(t *testing.T) {
 	body := "- [ ] a\n* [x] b\n+ [ ] c\n  - [ ] d\n- [e](/x.md) not a task\n```\n- [ ] fenced\n```\n"
-	ts := Tasks(body)
+	ts := Checkboxes(body)
 	if len(ts) != 4 {
 		t.Fatalf("want 4 tasks (-, *, +, indented), got %d: %+v", len(ts), ts)
 	}
@@ -217,9 +217,9 @@ func TestTasks(t *testing.T) {
 
 // Inline code in a task's text is content, not code to strip: it must survive
 // verbatim (a checkbox is line-anchored, so a span can never fake a task).
-func TestTasksKeepInlineCode(t *testing.T) {
+func TestCheckboxesKeepInlineCode(t *testing.T) {
 	body := "- [ ] Scaffold `wiki.toml`, `index.md`\n"
-	ts := Tasks(body)
+	ts := Checkboxes(body)
 	if len(ts) != 1 || ts[0].Text != "Scaffold `wiki.toml`, `index.md`" {
 		t.Errorf("task text = %+v, want inline code preserved", ts)
 	}
@@ -235,8 +235,8 @@ func TestHeadings(t *testing.T) {
 
 // Heading text keeps inline code verbatim, for the same reason as tasks.
 func TestHeadingsKeepInlineCode(t *testing.T) {
-	hs := Headings("## The `wiki tasks` command\n")
-	if len(hs) != 1 || hs[0].Text != "The `wiki tasks` command" {
+	hs := Headings("## The `wiki checkboxes` command\n")
+	if len(hs) != 1 || hs[0].Text != "The `wiki checkboxes` command" {
 		t.Errorf("heading text = %+v, want inline code preserved", hs)
 	}
 }

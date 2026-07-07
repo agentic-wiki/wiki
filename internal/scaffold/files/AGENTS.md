@@ -96,12 +96,12 @@ Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every b
 Two things wear a checkbox-ish shape; the model separates them by **who owns the state**:
 
 - A **`type: task` entry** is a first-class thing that owns its own state (`status` frontmatter is the source of truth). List them with `wiki list --where type=task`.
-- A **`- [ ]` checklist item** is a *subtask or step of the entry it lives in* (a task's steps, a note's to-dos), owned by that entry and nothing else. `wiki tasks` gathers open checklist items across the base, a `--prefix` subtree, or one `[file]`.
+- A **`- [ ]` checklist item** is a *subtask or step of the entry it lives in* (a task's steps, a note's to-dos), owned by that entry and nothing else. `wiki checkboxes` gathers open checklist items across the base, a `--prefix` subtree, or one `[file]`. (The command is `checkboxes`, not `tasks`: it scans the `- [ ]` construct, it does not list `type: task` entries.)
 
 ```sh
-wiki tasks                    # list open checklist items across the base
-wiki tasks /active/login.md   # just that entry's own subtasks
-wiki list --where type=task   # the task entries themselves
+wiki checkboxes                 # open '- [ ]' items across the base
+wiki checkboxes /active/login.md  # just that entry's own subtasks
+wiki list --where type=task     # the task entries themselves
 ```
 
 A **board** (`index.md`) references task entries with **plain links**, not by checkboxing them: a link is an external reference and never carries the target's state (the entry owns that, so a board checkbox would just be a second copy that drifts). A genuinely trivial to-do not worth its own entry can sit as a bare `- [ ]` on the board, but then it is a checklist item, not a queryable entry, that is the trade-off. The board is **authored, not generated**: `wiki` never edits it, you keep it current; a task the board omits shows up under `wiki orphans` if nothing else links it.

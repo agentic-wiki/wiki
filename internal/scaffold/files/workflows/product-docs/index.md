@@ -4,10 +4,14 @@ okf_version: "0.1"
 
 # Product Documentation
 
-The home page. Each product is a folder with its concepts/reference and a `guides/`:
+A few paragraphs on what this product is (the entry point, see WORKFLOW.md).
 
-- [ ] Define the product boundaries in first run (one folder per product).
-- [ ] Link each product's `index.md` here.
+**Start here**
+
+- [ ] Link the guides (if any): the guided way in.
+- [ ] Link the key concepts to start from, for readers not following a guide.
+
+_One product: keep it flat (concepts at the root, a `guides/` folder). Multiple: a folder each, linked from here._
 
 ---
 

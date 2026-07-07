@@ -20,13 +20,13 @@ Usage: wiki [--root <dir>] <command> [flags]
 
 Commands:
   init          scaffold a new bundle (--workflow <name>, --force; 'init -h' lists workflows)
-  status        bundle counts: entries, links, tags, tasks, broken, orphans
+  status        bundle counts: entries, links, tags, checkboxes, broken, orphans
   list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (--where key=value --prefix --lines)
-  tasks         list open checklist items; optional [file] scopes to one entry (--all --done --prefix)
+  checkboxes    list open checklist items; optional [file] scopes to one entry (--all --done --prefix)
   tags          list tags in use (--counts --sort=name|count --prefix)
   properties    list frontmatter keys in use (--counts --sort --prefix)
   property      list values of a frontmatter key (--counts --sort --prefix)
@@ -81,8 +81,8 @@ func run(args []string) int {
 		return cmdOutline(args[1:])
 	case "search":
 		return cmdSearch(args[1:])
-	case "tasks":
-		return cmdTasks(args[1:])
+	case "checkboxes":
+		return cmdCheckboxes(args[1:])
 	case "table":
 		return cmdTable(args[1:])
 	case "tags":
