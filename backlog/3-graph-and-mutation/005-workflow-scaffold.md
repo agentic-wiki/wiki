@@ -1,7 +1,7 @@
 ---
 type: task
 title: "init scaffolds an operating manual (AGENTS.md) + a selectable workflow"
-status: todo
+status: done
 priority: medium
 tags: [feature, scaffold]
 ---
@@ -19,3 +19,5 @@ Replace the dummy-example starter with self-contained scaffolding, so a fresh bu
 **Superseded:** the remote scaffold-registry idea (`--template` / `--from <git-url>`). A URL `--from` is low value (you can just `curl` the file); built-ins stay embedded and offline. Revisit only if a real need appears.
 
 **Depends on** [non-entry files](/conformance/005-non-entry-files.md) (the `skip` list keeps `AGENTS.md`/`CLAUDE.md`/`WORKFLOW.md` indexed but exempt from conformance reports). **Needs a spec note** to recognize these meta files, and a README rewrite of the stack framing from *Markdown + tool + skill* to **format + tool + workflow**: two of the three layers (format, workflow) now live in the bundle; only the tool is external. The skills repo is **not** deprecated — skills and AGENTS.md serve different contexts: a skill suits a general-purpose agent that manages many things (Claude Cowork, Hermes, ...), where agentic-wiki is one capability among many; AGENTS.md suits a purpose-specific bundle, where operating it is the agent's whole job. Both stay; AGENTS.md is the in-repo channel, not a skill replacement.
+
+**Done (2026-07-07):** `wiki init --workflow <name>` (the `default` workflow when unspecified). The embedded starter is split into shared files (`AGENTS.md`, `.gitignore`) + `workflows/<name>/` (`wiki.toml`, `index.md`, `WORKFLOW.md`); `scaffold.Write(dir, workflow, force)` + `Workflows()`/`DefaultWorkflow`. `default` ships: a use-case-organized `AGENTS.md` operating manual (defers exact flags to `-h`, points to `WORKFLOW.md`), an editable `WORKFLOW.md`, a minimal root `index.md`, and `skip = ["AGENTS.md","CLAUDE.md","WORKFLOW.md"]` wired in. `CLAUDE.md` is a symlink → `AGENTS.md` (one-line stub fallback); `notes/welcome.md` dropped. Content distilled from the agentic-wiki skill. Tests (`scaffold`, `commands`) + smoke + real `wiki init` verified check-clean. **Follow-ups:** more curated workflows ([010](/3-graph-and-mutation/010-curated-workflows.md)); the stack-framing doc rewrite ([003](/4-release-and-docs/003-stack-framing.md)).

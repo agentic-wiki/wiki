@@ -225,7 +225,7 @@ func TestCmdInit(t *testing.T) {
 	if _, code := capture(t, func() int { return cmdInit(nil) }); code != 0 {
 		t.Fatalf("init exit %d", code)
 	}
-	for _, f := range []string{"wiki.toml", ".gitignore", "index.md", "notes/welcome.md"} {
+	for _, f := range []string{"wiki.toml", ".gitignore", "index.md", "AGENTS.md", "CLAUDE.md", "WORKFLOW.md"} {
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("missing %s: %v", f, err)
 		}

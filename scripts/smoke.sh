@@ -173,11 +173,12 @@ $BIN list --type nonexistent >/dev/null
 echo "--- version ---"
 contains "$($BIN version)" "wiki"
 
-echo "--- init scaffolds a check-clean bundle ---"
+echo "--- init scaffolds a check-clean bundle with an operating manual ---"
 mkdir -p "$TMP/fresh"
 ( cd "$TMP/fresh" && $BIN init >/dev/null && $BIN check >/dev/null )
-test -f "$TMP/fresh/wiki.toml"
-test -f "$TMP/fresh/.gitignore"
+for f in wiki.toml .gitignore index.md AGENTS.md CLAUDE.md WORKFLOW.md; do test -e "$TMP/fresh/$f"; done
+contains "$(cat "$TMP/fresh/wiki.toml")" "skip"             # meta files declared non-entries
+( cd "$TMP/fresh" && ! contains "$($BIN list)" "AGENTS" )   # ...so they are not indexed as entries
 
 echo "--- check warns on a filename with a space ---"
 printf -- '---\ntype: note\n---\nx\n' > "$TMP/fresh/has space.md"
@@ -192,23 +193,21 @@ sed -i.bak 's/okf_version: "0.1"/okf_version: "0.2"/' "$TMP/fresh/index.md" && r
 contains "$(cat "$TMP/fresh/index.md")" 'okf_version: "0.1"'
 
 echo "--- tidy --links normalizes relative links (which are valid, not flagged) ---"
-printf '\n[home](../index.md)\n' >> "$TMP/fresh/notes/welcome.md"
+mkdir -p "$TMP/fresh/notes"
+printf -- '---\ntype: note\n---\nhi\n[home](../index.md)\n' > "$TMP/fresh/notes/example.md"
 ( cd "$TMP/fresh" && ! contains "$($BIN check)" "not root-absolute" )           # relative is valid
 ( cd "$TMP/fresh" && $BIN check >/dev/null )                                    # resolves, so still clean
 ( cd "$TMP/fresh" && contains "$($BIN tidy)" "would link" )                     # bare tidy = preview, writes nothing
 ( cd "$TMP/fresh" && $BIN tidy --links >/dev/null )                             # normalize to absolute
-contains "$(cat "$TMP/fresh/notes/welcome.md")" 'home](/index.md)'
+contains "$(cat "$TMP/fresh/notes/example.md")" 'home](/index.md)'
 
-echo "--- skip: listed meta / out-of-bundle paths are treated as non-entries ---"
-printf '# How an agent operates this base\nSee [home](/index.md).\n' > "$TMP/fresh/AGENTS.md"
-printf -- '\n[prd](../PRD.md) and the [manual](/AGENTS.md)\n' >> "$TMP/fresh/index.md"  # sibling-repo ref + a link to the meta file
-( cd "$TMP/fresh" && contains "$($BIN check)" "/AGENTS.md" )        # untyped meta file is flagged...
-( cd "$TMP/fresh" && contains "$($BIN check)" "out-of-bundle" )     # ...and the out-of-bundle ref warns
-( cd "$TMP/fresh" && ! $BIN check >/dev/null )                      # missing type is an error => exit 1
-printf 'skip = ["AGENTS.md", "../PRD.md"]\n' >> "$TMP/fresh/wiki.toml"
-( cd "$TMP/fresh" && $BIN check >/dev/null )                        # both silenced => clean, exit 0
-( cd "$TMP/fresh" && ! contains "$($BIN list)" "AGENTS.md" )        # excluded from the index (not an entry)...
-( cd "$TMP/fresh" && ! contains "$($BIN unresolved)" "AGENTS.md" )  # ...yet the link to it still resolves (not broken)
+echo "--- skip: an out-of-bundle ref can be acknowledged in wiki.toml ---"
+OOB="$TMP/oob"; mkdir -p "$OOB"
+printf 'spec = "0.1"\ntypes = ["note"]\n' > "$OOB/wiki.toml"
+printf -- '---\nokf_version: "0.1"\n---\n[prd](../PRD.md)\n' > "$OOB/index.md"
+( cd "$OOB" && contains "$($BIN check)" "out-of-bundle" )     # unacknowledged out-of-bundle ref warns
+printf 'spec = "0.1"\ntypes = ["note"]\nskip = ["../PRD.md"]\n' > "$OOB/wiki.toml"
+( cd "$OOB" && ! contains "$($BIN check)" "out-of-bundle" )   # once listed in skip, silenced
 
 echo "--- move --dry-run previews, writes nothing ---"
 contains "$($BIN move --dry-run /finance/expenses.md /finance/costs.md)" "would move"

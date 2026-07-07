@@ -1,2 +1,3 @@
 spec = "0.1"
 types = ["note", "concept", "entity", "event", "tool", "project", "task", "dataset", "source", "draft"]
+skip = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]

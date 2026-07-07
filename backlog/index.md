@@ -8,8 +8,11 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
-- [ ] [init: operating manual + selectable workflow](/3-graph-and-mutation/005-workflow-scaffold.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
+- [ ] [more workflows + init selector](/3-graph-and-mutation/010-curated-workflows.md)
+
+## 4 — Release & docs
+- [ ] [reframe stack: format + tool + workflow](/4-release-and-docs/003-stack-framing.md)
 
 ## Conformance
 - [ ] [detect & convert wikilinks](/conformance/003-wikilink-detection.md)
@@ -19,6 +22,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [init: operating manual + selectable workflow](/3-graph-and-mutation/005-workflow-scaffold.md): `wiki init --workflow` scaffolds an `AGENTS.md` operating manual + editable `WORKFLOW.md` + a `CLAUDE.md` symlink + minimal `index.md`, `skip` wired in. `default` shipped; more flavors + the framing rewrite are follow-ups.
 - [x] [stale Backlinks doc comment](/debt/003-backlinks-doc-comment.md): removed the leftover leading sentence; the accurate one-`LinkRef`-per-occurrence description stays.
 - [x] [wiki.toml `skip` list](/conformance/005-non-entry-files.md): meta files (e.g. `AGENTS.md`) are excluded from the index entirely (not entries; a link to one still resolves), and out-of-bundle refs (`../PRD.md`) have their advisory silenced. Root-relative, resolved; one list, `bundle` parse + `index` skipIn/skipOut. Unblocks the scaffolding epic.
 - [x] [out-of-bundle links warn, not "broken"](/conformance/004-out-of-bundle-links.md): a link resolving above the bundle root (e.g. `../PRD.md` from a nested bundle) is no longer clamped to a fake in-bundle target and mislabeled broken. `normalizeLink` now decides in/out via `withinDir` (one containment check, shared with `FileExists`); out-of-bundle links get their own `check` advisory (`out-of-bundle link -> …`, warning, exit `0`) and `tidy --links` leaves them untouched. The path-traversal guard is preserved.

@@ -19,7 +19,7 @@ const usage = `Wiki: query an agentic-wiki bundle
 Usage: wiki [--root <dir>] <command> [flags]
 
 Commands:
-  init          scaffold a new bundle (--force into a non-empty dir)
+  init          scaffold a new bundle (--workflow <name>, --force)
   status        bundle + index summary
   list, ls      list entries (--type --tag --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
