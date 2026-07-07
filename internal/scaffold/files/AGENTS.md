@@ -93,14 +93,18 @@ Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every b
 
 ### Track work
 
-A task is an entry of `type: task`; a board is an `index.md` of `- [ ]` checkboxes linking to them. These are two distinct surfaces, and it matters which you query:
+Two things wear a checkbox-ish shape; the model separates them by **who owns the state**:
+
+- A **`type: task` entry** is a first-class thing that owns its own state (`status` frontmatter is the source of truth). List them with `wiki list --where type=task`.
+- A **`- [ ]` checklist item** is a *subtask or step of the entry it lives in* (a task's steps, a note's to-dos), owned by that entry and nothing else. `wiki tasks` gathers open checklist items across the base, a `--prefix` subtree, or one `[file]`.
 
 ```sh
-wiki tasks                # scans boards for `- [ ]` checkboxes (not type:task entries)
-wiki list --where type=task   # every type:task entry, whether or not a board links it
+wiki tasks                    # list open checklist items across the base
+wiki tasks /active/login.md   # just that entry's own subtasks
+wiki list --where type=task   # the task entries themselves
 ```
 
-The board is **authored, not generated**: `wiki` never adds a task to it, ticks a box, or prunes a done one. You keep it current, and you keep each checkbox in agreement with its entry's `status` (checked exactly when `status` is `done`), both changed in one edit. A task with no board checkbox is invisible to `wiki tasks` (find it with `wiki list --where type=task`); reconcile that during grooming.
+A **board** (`index.md`) references task entries with **plain links**, not by checkboxing them: a link is an external reference and never carries the target's state (the entry owns that, so a board checkbox would just be a second copy that drifts). A genuinely trivial to-do not worth its own entry can sit as a bare `- [ ]` on the board, but then it is a checklist item, not a queryable entry, that is the trade-off. The board is **authored, not generated**: `wiki` never edits it, you keep it current; a task the board omits shows up under `wiki orphans` if nothing else links it.
 
 *(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](/WORKFLOW.md).)*
 

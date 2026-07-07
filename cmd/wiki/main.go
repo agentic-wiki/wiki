@@ -26,7 +26,7 @@ Commands:
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (--where key=value --prefix --lines)
-  tasks         list checkbox tasks (--all --done --prefix)
+  tasks         list open checklist items; optional [file] scopes to one entry (--all --done --prefix)
   tags          list tags in use (--counts --sort=name|count --prefix)
   properties    list frontmatter keys in use (--counts --sort --prefix)
   property      list values of a frontmatter key (--counts --sort --prefix)

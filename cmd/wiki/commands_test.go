@@ -151,6 +151,30 @@ func TestCmdSearch(t *testing.T) {
 	}
 }
 
+func TestCmdTasksFile(t *testing.T) {
+	t.Chdir(writeBundle(t))
+	// whole base: guide.md's checkbox shows
+	if out, code := capture(t, func() int { return cmdTasks(nil) }); code != 0 || !strings.Contains(out, "try the CLI") {
+		t.Errorf("tasks: %q (%d)", out, code)
+	}
+	// scoped to one file: that entry's own checklist
+	if out, code := capture(t, func() int { return cmdTasks([]string{"guide.md"}) }); code != 0 || !strings.Contains(out, "try the CLI") {
+		t.Errorf("tasks guide.md: %q (%d)", out, code)
+	}
+	// a file with no checklist items -> empty, exit 0
+	if out, code := capture(t, func() int { return cmdTasks([]string{"flat.md"}) }); code != 0 || strings.TrimSpace(out) != "" {
+		t.Errorf("tasks flat.md: %q (%d), want empty/0", out, code)
+	}
+	// flag after the file positional still applies
+	if out, code := capture(t, func() int { return cmdTasks([]string{"guide.md", "--format", "json"}) }); code != 0 || !strings.Contains(out, `"text"`) {
+		t.Errorf("tasks guide.md --format json: %q (%d)", out, code)
+	}
+	// missing file -> exit 2
+	if _, code := capture(t, func() int { return cmdTasks([]string{"nope.md"}) }); code != 2 {
+		t.Errorf("tasks nope.md exit=%d want 2", code)
+	}
+}
+
 func TestCmdLinkGraph(t *testing.T) {
 	t.Chdir(writeBundle(t))
 

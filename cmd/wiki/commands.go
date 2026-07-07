@@ -256,9 +256,30 @@ func cmdTasks(args []string) int {
 	done := fs.Bool("done", false, "only done tasks")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	fs.Parse(args)
+	// Optional [file]: scope to a single entry's own checklist (its subtasks),
+	// with flags allowed on either side of the positional (like read/outline).
+	target := ""
+	if fs.NArg() >= 1 {
+		target = fs.Arg(0)
+		fs.Parse(fs.Args()[1:])
+		if fs.NArg() != 0 {
+			fmt.Fprintln(os.Stderr, "usage: wiki tasks [file] [--all --done --prefix]")
+			return 2
+		}
+	}
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
+	}
+
+	entries := idx.Entries
+	if target != "" {
+		e, err := idx.Resolve(target)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wiki:", err)
+			return 2
+		}
+		entries = []*index.Entry{e}
 	}
 
 	type row struct {
@@ -269,8 +290,8 @@ func cmdTasks(args []string) int {
 	}
 	var rows []row
 	var lines []string
-	for _, e := range idx.Entries {
-		if *prefix != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*prefix, "/")) {
+	for _, e := range entries {
+		if target == "" && *prefix != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*prefix, "/")) {
 			continue
 		}
 		for _, t := range e.Tasks {

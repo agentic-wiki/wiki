@@ -57,8 +57,8 @@ Fully-formed knowledge can be created in place; the inbox is only for unrefined 
 Treat tasks as a **backlog**, not a flat checklist. A `tasks/index.md` (or the root `index.md`) is the board:
 
 - **Goals first.** Open the board with the one or two overarching objectives the current work serves, so "what's next" always has a *why*.
-- **Grouped, linked checkboxes.** Under the goals, group tasks into `## Now` / `## Next` sections (or by `status`) as `- [ ]` checkboxes linking to the real entries. Scheduling lives in these sections, not in folders.
-- **Entries hold the detail.** Each non-trivial task is a `type: task` file carrying frontmatter like `status`, `priority`, and `tags` (`feature`/`bug`/`debt`/`chore`), plus links to related entries. Keep committed tasks in `tasks/active/` and parked ones in `tasks/backlog/`; a task's progress is its `status`, not a folder to shuffle it between. Trivial tasks can stay inline `- [ ]` without a full entry.
+- **Group by schedule, link the entries.** Under the goals, group work into `## Now` / `## Next` sections (scheduling lives here, not in folders). A non-trivial task is a `type: task` entry referenced by a **plain link** (the entry's `status` is the source of truth, so there's no checkbox to drift); a genuinely trivial to-do can be an inline `- [ ]` right on the board.
+- **Entries hold the detail.** Each `type: task` file carries frontmatter like `status`, `priority`, and `tags` (`feature`/`bug`/`debt`/`chore`), plus links to related entries. Keep committed tasks in `tasks/active/` and parked ones in `tasks/backlog/`; a task's progress is its `status`, not a folder to shuffle it between.
 - **Archive the past.** Move shipped or dead tasks to `tasks/archive/` (or delete them once their value is captured elsewhere), so the board stays a lean snapshot of what's next. If you keep `tasks/backlog/` or `tasks/archive/`, add `ignore_orphans = ["tasks/backlog/**", "tasks/archive/**"]` to `wiki.toml` so parked work is not flagged as orphans.
 
 ```markdown
@@ -67,14 +67,15 @@ Treat tasks as a **backlog**, not a flat checklist. A `tasks/index.md` (or the r
 **Goal:** ship v1 of the importer this quarter.
 
 ## Now
-- [ ] 🔵 [CSV header parser](/tasks/active/csv-parser.md)
-- [ ] 🔴 [Timezone bug in ingest](/tasks/active/tz-bug.md)
+- 🔵 [CSV header parser](/tasks/active/csv-parser.md)
+- 🔴 [Timezone bug in ingest](/tasks/active/tz-bug.md)
+- [ ] bump the changelog       # a trivial inline to-do, no entry
 
 ## Next
-- [ ] [Dedup incoming rows](/tasks/active/dedup.md)
+- [Dedup incoming rows](/tasks/active/dedup.md)
 ```
 
-A checkbox is checked exactly when its entry's `status` is `done`: update both in one change. If you *don't* group by status, a subtle leading emoji can carry it at a glance (🔵 in progress, 🔴 blocked, ✅ done); skip the emoji when the grouping already says it.
+A plain-linked task's truth is its entry's `status` (done work leaves the board); an inline `- [ ]` to-do is just checked off in place. A subtle leading emoji (🔵 in progress, 🔴 blocked, ✅ done) shows progress at a glance; skip it when the grouping already says it.
 
 ## Grooming
 

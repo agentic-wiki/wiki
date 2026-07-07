@@ -8,7 +8,7 @@ The whole bundle is a **backlog**: a kanban-style tracker in plain Markdown. An 
 
 This file ships as a **template with options**. Before creating real issues, sit with the user and commit the primitives, then **edit this file to lock the choices** (delete the paths you will not take), so it becomes the team's actual playbook rather than a menu. Decide together:
 
-- **Board sections:** how you group the board's checkboxes, by **scheduling** (`## Now` / `## Next`), by **cycle** (`## 2026-w27`), or, for classic kanban, by **progress** (`## Doing` / `## Review`). This is a board-heading choice, not a folder layout: scheduling lives in the board, while folders only separate committed from parked work (see *Structure*).
+- **Board sections:** how you group the board's links, by **scheduling** (`## Now` / `## Next`), by **cycle** (`## 2026-w27`), or, for classic kanban, by **progress** (`## Doing` / `## Review`). This is a board-heading choice, not a folder layout: scheduling lives in the board, while folders only separate committed from parked work (see *Structure*).
 - **Progress statuses:** the set that tracks how far work has got, e.g. `todo` / `in-progress` / `in-review` / `blocked` / `done`. Separate from scheduling.
 - **Work-kinds:** the tag vocabulary (`feature` / `bug` / `chore` / `debt`, plus your own).
 - **Epics and milestones:** using them at all? Many teams do not.
@@ -40,9 +40,9 @@ Only three tracking folders, because scheduling stays in the board (moving a tas
 Three things track a task, and they stay in agreement: its **folder** says whether it is committed / parked / retired, the **board (`index.md`) is the scheduled view** (its `## Now` / `## Next` sections), and **`status` frontmatter is progress**. Let the tool do the moving:
 
 1. **Capture.** A new item is a `type: task` file in `backlog/`. `wiki list --where type=task --prefix backlog/` is the raw backlog; keep a `backlog/index.md` too if you want a browsable list.
-2. **Commit.** When you commit to an item, `wiki move` it from `backlog/` into `active/` and add its `- [ ]` checkbox under the board's `## Next` (or `## Now`). `wiki move` rewrites every link to it, so nothing dangles.
-3. **Schedule & work.** Reschedule by moving the checkbox between `## Next` and `## Now` on the board, no file move. Advance `status` in place (`todo`, `in-progress`, `in-review`, `blocked`) as the work moves. The file stays in `active/` the whole time.
-4. **Finish.** Set `status: done`, check its board box, then retire it (below).
+2. **Commit.** When you commit to an item, `wiki move` it from `backlog/` into `active/` and add a link to it under the board's `## Next` (or `## Now`). `wiki move` rewrites every link to it, so nothing dangles.
+3. **Schedule & work.** Reschedule by moving its link between `## Next` and `## Now` on the board, no file move. Advance `status` in place (`todo`, `in-progress`, `in-review`, `blocked`) as the work moves. The file stays in `active/` the whole time.
+4. **Finish.** Set `status: done` and retire it (below): remove its board link and archive or delete the file. There is no box to tick, done work simply leaves the board.
 
 The rule: **only committed work (everything in `active/`) sits on the board.** The parked backlog lives in `backlog/`, listed by `backlog/index.md`.
 
@@ -76,20 +76,25 @@ The board section says *when*, `status` says *how far*, and they move independen
 
 ## The board
 
-Each `index.md` is a board: overarching **goal(s)** at the top, then sections of `- [ ]` checkboxes linking to the issue entries.
+Each `index.md` is a board: overarching **goal(s)** at the top, then sections of **plain links** to the issue entries. A link is a reference, not a copy of state: the linked entry owns its `status`, the single source of truth for progress, so the board is a curated *view* with nothing to keep in sync and nothing to drift (a board checkbox would be a second copy of the entry's done-ness).
 
 - Group sections by scheduling (`## Now` / `## Next`), by cycle (`## 2026-w27`), or, for classic kanban, by progress (`## Doing` / `## Review`); add a `## Debt` section if you keep one. Keep the active section short and truly current.
-- A checkbox is checked exactly when its entry's `status` is `done`. Update both in one change.
+- A `- [ ]` on the board is only for a **trivial** to-do not worth its own entry (a checklist item owned by the board); anything you'll query gets a `type: task` entry and a plain link. Inside a task entry, `- [ ]` items are *its* subtasks (`wiki tasks /active/that-task.md`).
+- **Done work leaves the board:** set `status: done` and remove the line (then archive or delete the file), rather than leaving a ticked box behind. The board only ever shows open, scheduled work.
+- Want progress at a glance? A leading emoji (🔵 in progress, 🔴 blocked) or a `## Doing` grouping carries it; the truth stays in `status`, queryable with `--where`.
 - The board carries committed work only (everything in `active/`); the parked backlog is `backlog/index.md`. Link to it from the board so it stays one click away.
+- The board's links are real edges, so an `active/` task you forget to add surfaces under `wiki orphans` (active/ is not `ignore_orphans`'d): your signal that scheduled work is missing from the board.
 
 ## Epics and milestones (optional)
 
-Most tasks need neither. Reach for them only when they earn their keep, and **link only to the immediate parent**:
+Most tasks need neither, reach for them only when they earn their keep. Whichever way you record the parent, **point to the immediate parent only** (a task to its epic, an epic to its milestone), so it lives in one place; "everything for a milestone" is then a two-hop roll-up (a small skill), not one command.
 
-- An **epic** (`type: epic`) groups a large body of work. Its tasks link up to it (an `epic: /epics/onboarding.md` field or a body link), so `wiki backlinks /epics/onboarding.md` lists everything under it.
-- A **milestone** (`type: milestone`) is a release or target. An epic (or a lone task that has no epic) links up to it.
+Two recipes, pick by how you'll query (you can even use both, at the cost of recording the parent twice):
 
-So the chain is task, epic, milestone, walked with `wiki backlinks`. A task carries **one** parent link, not both, and the milestone is never copied onto every task, so it changes in one place. `wiki backlinks /milestones/v1.md` still shows everything working toward it.
+- **Body link + `backlinks`.** The task body-links its epic, `[Onboarding](/epics/onboarding.md)`. Then `wiki backlinks /epics/onboarding.md` lists the tasks under it, and because the link is a real edge it also keeps the epic off `wiki orphans`. Good for one-hop graph traversal; not combinable with other filters.
+- **`epic:` field + `--where`.** The task carries `epic: /epics/onboarding.md`. Then `wiki list --where epic=/epics/onboarding.md` lists them, and you can AND other filters (`--where epic=… --where status=todo`). A field is *not* a graph edge, so `backlinks` won't follow it and the epic needs a link from somewhere (a board, its milestone) to stay off `wiki orphans`.
+
+A **milestone** (`type: milestone`) is a release or target; an epic (or a lone task with no epic) points up to it by whichever recipe you chose.
 
 ## Dependencies
 
@@ -117,13 +122,13 @@ Keep statuses, priorities, and work-kind tags consistent across teams, so `wiki 
 
 Most questions are a query plus a moment of judgment: `wiki` narrows the set, you read and decide.
 
-- **"What's next?"**: read the board's `Now`; `wiki tasks` gathers every open checkbox across the base.
+- **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki tasks`, a checkbox scanner, is not used here.)
 - **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
 - **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked` to list them.
 - **"What's in the backlog?"**: `wiki list --where type=task --prefix backlog/`.
 - **"How much debt are we carrying?"**: `wiki list --where type=task --where tags=debt`.
-- **"What's left for v1?"**: `wiki backlinks /milestones/v1.md`, minus the ones already `done`.
+- **"What's left for v1?"**: `wiki backlinks /milestones/v1.md` gives its epics; roll up each epic's tasks (`wiki backlinks`) and drop the `done` ones, a two-hop query (a small skill).
 
 The commands find the candidates; you read the entries and apply judgment (priority, blockers, what the user actually meant). Anything beyond a filter (sprint velocity, a burndown, cycle time, roll-ups by state) is a small skill over `wiki list --format json`, which carries every frontmatter field: that reporting is the skill layer's job, not a `wiki` feature. Don't reach for a query language `wiki` deliberately does not have.
 
@@ -131,7 +136,7 @@ The commands find the candidates; you read the entries and apply judgment (prior
 
 Keep the board an honest, lean snapshot of what's next, and the base discoverable and meaningful.
 
-- Run `wiki check` and fix what it flags; reconcile any checkbox that disagrees with its entry's `status`.
+- Run `wiki check` and fix what it flags. Then `wiki list --where type=task --where status=done --prefix active/` finds work that's done but not yet retired: clear it off the board.
 - Review **stale** work (`wiki list --where type=task --sort=timestamp --reverse`), **blocked** work, and accumulating **debt** (`--where tags=debt`): is each still real? unblock, defer, drop, or schedule.
 - `wiki orphans`: `backlog/` and `archive/` are `ignore_orphans`'d, so a hit here is an active issue that lost its board link; re-link or retire it.
 - **Retire done work** promptly (see *Retiring done work*), so the active board stays a snapshot of what is next.
@@ -140,7 +145,7 @@ Keep the board an honest, lean snapshot of what's next, and the base discoverabl
 
 The board is a lean snapshot of what is next, so finished and cancelled work leaves it. Per task, pick one (in batches, during grooming):
 
-- **Delete it** (default for routine work): git keeps the history, and anything lasting (a decision, a shipped result) goes as a dated line in `log.md` or a promoted knowledge entry. Remove its board checkbox in the same change.
+- **Delete it** (default for routine work): git keeps the history, and anything lasting (a decision, a shipped result) goes as a dated line in `log.md` or a promoted knowledge entry. Remove its board link in the same change.
 - **Archive it**: `wiki move` it to `archive/`, when a browsable record is worth keeping. `archive/` is `ignore_orphans`'d, so it will not clutter `wiki orphans`; find archived work with `wiki list --where type=task --prefix archive/`.
 
 ## Make it yours
