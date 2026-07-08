@@ -56,16 +56,7 @@ wiki check                    # is it healthy? (links resolve, entries typed)
 wiki list                     # every entry
 ```
 
-`wiki init` scaffolds a general knowledge base with a light backlog.
-
-```sh
-wiki init -h                           # list available workflows
-wiki init --workflow project-backlog   # a plain-Markdown kanban tracker
-wiki init --workflow org-wiki          # an organization's internal knowledge base: projects, clients, products, people
-wiki init --wokflow product-docs       # wiki-first product documentation: a linked concept graph plus an optional guides layer
-```
-
-Each workflow is a starting point you then edit to fit.
+`wiki init` scaffolds a general purpose knowledge base with a light backlog. It can also start from other shapes (a kanban tracker, an org knowledge base, product docs): see [Starter workflows](#starter-workflows).
 
 That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
@@ -145,6 +136,17 @@ my-wiki/
     ├── index.md
     └── wiki-cli.md        (type: tool)
 ```
+
+## Starter workflows
+
+`wiki init --workflow <name>` scaffolds a ready-made shape (`wiki init -h` lists them; omit it for `default`). Each is a starting point you then edit to fit.
+
+| Workflow | What it is |
+|---|---|
+| `default` | A general knowledge base with a light backlog. |
+| `project-backlog` | A plain-Markdown kanban tracker. |
+| `org-wiki` | An organization's internal knowledge base: projects, clients, products, people. |
+| `product-docs` | Wiki-first product documentation: a linked concept graph plus an optional guides layer. |
 
 ## Run by an agent
 
