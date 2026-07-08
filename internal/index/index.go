@@ -539,10 +539,12 @@ func (idx *Index) Backlinks(target string) []LinkRef {
 	return refs
 }
 
-// FileRewrite records how many links were rewritten in one entry during a move.
+// FileRewrite records what a move rewrote in one entry: body links, and, when
+// --include-frontmatter is set, frontmatter values equal to the moved path.
 type FileRewrite struct {
-	Path  string `json:"path"`
-	Links int    `json:"links"`
+	Path            string `json:"path"`
+	Links           int    `json:"links"`
+	FrontmatterRefs int    `json:"frontmatter_refs,omitempty"` // frontmatter values rewritten under --include-frontmatter
 }
 
 // MoveResult describes a (possibly dry-run) move: the relocation and the
@@ -557,11 +559,13 @@ type MoveResult struct {
 // Move relocates the entry at srcArg to dest (a root-absolute path) and rewrites
 // every internal link that targets it across the bundle, relative and
 // root-absolute alike: links are matched by their resolved target and rewritten
-// by their on-disk form. The moved file's own outgoing links stay valid. With
-// dryRun it computes the plan without writing. There is no rollback: on a mid-way
-// write error it returns what was already done so `unresolved` can surface any
-// leftovers.
-func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
+// by their on-disk form. With includeFrontmatter it also rewrites frontmatter
+// values equal to src's path (an opt-in: frontmatter is otherwise opaque, since
+// the tool cannot know a path-shaped value is a reference rather than a snapshot).
+// The moved file's own outgoing links stay valid. With dryRun it computes the plan
+// without writing. There is no rollback: on a mid-way write error it returns what
+// was already done so `unresolved` can surface any leftovers.
+func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
 	src, err := idx.Resolve(srcArg)
 	if err != nil {
 		return nil, err
@@ -589,7 +593,18 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 				hits = append(hits, l)
 			}
 		}
-		if len(hits) == 0 {
+		var fmKeys map[string]bool
+		if includeFrontmatter {
+			for k := range e.fm {
+				if slices.Contains(parse.Strings(e.fm, k), src.Path) {
+					if fmKeys == nil {
+						fmKeys = map[string]bool{}
+					}
+					fmKeys[k] = true
+				}
+			}
+		}
+		if len(hits) == 0 && len(fmKeys) == 0 {
 			continue
 		}
 		raw, err := e.Raw()
@@ -618,10 +633,16 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 				return "](" + nt + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
 			})
 		}
-		if n == 0 {
+		fields := 0
+		if len(fmKeys) > 0 {
+			_, body := parse.Frontmatter(raw)
+			fmEnd := strings.Count(raw[:len(raw)-len(body)], "\n")
+			fields = rewriteFrontmatterRefs(lines, fmEnd, fmKeys, src.Path, dest)
+		}
+		if n == 0 && fields == 0 {
 			continue
 		}
-		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n})
+		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n, FrontmatterRefs: fields})
 		if !dryRun {
 			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
 				return res, err
@@ -638,6 +659,47 @@ func (idx *Index) Move(srcArg, dest string, dryRun bool) (*MoveResult, error) {
 		}
 	}
 	return res, nil
+}
+
+// rewriteFrontmatterRefs rewrites, within the first fmEnd lines (an entry's
+// frontmatter block), any value under a key in hitKeys that equals oldPath,
+// changing it to newPath. hitKeys (derived from the parsed frontmatter) gates the
+// rewrite, so a path that appears only as prose inside some other value is never
+// touched; the token boundaries keep it to whole values (scalar, flow, or block
+// list). Returns the number of values rewritten.
+func rewriteFrontmatterRefs(lines []string, fmEnd int, hitKeys map[string]bool, oldPath, newPath string) int {
+	tok := regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(oldPath) + `([\],\s"']|$)`)
+	n, lastKey := 0, ""
+	for i := 0; i < fmEnd && i < len(lines); i++ {
+		t := strings.TrimRight(lines[i], "\r")
+		cr := lines[i][len(t):]
+		if t == "---" {
+			continue
+		}
+		owner := lastKey
+		if !strings.HasPrefix(strings.TrimSpace(t), "- ") { // a "key: value" line, not a block item
+			key, _, ok := strings.Cut(t, ":")
+			if !ok {
+				continue
+			}
+			owner = strings.TrimSpace(key)
+			lastKey = owner
+		}
+		if !hitKeys[owner] {
+			continue
+		}
+		c := 0
+		nt := tok.ReplaceAllStringFunc(t, func(m string) string {
+			c++
+			sub := tok.FindStringSubmatch(m)
+			return sub[1] + newPath + sub[2]
+		})
+		if c > 0 {
+			lines[i] = nt + cr
+			n += c
+		}
+	}
+	return n
 }
 
 // withinDir reports whether p is dir itself or lexically inside it, guarding
@@ -828,7 +890,7 @@ func (idx *Index) Slugify(apply bool) ([]Fix, error) {
 			continue
 		}
 		dest := path.Join(path.Dir(e.Path), slugifyName(e.Name))
-		if _, err := idx.Move(e.Path, dest, !apply); err != nil {
+		if _, err := idx.Move(e.Path, dest, !apply, false); err != nil {
 			continue // collision or unmovable: leave it (check still flags the space)
 		}
 		changes = append(changes, Fix{Entry: e.Path, Field: "rename", From: e.Path, To: dest})

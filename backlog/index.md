@@ -10,7 +10,6 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [`--where key!=value` (inequality)](/2-query-surface/010-where-negation.md)
 
 ## 3 — Graph & mutation
-- [ ] [move --include-frontmatter (opt-in frontmatter refs)](/3-graph-and-mutation/011-move-frontmatter-refs.md)
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
@@ -25,6 +24,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [move --include-frontmatter](/3-graph-and-mutation/011-move-frontmatter-refs.md): opt-in flag so a `move` also rewrites frontmatter values equal to the moved path (the field-recipe's refs, e.g. `epic: /epics/x.md`). Default stays opaque (move/check ignore frontmatter); the flag is the user asserting the fields are refs. Gated on the parsed frontmatter so prose paths aren't touched; reported as `… + N frontmatter ref(s)`. `check`-flagging and md-in-frontmatter stay rejected as opinionated.
 - [x] [unify filtering under --where](/2-query-surface/009-property-filter.md): one generic `--where key=value` filter on list/search (exact, repeatable=AND, arrays=includes, composite values), **replacing `--type`/`--tag`**; `--prefix` stays for paths; `--format json` now carries every frontmatter field (`Entry.MarshalJSON`; csv/tsv keep canonical columns). Docs + tests swept.
 - [x] [ignore/ignore_orphans full globs](/debt/005-ignore-orphans-globs.md): a small zero-dep matcher (`*`, `?`, `**` across segments, `internal/index/glob.go`) now backs **both** `ignore` and `ignore_orphans`; exact single-file patterns still work. Closes the subtree-only limitation from [conformance/006](/conformance/006-orphan-exempt-globs.md).
 - [x] [check warns on unknown wiki.toml keys](/conformance/007-unknown-config-keys.md): a typo or a renamed field (the old `skip`) is surfaced as a warning instead of silently ignored.

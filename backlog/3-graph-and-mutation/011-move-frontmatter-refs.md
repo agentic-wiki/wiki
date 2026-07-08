@@ -1,10 +1,12 @@
 ---
 type: task
 title: "move --include-frontmatter (opt-in: rewrite frontmatter refs on move)"
-status: todo
+status: done
 priority: medium
 tags: [feature, graph]
 ---
+
+**Done (2026-07-08):** shipped `wiki move <src> <dst> --include-frontmatter`. Default `move` and `check` still ignore frontmatter (opaque). With the flag, `Move` also rewrites any frontmatter value equal to `src`'s path, gated by the parsed frontmatter (`rewriteFrontmatterRefs`), so scalar / flow-list / block-list values move while a bare path in prose (not a link, not frontmatter) is left alone. Reported per file as `FileRewrite.FrontmatterRefs` (`… + N frontmatter ref(s)`). Rejected as opinionated (unchanged): `check` guessing danglers, and markdown-links-inside-frontmatter. Tests: `TestMoveIncludeFrontmatter`. Workflows note the opt-in on the field recipe.
 
 By default, frontmatter is **opaque** to the tool: `move` rewrites body markdown links but leaves frontmatter values untouched, and `check` never inspects them. That default is correct and non-opinionated, the tool can't know a path-shaped value is a reference versus a snapshot (`origin: /backlog/old.md`), an example, or a placeholder.
 

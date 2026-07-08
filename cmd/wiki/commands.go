@@ -668,17 +668,18 @@ func parseWith2Args(fs *flag.FlagSet, args []string) (string, string, bool) {
 func cmdMove(args []string) int {
 	fs := flag.NewFlagSet("move", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
+	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter values equal to the moved path (opt-in)")
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	src, dest, ok := parseWith2Args(fs, args)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "usage: wiki move <src> <dest> [--dry-run]")
+		fmt.Fprintln(os.Stderr, "usage: wiki move <src> <dest> [--dry-run] [--include-frontmatter]")
 		return 2
 	}
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
-	res, err := idx.Move(src, dest, *dryRun)
+	res, err := idx.Move(src, dest, *dryRun, *includeFM)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
@@ -694,7 +695,11 @@ func emitMove(res *index.MoveResult, dryRun bool, format string) {
 	}
 	lines := []string{fmt.Sprintf("%s %s -> %s", verb, res.From, res.To)}
 	for _, rw := range res.Rewrites {
-		lines = append(lines, fmt.Sprintf("  %d link(s) in %s", rw.Links, rw.Path))
+		what := fmt.Sprintf("%d link(s)", rw.Links)
+		if rw.FrontmatterRefs > 0 {
+			what += fmt.Sprintf(" + %d frontmatter ref(s)", rw.FrontmatterRefs)
+		}
+		lines = append(lines, fmt.Sprintf("  %s in %s", what, rw.Path))
 	}
 	output.Emit(os.Stdout, format, lines, res)
 }

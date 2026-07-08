@@ -95,7 +95,7 @@ Most tasks need neither, reach for them only when they earn their keep. Whicheve
 Two recipes, pick by how you'll query (you can even use both, at the cost of recording the parent twice):
 
 - **Body link + `backlinks`.** The task body-links its epic, `[Onboarding](/epics/onboarding.md)`. Then `wiki backlinks /epics/onboarding.md` lists the tasks under it, and because the link is a real edge it also keeps the epic off `wiki orphans`. Good for one-hop graph traversal; not combinable with other filters.
-- **`epic:` field + `--where`.** The task carries `epic: /epics/onboarding.md`. Then `wiki list --where epic=/epics/onboarding.md` lists them, and you can AND other filters (`--where epic=… --where status=todo`). Caveats, because a field is *not* a graph edge: `backlinks` won't follow it, the epic needs a link from somewhere (a board, its milestone) to stay off `wiki orphans`, and **`wiki move` won't rewrite the field** if you move the epic (the reference dangles). Body links avoid all three.
+- **`epic:` field + `--where`.** The task carries `epic: /epics/onboarding.md`. Then `wiki list --where epic=/epics/onboarding.md` lists them, and you can AND other filters (`--where epic=… --where status=todo`). Caveats, because a field is *not* a graph edge: `backlinks` won't follow it: the epic needs a link from an entry's body (a board, its milestone) to stay off `wiki orphans`, and **`wiki move` won't rewrite frontmatter fields by default** if you move the epic (opt in with `wiki move … --include-frontmatter`). A body link avoids all three.
 
 A **milestone** (`type: milestone`) is a release or target; an epic (or a lone task with no epic) points up to it by whichever recipe you chose.
 

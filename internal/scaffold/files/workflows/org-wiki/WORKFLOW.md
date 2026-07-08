@@ -59,7 +59,7 @@ wiki links /projects/acme-migration.md   # what that project points to
 **How you record a relationship is a recipe, pick one per relationship and keep it** (the same trade-off as epic links elsewhere):
 
 - **Body link** (`[Acme](/clients/acme.md)` in the prose): a real graph edge that `wiki backlinks` follows, and it keeps the target off `wiki orphans`. Best for the org graph, which is the whole point here, so this is the default.
-- **Frontmatter field** (`client: /clients/acme.md`): filterable with `wiki list --where client=/clients/acme.md`, but *not* an edge, so `backlinks` won't see it, the target still needs a link from somewhere to stay off `orphans`, and `wiki move` won't rewrite the field if you move the target (the reference dangles). Reach for it when you want to filter by the relationship.
+- **Frontmatter field** (`client: /clients/acme.md`): filterable with `wiki list --where client=/clients/acme.md`, but *not* an edge, so `backlinks` won't see it, the target still needs a link from somewhere to stay off `orphans`, and `wiki move` won't rewrite frontmatter fields by default if you move the target (opt in with `--include-frontmatter`). Reach for it when you want to filter by the relationship.
 
 ## Capture then promote
 

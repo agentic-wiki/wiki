@@ -63,11 +63,16 @@ Each concept is **one atomic idea**, defined **once**, and linked to what it rel
 
 ## Guides: the linear layer
 
-A **guide** (`type: guide`) is one linear document, a tutorial or how-to, that walks a reader through a task and **links into concepts** for the details:
+A **guide** (`type: guide`) walks a reader through a task start to finish, **linking into concepts** for depth rather than restating them. It comes in two sizes:
 
-- A guide **references** concepts, it does not duplicate them: "set up a webhook (see [Webhooks](/checkout/webhooks.md))", not a re-explanation of webhooks. If you are tempted to explain a concept inside a guide, that concept wants its own page.
-- **Order** guides in `guides/index.md` (getting-started to advanced). A guide is read start to finish, so sequence matters here in a way it never does for concepts.
-- Guides are entry points, so nothing may link *to* them, and that is fine. Link them *from* `guides/index.md` (and the product `index.md`) so they are reachable and not flagged as orphans.
+- **A single page** for something short.
+- **A sequence** for anything longer: one `type: guide` entry per chapter/step, each with a **next** and **previous** link so the reader clicks through in order (like a book's chapters). Keep the chapters in a folder (`guides/getting-started/01-install.md`, `02-configure.md`, …) with a short landing page listing them in order.
+
+Rules either way:
+
+- A guide **references** concepts, it never duplicates them: "set up a webhook (see [Webhooks](/webhooks.md))", not a re-explanation. If you are tempted to explain a concept inside a guide, that concept wants its own page.
+- **Order is explicit**, since a guide is read start to finish (unlike a concept): the next/prev links within a sequence, and `guides/index.md` listing the guides (and a sequence's chapters) in reading order.
+- Guides are entry points, so little links *to* the first page, that is fine; link it from `guides/index.md` (and the product `index.md`) so it is reachable and not an orphan. Within a sequence the prev/next links keep the middle chapters linked, so none show up as orphans.
 
 ## Multiple products
 
@@ -82,7 +87,7 @@ Docs are usually distilled from **source material**: source code, specs, tickets
 
 Keep **provenance**: link a concept back to where it came from (a `type: source` entry, or a `source:` / `resource:` field), so a fact can be re-checked against the source later.
 
-**Record each pass in `log.md`, dated.** Every enrichment or sync pass gets a dated line: what source you ingested, and what you added or updated. On the next pass, read the last date and re-sync only what changed in the source since then, instead of re-deriving everything. For docs kept in step with a moving product (code that keeps shipping), this dated trail is what makes incremental sync cheap, so the dates matter.
+**Record each pass in `log.md`, dated and high-level.** One dated line per enrichment or sync pass (what source you covered, roughly what you added), not one per edit, git already holds the fine detail. On the next pass, read the last date and re-sync only what changed in the source since then, rather than re-deriving everything. For docs kept in step with a moving product, that dated, high-level trail is what makes incremental sync cheap.
 
 Scale the ceremony to the job: a small, well-understood product can skip the inbox and be written directly; a large or unfamiliar one benefits from the extract-then-iterate split. Either way, the unit is the **atomic concept**, never one monster page.
 
@@ -113,7 +118,7 @@ wiki list --prefix checkout/           # everything for one product (multi-produ
 ```sh
 wiki backlinks /idempotency.md         # what depends on this concept
 wiki links /guides/first-payment.md    # what a page references (its prerequisites)
-wiki read /index.md                    # the curated entry map
+wiki read /index.md                    # the hand-curated entry point (intro + starting links)
 ```
 
 **Keep quality high** (docs live or die by this)

@@ -34,7 +34,7 @@ Commands:
   orphans       entries with no incoming links
   links         an entry's outgoing links
   backlinks     every link that points to an entry
-  move, mv      relocate or rename an entry, rewriting links to it (--dry-run)
+  move, mv      relocate or rename an entry, rewriting links to it (--dry-run, --include-frontmatter)
   tidy          canonicalize the bundle: --links, --slug, --all (bare = preview)
   check         report conformance + health issues (--fix repairs safe ones)
   version       print the version

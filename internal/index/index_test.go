@@ -272,6 +272,60 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestMoveIncludeFrontmatter(t *testing.T) {
+	files := map[string]string{
+		"index.md":      "---\nokf_version: \"0.1\"\n---\n[e](/epics/auth.md)\n",
+		"epics/auth.md": "---\ntype: note\n---\nepic\n",
+		"login.md":      "---\ntype: note\nepic: /epics/auth.md\n---\nlogin [see](/epics/auth.md)\n",
+		"oauth.md":      "---\ntype: note\nblocked_by: [/epics/auth.md, /login.md]\n---\nx\n",
+		"note.md":       "---\ntype: note\norigin: /epics/auth.md\n---\nprose mentions /epics/auth.md too\n",
+	}
+	read := func(idx *Index, rel string) string {
+		b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel)))
+		return string(b)
+	}
+
+	// Default (no flag): body links move, frontmatter is left untouched.
+	base := build(t, files)
+	if _, err := base.Move("/epics/auth.md", "/epics/authn.md", false, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(read(base, "login.md"), "[see](/epics/authn.md)") {
+		t.Errorf("body link should move: %q", read(base, "login.md"))
+	}
+	if !strings.Contains(read(base, "login.md"), "epic: /epics/auth.md") {
+		t.Errorf("default move must NOT touch the epic: field: %q", read(base, "login.md"))
+	}
+
+	// --include-frontmatter: frontmatter values equal to the path move too...
+	idx := build(t, files)
+	res, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(read(idx, "login.md"), "epic: /epics/authn.md") {
+		t.Errorf("scalar field should move: %q", read(idx, "login.md"))
+	}
+	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [/epics/authn.md, /login.md]") {
+		t.Errorf("list element should move, others untouched: %q", read(idx, "oauth.md"))
+	}
+	if !strings.Contains(read(idx, "note.md"), "origin: /epics/authn.md") {
+		t.Errorf("origin field should move: %q", read(idx, "note.md"))
+	}
+	// ...but a bare path in prose (not a link, not frontmatter) is left alone.
+	if !strings.Contains(read(idx, "note.md"), "prose mentions /epics/auth.md too") {
+		t.Errorf("prose path must NOT be rewritten: %q", read(idx, "note.md"))
+	}
+	// the result reports the frontmatter rewrites
+	fm := 0
+	for _, rw := range res.Rewrites {
+		fm += rw.FrontmatterRefs
+	}
+	if fm != 3 {
+		t.Errorf("expected 3 frontmatter rewrites, got %d (%+v)", fm, res.Rewrites)
+	}
+}
+
 func TestCheckClean(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
@@ -739,7 +793,7 @@ func TestMove(t *testing.T) {
 		return string(b)
 	}
 
-	res, err := idx.Move("/a.md", "/sub/a.md", false)
+	res, err := idx.Move("/a.md", "/sub/a.md", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -781,7 +835,7 @@ func TestMoveRewritesRelativeLinks(t *testing.T) {
 		"sub/x.md": "---\ntype: note\n---\n[up](../a.md#sec)\n",         // relative + anchor
 		"a.md":     "---\ntype: note\n---\nhi\n",
 	})
-	if _, err := idx.Move("/a.md", "/b.md", false); err != nil {
+	if _, err := idx.Move("/a.md", "/b.md", false, false); err != nil {
 		t.Fatal(err)
 	}
 	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
@@ -826,7 +880,7 @@ func TestMoveAcrossLinkForms(t *testing.T) {
 		"sub/c.md": "---\ntype: note\n---\n[c](../hello.md#x)\n", // relative + anchor
 		"hello.md": "---\ntype: note\n---\nhi\n",
 	})
-	if _, err := idx.Move("/hello.md", "/world.md", false); err != nil {
+	if _, err := idx.Move("/hello.md", "/world.md", false, false); err != nil {
 		t.Fatal(err)
 	}
 	for f, want := range map[string]string{
@@ -850,7 +904,7 @@ func TestMoveValidate(t *testing.T) {
 	dir := idx.Bundle.Dir
 
 	// dry-run: plan computed, nothing written
-	res, err := idx.Move("/a.md", "/z.md", true)
+	res, err := idx.Move("/a.md", "/z.md", true, false)
 	if err != nil || !res.DryRun || len(res.Rewrites) != 1 {
 		t.Fatalf("dry-run res=%+v err=%v", res, err)
 	}
@@ -871,7 +925,7 @@ func TestMoveValidate(t *testing.T) {
 		{"escapes bundle", "/a.md", "/../escape.md"},
 		{"escapes via subdir", "/a.md", "/sub/../../escape.md"},
 	} {
-		if _, err := idx.Move(tc.src, tc.dest, false); err == nil {
+		if _, err := idx.Move(tc.src, tc.dest, false, false); err == nil {
 			t.Errorf("%s: expected error", tc.name)
 		}
 	}
@@ -883,7 +937,7 @@ func TestMoveTitledLink(t *testing.T) {
 		"a.md":     "---\ntype: note\n---\nx\n",
 	})
 	dir := idx.Bundle.Dir
-	if _, err := idx.Move("/a.md", "/b.md", false); err != nil {
+	if _, err := idx.Move("/a.md", "/b.md", false, false); err != nil {
 		t.Fatal(err)
 	}
 	s, err := os.ReadFile(filepath.Join(dir, "index.md"))

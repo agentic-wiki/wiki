@@ -171,7 +171,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `tags` / `properties` / `property <key>` | The base's vocabulary (`--counts`, `--sort=name\|count`) |
 | `links <path>` / `backlinks <path>` | Outgoing / incoming links |
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
-| `move <src> <dst>` | Relocate or rename, rewriting every link to it |
+| `move <src> <dst>` | Relocate or rename, rewriting every link to it (`--include-frontmatter` also rewrites matching frontmatter values) |
 | `tidy` | Canonicalize the base: `--links`, `--slug`, `--all` (bare previews) |
 | `check` | Health lint (`--fix` repairs the safe issues, e.g. version drift) |
 | `version` | Print the version |
