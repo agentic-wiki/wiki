@@ -578,6 +578,56 @@ func TestWikilinkSurvivesMove(t *testing.T) {
 	}
 }
 
+func TestConvertWikilinks(t *testing.T) {
+	files := map[string]string{
+		"a.md":     "---\ntype: note\n---\nSee [[b]], [[sub/c|the C]], [[b#Setup]], ![[b]], and [[ghost]].\n",
+		"b.md":     "---\ntype: note\n---\n.\n",
+		"sub/c.md": "---\ntype: note\n---\n.\n",
+	}
+	// dry run reports but writes nothing
+	idx := build(t, files)
+	before, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
+	if fixes, err := idx.ConvertWikilinks(false); err != nil || len(fixes) == 0 {
+		t.Fatalf("dry-run fixes=%d err=%v", len(fixes), err)
+	}
+	if after, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md")); string(after) != string(before) {
+		t.Error("dry run must not write")
+	}
+
+	// apply converts each form and leaves the unresolvable one
+	idx = build(t, files)
+	fixes, err := idx.ConvertWikilinks(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
+	for _, want := range []string{"[b](/b.md)", "[the C](/sub/c.md)", "[b](/b.md#Setup)", "[[ghost]]"} {
+		if !strings.Contains(string(got), want) {
+			t.Errorf("converted a.md missing %q:\n%s", want, got)
+		}
+	}
+	// an embed becomes a plain reference, never a markdown image
+	if strings.Contains(string(got), "![b](/b.md)") {
+		t.Errorf("embed must convert to a plain link, not an image:\n%s", got)
+	}
+	// the unresolvable link is reported as a skip
+	skip := false
+	for _, f := range fixes {
+		if f.Field == "wikilink-skip" && f.From == "[[ghost]]" {
+			skip = true
+		}
+	}
+	if !skip {
+		t.Errorf("expected a wikilink-skip for [[ghost]]: %+v", fixes)
+	}
+	// re-scanning finds only the leftover [[ghost]] still flagged
+	b, _ := bundle.Discover(idx.Bundle.Dir)
+	idx2, _ := Build(b)
+	if !hasWarning(idx2.Check(), "/a.md", "1 wikilink") {
+		t.Errorf("after convert, only [[ghost]] should remain flagged: %+v", idx2.Check())
+	}
+}
+
 func TestScalarTagCoercion(t *testing.T) {
 	// a scalar tags: value is read as a one-element list (the coercion lives in
 	// parse.Strings, the on-demand accessor that filtering and TagCounts share)

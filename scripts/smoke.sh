@@ -236,5 +236,12 @@ echo "--- wikilinks: survive a relocation (re-resolve by basename, [[…]] left 
 ( cd "$WL" && contains "$($BIN backlinks /sub/b.md)" "/a.md" )    # [[b]] now resolves to the moved file
 ( cd "$WL" && contains "$(cat a.md)" '\[\[b\]\]' )               # move did not rewrite the wikilink text
 
+echo "--- tidy --wikilinks converts them to standard markdown ---"
+( cd "$WL" && $BIN tidy --wikilinks >/dev/null )
+( cd "$WL" && contains "$(cat a.md)" '\[b\](/sub/b.md)' )        # [[b]] -> [b](/sub/b.md)
+( cd "$WL" && contains "$(cat a.md)" '\[the C\](/sub/c.md)' )    # [[sub/c|the C]] -> [the C](/sub/c.md)
+( cd "$WL" && ! contains "$(cat a.md)" '\[\[' )                  # no wikilinks left
+( cd "$WL" && ! contains "$($BIN check)" "wikilink" )            # and check no longer flags any
+
 echo ""
 echo "All smoke tests passed!"

@@ -1,7 +1,7 @@
 ---
 type: task
 title: detect & convert wikilinks
-status: in-progress
+status: done
 priority: medium
 tags: [feature, conformance]
 ---
@@ -35,4 +35,6 @@ obsy's `cobra`/`yaml.v3` deps, and its wikilink-*first* framing. wiki stays mark
 
 1. **[done]** `internal/wikilink` package (parser + resolver + aliases), ported and adapted to wiki's `/`-paths, zero-dep, fully tested (`Parse`/`Split`/`Full`/`Resolve`/`AliasMap`).
 2. **[done]** `index` build resolves wikilinks into marked graph edges (`Link.Wiki`), so `backlinks`/`orphans`/`links` see them; `Move` skips them (they re-resolve by basename); `check` warns per wikilink. Covered by `TestWikilinkGraph`.
-3. **[todo]** `tidy` converts `[[t]]` / `[[t|d]]` / `[[t#h]]` / `![[e]]` to canonical root-absolute markdown (resolve via the compat resolver; leave + report the unresolvable, like `tidy --slug` collisions); graph commands (`links`/`backlinks`/`orphans`/`move`) print the one-line stderr nudge when a wikilink was resolved.
+3. **[done]** `wiki tidy --wikilinks` converts `[[t]]` / `[[t|d]]` / `[[t#h]]` / `![[e]]` (embed -> plain reference) to canonical root-absolute markdown, resolving via the compat resolver, leaving + reporting the unresolvable. Covered by `TestConvertWikilinks` + smoke.
+
+**Stderr nudge: dropped.** It would have required threading wikilink-counting into the graph commands (a spread of the compat concept), and `check` (flags which files) plus `tidy` (lists + converts) already cover "find" and "fix". So the compat footprint stays minimal: `internal/wikilink` (algorithm), one `Link.Wikilink` bool (for `Move` to skip), `Entry.wikilinks` (for `check`/`tidy`), and the `ConvertWikilinks` + `check` wiring. No changes to `LinkRef` or any query output contract.

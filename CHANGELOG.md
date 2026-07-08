@@ -4,6 +4,10 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 ## v0.5.0
 
+### New
+
+- **Wikilink compatibility (handled, not officially supported).** `wiki` now resolves Obsidian-style `[[wikilinks]]` (with `#anchors`, `|display`, `![[embeds]]`, and `aliases:` frontmatter) into the graph the way Obsidian would, so `backlinks`/`orphans`/`links` see them and a relocation still resolves them by basename. Markdown links remain the format: `wiki check` flags any wikilinks (once per file), and `wiki tidy --wikilinks` converts them to standard root-absolute links (`[[t]]`/`[[t|d]]`/`[[t#h]]`/`![[e]]`), leaving and reporting any that don't resolve.
+
 ### Improved
 
 - `check`'s "missing required `type`" error now points at the fix (add a type, or list the file in `wiki.toml` `ignore` if it is not an entry), so a stray `PROMPT.md`/`README` leads somewhere instead of a dead end.

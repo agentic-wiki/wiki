@@ -422,16 +422,18 @@ func cmdTidy(args []string) int {
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	links := fs.Bool("links", false, "normalize relative links to root-absolute")
 	slug := fs.Bool("slug", false, "rename spaced filenames to hyphenated slugs (rewriting inbound links)")
+	wikilinks := fs.Bool("wikilinks", false, "convert [[wikilinks]] to standard markdown links")
 	all := fs.Bool("all", false, "apply every category")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
-	noScope := !*links && !*slug && !*all // bare command previews every category, writes nothing
+	noScope := !*links && !*slug && !*wikilinks && !*all // bare command previews every category, writes nothing
 	apply := !noScope
 	doLinks := *all || *links || noScope
 	doSlug := *all || *slug || noScope
+	doWikilinks := *all || *wikilinks || noScope
 
 	var changes []index.Fix
 	if doLinks {
@@ -450,6 +452,14 @@ func cmdTidy(args []string) int {
 		}
 		changes = append(changes, c...)
 	}
+	if doWikilinks {
+		c, err := idx.ConvertWikilinks(apply)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "wiki:", err)
+			return 2
+		}
+		changes = append(changes, c...)
+	}
 
 	prefix := ""
 	if !apply {
@@ -457,9 +467,14 @@ func cmdTidy(args []string) int {
 	}
 	var lines []string
 	for _, c := range changes {
-		if c.Field == "rename" {
+		switch c.Field {
+		case "rename":
 			lines = append(lines, fmt.Sprintf("%srename %q -> %q", prefix, c.From, c.To))
-		} else {
+		case "wikilink":
+			lines = append(lines, fmt.Sprintf("%sconvert wikilink %s: %q -> %q", prefix, c.Entry, c.From, c.To))
+		case "wikilink-skip":
+			lines = append(lines, fmt.Sprintf("skip wikilink %s: %q (unresolvable, left as-is)", c.Entry, c.From))
+		default:
 			lines = append(lines, fmt.Sprintf("%slink %s: %q -> %q", prefix, c.Entry, c.From, c.To))
 		}
 	}

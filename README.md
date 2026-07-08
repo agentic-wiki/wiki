@@ -50,15 +50,27 @@ With a Go toolchain on any OS: `go install github.com/agentic-wiki/wiki/cmd/wiki
 ## Sixty seconds
 
 ```sh
-wiki init my-wiki && cd my-wiki   # a bare, ready-to-use knowledge base
-wiki status                       # what is here
-wiki check                        # is it healthy? (links resolve, entries typed)
-wiki list                         # every entry
+wiki init                     # a bare, ready-to-use knowledge base
+wiki status                   # what is here
+wiki check                    # is it healthy? (links resolve, entries typed)
+wiki list                     # every entry
 ```
 
-`wiki init` scaffolds from a starter `--workflow` (`wiki init -h` lists them): **`default`** (a general knowledge base with a light backlog), **`project-backlog`** (a plain-Markdown kanban tracker), **`org-wiki`** (an organization's internal knowledge base: projects, clients, products, people), and **`product-docs`** (wiki-first product documentation: a linked concept graph plus an optional guides layer). It defaults to `default`, and each is a starting point you then edit to fit.
+`wiki init` scaffolds a general knowledge base with a light backlog.
 
-That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest. If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Absolute path in vault*, turn on **Automatically update internal links**. (`wiki` ignores `[[wikilinks]]`.) See the [format spec](https://github.com/agentic-wiki/spec#links).
+```sh
+wiki init -h                           # list available workflows
+wiki init --workflow project-backlog   # a plain-Markdown kanban tracker
+wiki init --workflow org-wiki          # an organization's internal knowledge base: projects, clients, products, people
+wiki init --wokflow product-docs       # wiki-first product documentation: a linked concept graph plus an optional guides layer
+```
+
+Each workflow is a starting point you then edit to fit.
+
+That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
+
+> [!NOTE]
+> If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Absolute path in vault*, turn on **Automatically update internal links**. (`wiki` recognizes `[[wikilinks]]` for compatibility but flags them in `wiki check`, and `wiki tidy --wikilinks` converts them to standard links). See the [format spec](https://github.com/agentic-wiki/spec#links).
 
 ## What you can ask it
 
@@ -72,7 +84,7 @@ wiki list --where type=task --where status!=done        # key!=value negates (he
 wiki list --where type=note --sort=timestamp            # most-recently-changed first (--reverse: oldest first)
 wiki search "language model" --lines                    # full-text over frontmatter + body
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
-wiki outline /tech/infra/hetzner.md                     # its heading map
+wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
 ```
 
@@ -107,7 +119,7 @@ wiki check --fix                # health report, and repair the safe issues
 Every command speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
 ```sh
-wiki search needs-review >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
+wiki search "needs review" >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
 [ -n "$(wiki unresolved)" ] && echo "broken links exist"                    # listings exit 0 even when empty; test the output
 ```
 
@@ -131,7 +143,7 @@ my-wiki/
 │   └── budget.md         (type: note)
 └── tech/infra/
     ├── index.md
-    └── hetzner.md        (type: tool)
+    └── wiki-cli.md        (type: tool)
 ```
 
 ## Run by an agent
@@ -173,7 +185,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `links <path>` / `backlinks <path>` | Outgoing / incoming links |
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
 | `move <src> <dst>` | Relocate or rename, rewriting every link to it (`--include-frontmatter` also rewrites matching frontmatter values) |
-| `tidy` | Canonicalize the base: `--links`, `--slug`, `--all` (bare previews) |
+| `tidy` | Canonicalize the base: `--links`, `--slug`, `--wikilinks`, `--all` (bare previews) |
 | `check` | Health lint (`--fix` repairs the safe issues, e.g. version drift) |
 | `version` | Print the version |
 

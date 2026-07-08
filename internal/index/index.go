@@ -832,10 +832,10 @@ func (idx *Index) Check() []Issue {
 			issues = append(issues, Issue{"warning", e.Path, "path contains a space; use a hyphenated slug"})
 		}
 		// Wikilinks aren't part of the format (markdown links are the graph). They
-		// are resolved as a courtesy but flagged once per file, since `wiki tidy`
-		// converts them all in one pass, so the file, not each link, is the unit.
+		// are resolved as a courtesy but flagged once per file (the file, not each
+		// link, is the unit a fix addresses).
 		if n := len(e.wikilinks); n > 0 {
-			issues = append(issues, Issue{"warning", e.Path, fmt.Sprintf("%d wikilink(s), not standard links; run `wiki tidy` to convert", n)})
+			issues = append(issues, Issue{"warning", e.Path, fmt.Sprintf("%d wikilink(s), not standard links; run `wiki tidy --wikilinks` to convert", n)})
 		}
 	}
 	// Broken links are warnings, not errors: per OKF a broken link may be
@@ -971,6 +971,88 @@ func (idx *Index) Slugify(apply bool) ([]Fix, error) {
 // slugifyName collapses whitespace runs in a filename to single hyphens.
 func slugifyName(name string) string {
 	return strings.Join(strings.Fields(name), "-")
+}
+
+// ConvertWikilinks rewrites each entry's [[wikilinks]] to canonical root-absolute
+// markdown, resolving Obsidian-style (internal/wikilink): `[[t]]` -> `[t](/…/t.md)`,
+// `[[t|d]]` -> `[d](…)`, `[[t#h]]` -> `[t](…#h)`, and an embed `![[e]]` -> `[e](…)`
+// (wiki has no transclusion, so an embed is just a reference). An unresolvable
+// wikilink is left as written and reported (Field "wikilink-skip"; check flags it
+// too). One Fix per unique link on a line (Field "wikilink" for conversions).
+//
+// Replacement is line-scoped by the parsed line number, but matches the [[…]] text
+// on that line, so the rare case of an identical wikilink token appearing in an
+// inline-code span on the same line as a real one would also be converted.
+func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
+	paths := make([]string, len(idx.Entries))
+	aliasesPerEntry := map[string][]string{}
+	for i, e := range idx.Entries {
+		paths[i] = e.Path
+		if a := parse.Strings(e.fm, "aliases"); len(a) > 0 {
+			aliasesPerEntry[e.Path] = a
+		}
+	}
+	aliases := wikilink.AliasMap(aliasesPerEntry)
+	var changes []Fix
+	for _, e := range idx.Entries {
+		if len(e.wikilinks) == 0 {
+			continue
+		}
+		raw, err := e.Raw()
+		if err != nil {
+			return nil, err
+		}
+		lines := strings.Split(raw, "\n")
+		seen := map[string]bool{} // one Fix per (line, [[…]]) even if it repeats
+		changed := false
+		// Convert embeds first: `[[x]]` is a substring of `![[x]]`, so replacing the
+		// bare form first would mangle an embed with the same target on that line.
+		wls := slices.Clone(e.wikilinks)
+		slices.SortStableFunc(wls, func(a, b wikilink.Link) int {
+			if a.IsEmbed == b.IsEmbed {
+				return 0
+			}
+			if a.IsEmbed {
+				return -1
+			}
+			return 1
+		})
+		for _, wl := range wls {
+			key := fmt.Sprintf("%d:%s", wl.Line, wl.Full())
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			target, anchor, display := wl.Split()
+			resolved := wikilink.Resolve(target, e.Path, paths, aliases)
+			if resolved == "" {
+				changes = append(changes, Fix{Entry: e.Path, Field: "wikilink-skip", From: wl.Full()})
+				continue
+			}
+			url := resolved
+			if anchor != "" {
+				url += "#" + anchor
+			}
+			text := display
+			if text == "" {
+				text = target
+			}
+			md := "[" + text + "](" + url + ")"
+			changes = append(changes, Fix{Entry: e.Path, Field: "wikilink", From: wl.Full(), To: md})
+			ln := wl.Line - 1
+			if !apply || ln < 0 || ln >= len(lines) {
+				continue
+			}
+			lines[ln] = strings.ReplaceAll(lines[ln], wl.Full(), md)
+			changed = true
+		}
+		if apply && changed {
+			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return changes, nil
 }
 
 // normalizeEntryLinks rewrites each relative link in one entry to its absolute
