@@ -279,6 +279,7 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 		"login.md":      "---\ntype: note\nepic: /epics/auth.md\n---\nlogin [see](/epics/auth.md)\n",
 		"oauth.md":      "---\ntype: note\nblocked_by: [/epics/auth.md, /login.md]\n---\nx\n",
 		"note.md":       "---\ntype: note\norigin: /epics/auth.md\n---\nprose mentions /epics/auth.md too\n",
+		"deps.md":       "---\ntype: note\nrelated:\n  - /epics/auth.md\n  - /login.md\n---\nx\n",
 	}
 	read := func(idx *Index, rel string) string {
 		b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel)))
@@ -307,7 +308,10 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 		t.Errorf("scalar field should move: %q", read(idx, "login.md"))
 	}
 	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [/epics/authn.md, /login.md]") {
-		t.Errorf("list element should move, others untouched: %q", read(idx, "oauth.md"))
+		t.Errorf("flow-list element should move, others untouched: %q", read(idx, "oauth.md"))
+	}
+	if d := read(idx, "deps.md"); !strings.Contains(d, "- /epics/authn.md") || !strings.Contains(d, "- /login.md") {
+		t.Errorf("block-list element should move, others untouched: %q", d)
 	}
 	if !strings.Contains(read(idx, "note.md"), "origin: /epics/authn.md") {
 		t.Errorf("origin field should move: %q", read(idx, "note.md"))
@@ -321,8 +325,8 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 	for _, rw := range res.Rewrites {
 		fm += rw.FrontmatterRefs
 	}
-	if fm != 3 {
-		t.Errorf("expected 3 frontmatter rewrites, got %d (%+v)", fm, res.Rewrites)
+	if fm != 4 {
+		t.Errorf("expected 4 frontmatter rewrites (scalar + flow elem + origin + block elem), got %d (%+v)", fm, res.Rewrites)
 	}
 }
 

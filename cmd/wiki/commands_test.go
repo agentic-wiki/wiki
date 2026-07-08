@@ -245,6 +245,53 @@ func TestCmdMove(t *testing.T) {
 	}
 }
 
+func TestCmdMoveIncludeFrontmatter(t *testing.T) {
+	mk := func() string {
+		dir := t.TempDir()
+		w := func(rel, c string) {
+			p := filepath.Join(dir, filepath.FromSlash(rel))
+			if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(c), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		w("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n")
+		w("item.md", "---\ntype: note\n---\nx\n")
+		w("ref.md", "---\ntype: note\nparent: /item.md\n---\nx\n") // bare frontmatter ref, no body link
+		return dir
+	}
+
+	// default: the frontmatter field is left untouched (frontmatter is opaque)
+	t.Run("default-off", func(t *testing.T) {
+		dir := mk()
+		t.Chdir(dir)
+		if _, code := capture(t, func() int { return cmdMove([]string{"/item.md", "/moved.md"}) }); code != 0 {
+			t.Fatalf("move exit %d", code)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, "ref.md")); !strings.Contains(string(b), "parent: /item.md") {
+			t.Errorf("default move must not touch the frontmatter field: %s", b)
+		}
+	})
+
+	// --include-frontmatter: the bare field is rewritten, and reported
+	t.Run("flag-on", func(t *testing.T) {
+		dir := mk()
+		t.Chdir(dir)
+		out, code := capture(t, func() int { return cmdMove([]string{"/item.md", "/moved.md", "--include-frontmatter"}) })
+		if code != 0 {
+			t.Fatalf("move --include-frontmatter exit %d", code)
+		}
+		if b, _ := os.ReadFile(filepath.Join(dir, "ref.md")); !strings.Contains(string(b), "parent: /moved.md") {
+			t.Errorf("--include-frontmatter should rewrite the field: %s", b)
+		}
+		if !strings.Contains(out, "frontmatter ref") {
+			t.Errorf("output should report frontmatter refs: %q", out)
+		}
+	})
+}
+
 func TestCmdInit(t *testing.T) {
 	t.Chdir(t.TempDir())
 
@@ -285,6 +332,27 @@ func TestInitAllWorkflowsCheckClean(t *testing.T) {
 				t.Errorf("%s scaffold should pass check, exit=%d", wf, code)
 			}
 		})
+	}
+}
+
+func TestCmdStatus(t *testing.T) {
+	t.Chdir(writeBundle(t)) // guide.md has one `- [ ]`; 3 entries (index, guide, flat)
+	out, code := capture(t, func() int { return cmdStatus(nil) })
+	if code != 0 {
+		t.Fatalf("exit=%d", code)
+	}
+	// The count is checkboxes (the `- [ ]` construct), not type:task entries,
+	// and it is labelled Checkboxes, not the old (misleading) "Tasks".
+	if !strings.Contains(out, "Checkboxes: 1") {
+		t.Errorf("status should show Checkboxes: 1 (guide.md has one), got:\n%s", out)
+	}
+	if strings.Contains(out, "Tasks:") {
+		t.Errorf("status must not use the old 'Tasks:' label:\n%s", out)
+	}
+	// json carries the renamed key
+	out, _ = capture(t, func() int { return cmdStatus([]string{"--format", "json"}) })
+	if !strings.Contains(out, `"checkboxes": 1`) || strings.Contains(out, `"tasks"`) {
+		t.Errorf("status json should carry \"checkboxes\", not \"tasks\": %q", out)
 	}
 }
 
