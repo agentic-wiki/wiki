@@ -219,5 +219,22 @@ test -f "$TMP/finance/costs.md"
 ! test -f "$TMP/finance/expenses.md"
 contains "$($BIN links /finance/index.md)" "/finance/costs.md"
 
+echo "--- wikilinks: recognized as graph edges, flagged by check ---"
+WL="$TMP/wl"; mkdir -p "$WL/sub"
+printf 'spec = "0.1"\ntypes = ["note"]\n' > "$WL/wiki.toml"
+printf -- '---\nokf_version: "0.1"\n---\n[a](/a.md)\n' > "$WL/index.md"
+printf -- '---\ntype: note\n---\nSee [[b]] and [[sub/c|the C]].\n' > "$WL/a.md"
+printf -- '---\ntype: note\n---\nplain\n' > "$WL/b.md"
+printf -- '---\ntype: note\n---\nplain\n' > "$WL/sub/c.md"
+( cd "$WL" && contains "$($BIN backlinks /b.md)" "/a.md" )         # [[b]] is a real backlink
+( cd "$WL" && contains "$($BIN backlinks /sub/c.md)" "the C" )     # [[sub/c|display]] resolves, keeps display
+( cd "$WL" && ! contains "$($BIN orphans)" "/b.md" )              # wiki-linked, so not an orphan
+( cd "$WL" && contains "$($BIN check)" "wikilink" )               # but check flags it as non-standard
+
+echo "--- wikilinks: survive a relocation (re-resolve by basename, [[…]] left as-is) ---"
+( cd "$WL" && $BIN move /b.md /sub/b.md >/dev/null )
+( cd "$WL" && contains "$($BIN backlinks /sub/b.md)" "/a.md" )    # [[b]] now resolves to the moved file
+( cd "$WL" && contains "$(cat a.md)" '\[\[b\]\]' )               # move did not rewrite the wikilink text
+
 echo ""
 echo "All smoke tests passed!"

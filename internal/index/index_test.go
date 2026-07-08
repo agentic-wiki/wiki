@@ -488,6 +488,96 @@ func TestDepth(t *testing.T) {
 	}
 }
 
+func TestWikilinkGraph(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",
+		"a.md":     "---\ntype: note\n---\nSee [[b]] and [[sub/c|the C]].\n",
+		"b.md":     "---\ntype: note\n---\nplain\n",
+		"sub/c.md": "---\ntype: note\n---\nplain\n",
+	})
+	// a resolved wikilink is a real backlink (basename and path-qualified both)
+	if bl := idx.Backlinks("/b.md"); len(bl) != 1 || bl[0].From != "/a.md" {
+		t.Errorf("backlinks /b.md = %+v, want one from /a.md", bl)
+	}
+	if bl := idx.Backlinks("/sub/c.md"); len(bl) != 1 || bl[0].Text != "the C" {
+		t.Errorf("backlinks /sub/c.md = %+v, want one with display 'the C'", bl)
+	}
+	// so wiki-linked targets are not orphans
+	for _, o := range idx.Orphans() {
+		if o.Path == "/b.md" || o.Path == "/sub/c.md" {
+			t.Errorf("%s is wiki-linked, should not be an orphan", o.Path)
+		}
+	}
+	// check flags the file once, with a count (both wikilinks in a.md)
+	if !hasWarning(idx.Check(), "/a.md", "2 wikilink") {
+		t.Errorf("check should warn once with a count of 2: %+v", idx.Check())
+	}
+	// an unresolvable wikilink is not a graph edge (no fake target)
+	idx2 := build(t, map[string]string{"a.md": "---\ntype: note\n---\n[[ghost]]\n"})
+	if len(idx2.Broken()) != 0 {
+		t.Errorf("unresolved wikilink should not appear as a broken edge: %+v", idx2.Broken())
+	}
+	if !hasWarning(idx2.Check(), "/a.md", "1 wikilink") {
+		t.Error("check should still warn on an unresolvable wikilink")
+	}
+}
+
+// TestWikilinkAliasesAndEmbeds proves Build wires the two things asserted but not
+// yet covered: `aliases:` frontmatter drives resolution end-to-end, and an
+// embed `![[x]]` is treated as a graph edge (and flagged).
+func TestWikilinkAliasesAndEmbeds(t *testing.T) {
+	idx := build(t, map[string]string{
+		"a.md":     "---\ntype: note\n---\n[[Nickname]] and ![[b]]\n",
+		"people.md": "---\ntype: note\naliases: [Nickname, Nick]\n---\nreal file has no such basename\n",
+		"b.md":     "---\ntype: note\n---\nplain\n",
+	})
+	// [[Nickname]] resolves via people.md's aliases frontmatter, not its filename
+	if bl := idx.Backlinks("/people.md"); len(bl) != 1 || bl[0].From != "/a.md" {
+		t.Errorf("alias backlink /people.md = %+v, want one from /a.md", bl)
+	}
+	// an embed ![[b]] is a real edge too
+	if bl := idx.Backlinks("/b.md"); len(bl) != 1 || bl[0].From != "/a.md" {
+		t.Errorf("embed backlink /b.md = %+v, want one from /a.md", bl)
+	}
+	// both (the alias link and the embed) are counted in the one per-file warning
+	if !hasWarning(idx.Check(), "/a.md", "2 wikilink") {
+		t.Errorf("check should warn once with a count of 2 (alias link + embed): %+v", idx.Check())
+	}
+}
+
+// TestWikilinkSurvivesMove proves a relocation needs no wikilink rewrite: Move
+// leaves the [[…]] text alone, and the link re-resolves to the moved file by
+// basename on the next build.
+func TestWikilinkSurvivesMove(t *testing.T) {
+	idx := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\nSee [[b]].\n",
+		"b.md": "---\ntype: note\n---\nplain\n",
+	})
+	if _, err := idx.Move("/b.md", "/sub/b.md", false, false); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	// Move must not have rewritten the [[b]] text in a.md.
+	raw, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "[[b]]") {
+		t.Errorf("move rewrote the wikilink; a.md = %q", raw)
+	}
+	// Re-scanning resolves [[b]] to the moved file by basename.
+	b, err := bundle.Discover(idx.Bundle.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx2, err := Build(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bl := idx2.Backlinks("/sub/b.md"); len(bl) != 1 || bl[0].From != "/a.md" {
+		t.Errorf("after move, backlinks /sub/b.md = %+v, want one from /a.md", bl)
+	}
+}
+
 func TestScalarTagCoercion(t *testing.T) {
 	// a scalar tags: value is read as a one-element list (the coercion lives in
 	// parse.Strings, the on-demand accessor that filtering and TagCounts share)

@@ -15,16 +15,18 @@ import (
 
 	"github.com/agentic-wiki/wiki/internal/bundle"
 	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/internal/wikilink"
 )
 
 // Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
 // its resolved root-absolute graph key (Target, anchor stripped). Queries and
 // the graph match on Target; rewrites (Move, NormalizeLinks) match Raw on disk.
 type Link struct {
-	Text   string
-	Raw    string
-	Target string
-	Line   int
+	Text     string
+	Raw      string
+	Target   string
+	Line     int
+	Wikilink bool // true if this edge came from an Obsidian [[wikilink]] (Raw is its [[…]] form)
 }
 
 // Entry is one markdown file in the content tree. Its canonical, always-present
@@ -40,6 +42,7 @@ type Entry struct {
 	Outside    []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
 	Checkboxes []parse.Checkbox `json:"-"`
 	Headings   []parse.Heading  `json:"-"`
+	wikilinks  []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
 	abs        string
 	fm         map[string]any
 }
@@ -163,7 +166,39 @@ func Build(b *bundle.Bundle) (*Index, error) {
 	if err != nil {
 		return nil, err
 	}
+	idx.resolveWikilinks()
 	return idx, nil
+}
+
+// resolveWikilinks is the second Build pass: it resolves each entry's parsed
+// [[wikilinks]] against the full entry set (Obsidian-style, via internal/wikilink)
+// and adds the resolved ones to the graph as edges marked Wikilink, so backlinks/
+// orphans see them while Move/tidy/check can tell them from real markdown links.
+// An unresolvable wikilink is left off the graph and surfaced only by check.
+func (idx *Index) resolveWikilinks() {
+	paths := make([]string, len(idx.Entries))
+	aliasesPerEntry := map[string][]string{}
+	for i, e := range idx.Entries {
+		paths[i] = e.Path
+		if a := parse.Strings(e.fm, "aliases"); len(a) > 0 {
+			aliasesPerEntry[e.Path] = a
+		}
+	}
+	aliases := wikilink.AliasMap(aliasesPerEntry)
+	for _, e := range idx.Entries {
+		for _, wl := range e.wikilinks {
+			target, _, display := wl.Split()
+			resolved := wikilink.Resolve(target, e.Path, paths, aliases)
+			if resolved == "" {
+				continue
+			}
+			text := display
+			if text == "" {
+				text = target
+			}
+			e.Links = append(e.Links, Link{Text: text, Raw: wl.Full(), Target: resolved, Line: wl.Line, Wikilink: true})
+		}
+	}
 }
 
 // resolveIgnore resolves the bundle's wiki.toml `ignore` and `ignore_orphans`
@@ -216,6 +251,10 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	for i := range heads {
 		heads[i].Line += offset
 	}
+	wikilinks := wikilink.Parse(body) // resolved into graph edges in Build (needs all entries)
+	for i := range wikilinks {
+		wikilinks[i].Line += offset
+	}
 	return &Entry{
 		Path:       entryPath,
 		Type:       parse.String(fm, "type"),
@@ -223,6 +262,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		Outside:    outside,
 		Checkboxes: checkboxes,
 		Headings:   heads,
+		wikilinks:  wikilinks,
 		abs:        abs,
 		fm:         fm,
 	}, nil
@@ -609,7 +649,9 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	for _, e := range idx.Entries {
 		var hits []Link
 		for _, l := range e.Links {
-			if l.Target == src.Path {
+			// Wikilinks resolve by basename each run, so a relocation needs no
+			// rewrite; and their [[…]] form isn't a markdown `](…)` target anyway.
+			if l.Target == src.Path && !l.Wikilink {
 				hits = append(hits, l)
 			}
 		}
@@ -788,6 +830,12 @@ func (idx *Index) Check() []Issue {
 		}
 		if strings.Contains(e.Path, " ") {
 			issues = append(issues, Issue{"warning", e.Path, "path contains a space; use a hyphenated slug"})
+		}
+		// Wikilinks aren't part of the format (markdown links are the graph). They
+		// are resolved as a courtesy but flagged once per file, since `wiki tidy`
+		// converts them all in one pass, so the file, not each link, is the unit.
+		if n := len(e.wikilinks); n > 0 {
+			issues = append(issues, Issue{"warning", e.Path, fmt.Sprintf("%d wikilink(s), not standard links; run `wiki tidy` to convert", n)})
 		}
 	}
 	// Broken links are warnings, not errors: per OKF a broken link may be
