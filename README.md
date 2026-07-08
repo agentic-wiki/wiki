@@ -68,6 +68,7 @@ Everything is a fast, scriptable query over the folder.
 
 ```sh
 wiki list --where type=concept --where tags=crypto --prefix tech/   # by kind, topic, and subtree
+wiki list --where type=task --where status!=done        # key!=value negates (here: still-open work)
 wiki list --where type=note --sort=timestamp            # most-recently-changed first (--reverse: oldest first)
 wiki search "language model" --lines                    # full-text over frontmatter + body
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
@@ -162,7 +163,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 |---|---|
 | `init [dir]` | Scaffold a new bundle from a `--workflow` starter (`--force` to write into a non-empty dir) |
 | `status` | Bundle counts: entries, links, tags, checkboxes, broken links, orphans |
-| `list` | Entries, filtered by `--where key=value` / `--prefix` |
+| `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
 | `outline <path>` | An entry's heading hierarchy |

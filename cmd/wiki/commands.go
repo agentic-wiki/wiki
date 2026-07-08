@@ -102,14 +102,21 @@ type whereFilters []index.PropFilter
 func (w *whereFilters) String() string { return "" }
 
 func (w *whereFilters) Set(s string) error {
-	kRaw, vRaw, ok := strings.Cut(s, "=")
+	// `!=` (inequality) takes precedence over `=`, so it is matched first.
+	neg := false
+	kRaw, vRaw, ok := strings.Cut(s, "!=")
+	if ok {
+		neg = true
+	} else {
+		kRaw, vRaw, ok = strings.Cut(s, "=")
+	}
 	k := parse.Unquote(kRaw)
 	if !ok || k == "" {
-		return fmt.Errorf("--where must be key=value, got %q", s)
+		return fmt.Errorf("--where must be key=value or key!=value, got %q", s)
 	}
 	// Unquote the value the same way frontmatter is parsed, so a quote that
 	// survives the shell (--where 'k="v"') still compares equal to `k: "v"`.
-	*w = append(*w, index.PropFilter{Key: k, Value: parse.Unquote(vRaw)})
+	*w = append(*w, index.PropFilter{Key: k, Value: parse.Unquote(vRaw), Negate: neg})
 	return nil
 }
 
@@ -118,7 +125,7 @@ func cmdList(args []string) int {
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	var where whereFilters
-	fs.Var(&where, "where", "filter by frontmatter key=value (repeatable = AND; e.g. type=note, tags=bug)")
+	fs.Var(&where, "where", "filter by frontmatter key=value or key!=value (repeatable = AND; e.g. type=note, status!=done)")
 	sortBy := fs.String("sort", "path", "sort order: path|timestamp (timestamp is newest-first)")
 	reverse := fs.Bool("reverse", false, "reverse the sort order")
 	fs.Parse(args)
@@ -543,7 +550,7 @@ func cmdSearch(args []string) int {
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	var where whereFilters
-	fs.Var(&where, "where", "filter by frontmatter key=value (repeatable = AND; e.g. type=note, tags=bug)")
+	fs.Var(&where, "where", "filter by frontmatter key=value or key!=value (repeatable = AND; e.g. type=note, status!=done)")
 	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
 	query, ok := parseWithArg(fs, args)
 	if !ok || strings.TrimSpace(query) == "" {

@@ -54,13 +54,14 @@ wiki search "docker networking"                # literal, case-insensitive, over
 wiki search "docker" --lines                   # matching lines as file:line
 wiki list --where type=concept --where tags=docker   # filter by kind and topic (repeatable = AND)
 wiki list --where type=task --where status=done       # any frontmatter field, one flag
+wiki list --where type=task --where status!=done      # key!=value negates (here: still-open work)
 wiki list --where type=note --prefix personal/       # scope to a subtree
 wiki read /tech/infra/docker.md                # an entry's body, frontmatter stripped
 wiki outline /tech/infra/docker.md             # its heading map
 wiki table /finance/expenses.md --format csv   # extract a dataset's table, for jq/duckdb
 ```
 
-`--prefix <path>` scopes to a subtree and works on `list`, `search`, `tasks`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which is a substring scan of the whole file and will also match body text.
+`--prefix <path>` scopes to a subtree and works on `list`, `search`, `tasks`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which is a substring scan of the whole file and will also match body text. Use `key!=value` for negation (`status!=done` is everything still open, including entries with no `status` yet); it stays equality/inequality only, richer reporting is a skill over `--format json`.
 
 ### Follow the graph (what grep can't do)
 

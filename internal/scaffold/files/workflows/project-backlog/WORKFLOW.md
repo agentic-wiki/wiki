@@ -72,7 +72,7 @@ tags: [feature]            # work-kind: feature | bug | chore | debt | ...
 Problem statement and acceptance criteria. Link the spec, the epic, and any blockers.
 ```
 
-The board section says *when*, `status` says *how far*, and they move independently. `wiki` treats every frontmatter field the same, so you slice the backlog with one flag: `wiki list --where type=task --where tags=bug`, `wiki list --where type=task --where status=blocked` (repeat `--where` for AND), `wiki property status --counts` (the tally), `wiki list --where type=task --prefix teams/web/`.
+The board section says *when*, `status` says *how far*, and they move independently. `wiki` treats every frontmatter field the same, so you slice the backlog with one flag: `wiki list --where type=task --where tags=bug`, `wiki list --where type=task --where status=blocked` (repeat `--where` for AND), `wiki list --where type=task --where status!=done` (negation: everything still open across statuses), `wiki property status --counts` (the tally), `wiki list --where type=task --prefix teams/web/`.
 
 **Technical debt** is just a `debt`-tagged task. Surface it with `wiki list --where type=task --where tags=debt`, and consider a standing `## Debt` section on the board so it stays visible instead of quietly accruing.
 
@@ -126,7 +126,7 @@ Keep statuses, priorities, and work-kind tags consistent across teams, so `wiki 
 Most questions are a query plus a moment of judgment: `wiki` narrows the set, you read and decide.
 
 - **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki checkboxes`, a checkbox scanner, is not used here.)
-- **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next.
+- **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next. His *open* load is `--where assignee=john --where status!=done`.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
 - **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked --prefix active/` for the committed ones blocking now. (`--where` is bundle-wide unless you add `--prefix`; drop it to include parked `backlog/` items too.)
 - **"What's in the backlog?"**: `wiki list --where type=task --prefix backlog/`.

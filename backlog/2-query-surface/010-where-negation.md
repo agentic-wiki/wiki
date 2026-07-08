@@ -1,7 +1,7 @@
 ---
 type: task
 title: "--where key!=value (inequality filter)"
-status: todo
+status: done
 priority: medium
 tags: [feature, query]
 ---

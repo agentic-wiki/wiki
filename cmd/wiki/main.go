@@ -43,8 +43,8 @@ Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 
 Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
-Filter frontmatter with --where key=value (repeatable = AND) on list/search; type and tags are
-  ordinary fields, e.g. --where type=note, --where tags=bug
+Filter frontmatter with --where key=value or key!=value (repeatable = AND) on list/search; type and
+  tags are ordinary fields, e.g. --where type=note, --where status!=done
 list --format json carries each entry's full frontmatter; csv/tsv carry the canonical columns
 Exit codes: 0 ok, 1 no match or check errors, 2 error
 `

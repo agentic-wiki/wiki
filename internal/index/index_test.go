@@ -253,22 +253,35 @@ func TestFilter(t *testing.T) {
 		"finance/b.md":        "---\ntype: concept\ntags: [eu]\n---\n",
 		"tech/c.md":           "---\ntype: note\ntags: [go]\n---\n",
 	})
-	if got := len(idx.Filter("", []PropFilter{{"type", "note"}})); got != 2 {
+	if got := len(idx.Filter("", []PropFilter{{Key: "type", Value: "note"}})); got != 2 {
 		t.Errorf("type=note = %d, want 2", got)
 	}
-	if got := len(idx.Filter("", []PropFilter{{"tags", "eu"}})); got != 2 {
+	if got := len(idx.Filter("", []PropFilter{{Key: "tags", Value: "eu"}})); got != 2 {
 		t.Errorf("tags=eu = %d, want 2", got)
 	}
 	if got := len(idx.Filter("finance/", nil)); got != 2 {
 		t.Errorf("--prefix finance/ = %d, want 2", got)
 	}
 	// prefix + two ANDed property filters
-	if got := idx.Filter("finance/", []PropFilter{{"type", "note"}, {"tags", "eu"}}); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
+	if got := idx.Filter("finance/", []PropFilter{{Key: "type", Value: "note"}, {Key: "tags", Value: "eu"}}); len(got) != 1 || got[0].Path != "/finance/income/a.md" {
 		t.Errorf("combined filter = %+v", got)
 	}
-	// a missing key never matches
-	if got := idx.Filter("", []PropFilter{{"nope", "x"}}); len(got) != 0 {
+	// a missing key never matches an equality filter
+	if got := idx.Filter("", []PropFilter{{Key: "nope", Value: "x"}}); len(got) != 0 {
 		t.Errorf("unknown key = %d, want 0", len(got))
+	}
+
+	// negation: everything whose type is not note
+	if got := idx.Filter("", []PropFilter{{Key: "type", Value: "note", Negate: true}}); len(got) != 1 || got[0].Path != "/finance/b.md" {
+		t.Errorf("type!=note = %+v, want only /finance/b.md", got)
+	}
+	// a missing key matches a negation filter (it is not equal to the value)
+	if got := len(idx.Filter("", []PropFilter{{Key: "nope", Value: "x", Negate: true}})); got != 3 {
+		t.Errorf("nope!=x = %d, want 3 (missing key is not equal)", got)
+	}
+	// negation composes with equality under AND: notes that are not tagged go
+	if got := idx.Filter("", []PropFilter{{Key: "type", Value: "note"}, {Key: "tags", Value: "eu", Negate: true}}); len(got) != 1 || got[0].Path != "/tech/c.md" {
+		t.Errorf("type=note AND tags!=eu = %+v, want only /tech/c.md", got)
 	}
 }
 
@@ -738,10 +751,10 @@ func TestSearch(t *testing.T) {
 	}
 
 	// filters narrow the candidate set
-	if got := idx.Search("income", "", []PropFilter{{"type", "note"}}); len(got) != 2 {
+	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "note"}}); len(got) != 2 {
 		t.Errorf("type=note = %d want 2", len(got))
 	}
-	if got := idx.Search("income", "", []PropFilter{{"type", "concept"}}); len(got) != 0 {
+	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "concept"}}); len(got) != 0 {
 		t.Errorf("type=concept = %d want 0", len(got))
 	}
 	if got := idx.Search("income", "finance/", nil); len(got) != 1 {

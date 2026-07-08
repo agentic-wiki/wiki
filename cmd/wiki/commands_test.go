@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentic-wiki/wiki/internal/index"
 	"github.com/agentic-wiki/wiki/internal/scaffold"
 )
 
@@ -594,6 +595,57 @@ func TestCmdListWhere(t *testing.T) {
 	// no match is an empty listing, exit 0 (like ls)
 	if out, code := capture(t, func() int { return cmdList([]string{"--where", "assignee=nobody"}) }); code != 0 || strings.TrimSpace(out) != "" {
 		t.Errorf("--where no-match: %q (code %d), want empty/0", out, code)
+	}
+
+	// key!=value: everything whose key is not the value, including entries
+	// missing the key (d.md has no status), which are "not done" too
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "status!=done"}) })
+	if strings.Contains(out, "/a.md") || strings.Contains(out, "/b.md") ||
+		!strings.Contains(out, "/c.md") || !strings.Contains(out, "/d.md") {
+		t.Errorf("--where status!=done: %q, want c.md and d.md only", out)
+	}
+
+	// != combines with = under AND
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "assignee=ana", "--where", "status!=done"}) })
+	if !strings.Contains(out, "/c.md") || strings.Contains(out, "/a.md") || strings.Contains(out, "/d.md") {
+		t.Errorf("--where assignee=ana AND status!=done: %q, want c.md only", out)
+	}
+}
+
+func TestWhereFiltersSet(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    index.PropFilter
+		wantErr bool
+	}{
+		{in: "type=note", want: index.PropFilter{Key: "type", Value: "note"}},
+		{in: "status!=done", want: index.PropFilter{Key: "status", Value: "done", Negate: true}},
+		// only the first `=` splits, so a value may itself contain `=`
+		{in: "url=/a.md?x=1", want: index.PropFilter{Key: "url", Value: "/a.md?x=1"}},
+		// `!=` wins over `=` even when a bare `=` appears earlier is impossible
+		// (key can't hold `=`), but a value after `!=` may contain `=`
+		{in: "ref!=/a.md?x=1", want: index.PropFilter{Key: "ref", Value: "/a.md?x=1", Negate: true}},
+		// surviving shell quotes are unquoted like frontmatter
+		{in: `k="v"`, want: index.PropFilter{Key: "k", Value: "v"}},
+		{in: "novalue", wantErr: true},
+		{in: "=novalue", wantErr: true},
+	}
+	for _, c := range cases {
+		var w whereFilters
+		err := w.Set(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("Set(%q) = nil error, want error", c.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("Set(%q) errored: %v", c.in, err)
+			continue
+		}
+		if len(w) != 1 || w[0] != c.want {
+			t.Errorf("Set(%q) = %+v, want %+v", c.in, w, c.want)
+		}
 	}
 }
 

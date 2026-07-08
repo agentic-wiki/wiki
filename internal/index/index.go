@@ -318,8 +318,14 @@ func (idx *Index) Resolve(arg string) (*Entry, error) {
 }
 
 // PropFilter is one frontmatter key/value test for Filter/Search (the `--where`
-// flag): an entry matches when its frontmatter key holds value (Entry.MatchProperty).
-type PropFilter struct{ Key, Value string }
+// flag): an entry matches when its frontmatter key holds value (Entry.MatchProperty),
+// or, with Negate (`key!=value`), when it does not, a missing key counts as "does
+// not hold", so `key!=value` matches entries lacking the key entirely.
+type PropFilter struct {
+	Key    string
+	Value  string
+	Negate bool
+}
 
 // Filter returns entries under pathPrefix (empty = the whole bundle) that satisfy
 // every property filter (nil = no property constraint). props are ANDed; a
@@ -340,10 +346,12 @@ func (idx *Index) Filter(pathPrefix string, props []PropFilter) []*Entry {
 	return out
 }
 
-// matchesAll reports whether the entry satisfies every property filter (AND).
+// matchesAll reports whether the entry satisfies every property filter (AND). A
+// negated filter (`key!=value`) passes when the entry does not hold that value,
+// including when the key is absent.
 func (e *Entry) matchesAll(props []PropFilter) bool {
 	for _, p := range props {
-		if !e.MatchProperty(p.Key, p.Value) {
+		if e.MatchProperty(p.Key, p.Value) == p.Negate {
 			return false
 		}
 	}
