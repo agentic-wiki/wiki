@@ -2,7 +2,13 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
-## v0.4.0 (2026-07-08)
+## v0.5.0
+
+### Improved
+
+- `check`'s "missing required `type`" error now points at the fix (add a type, or list the file in `wiki.toml` `ignore` if it is not an entry), so a stray `PROMPT.md`/`README` leads somewhere instead of a dead end.
+
+## v0.4.0
 
 ### ⚠️ Breaking changes
 

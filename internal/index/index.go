@@ -772,7 +772,7 @@ func (idx *Index) Check() []Issue {
 		} else {
 			switch {
 			case e.Type == "":
-				issues = append(issues, Issue{"error", e.Path, "missing required `type`"})
+				issues = append(issues, Issue{"error", e.Path, "missing required `type` (or add this file to `ignore` in wiki.toml if it is not a bundle entry)"})
 			case !idx.Bundle.KnownType(e.Type):
 				issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
 			}

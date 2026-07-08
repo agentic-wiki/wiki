@@ -123,7 +123,7 @@ Entries link with ordinary Markdown links from the base root, `[Income](/finance
 
 ```
 my-wiki/
-├── wiki.toml             # marks the base, declares your types
+├── wiki.toml             # marks the base, bundle settings
 ├── index.md              # home: links into each area
 ├── finance/
 │   ├── index.md

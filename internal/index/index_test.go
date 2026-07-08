@@ -415,6 +415,17 @@ func TestCheckSeverity(t *testing.T) {
 	if !hasWarning(idx.Check(), "/weird.md", "broken link") {
 		t.Errorf("broken link should be a warning, got %+v", idx.Check())
 	}
+	// the missing-type error points at the fix, so a non-entry file (a PROMPT.md,
+	// a README) leads the user to wiki.toml `ignore` instead of a dead end.
+	var typeErr string
+	for _, is := range idx.Check() {
+		if is.Level == "error" && is.Entry == "/notype.md" {
+			typeErr = is.Msg
+		}
+	}
+	if !strings.Contains(typeErr, "ignore") {
+		t.Errorf("missing-type error should hint at wiki.toml `ignore`, got %q", typeErr)
+	}
 }
 
 func TestCheckUnknownConfigKey(t *testing.T) {

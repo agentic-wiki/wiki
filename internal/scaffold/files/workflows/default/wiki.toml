@@ -1,3 +1,10 @@
 spec = "0.1"
+
+# The entry vocabulary
 types = ["note", "concept", "entity", "event", "tool", "project", "task", "dataset", "source", "draft"]
+
+# Files that are NOT wiki entries (excluded from index and check; globs supported)
 ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
+
+# Entries that stay indexed and queryable but are kept out of `wiki orphans` (globs supported)
+# ignore_orphans = ["inbox/**"]
