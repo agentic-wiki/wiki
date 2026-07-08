@@ -122,8 +122,10 @@ wiki search "gdpr" --lines                     # matching lines as file:line
 
 ```sh
 wiki list --where type=project --where status=active      # active projects
+wiki list --where type=project --where status!=archived   # everything not archived (!= negates)
 wiki list --where type=project --where tags=security      # by topic tag
 wiki list --where type=person --where team=/teams/web.md  # a team's people (if you use a team field)
+wiki list --where type=person --where team=               # people on no team yet (empty tests emptiness; team!= = those with one)
 wiki list --where type=task --prefix projects/acme-migration/   # scope to one project's subtree
 ```
 

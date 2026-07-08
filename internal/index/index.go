@@ -27,13 +27,15 @@ type Link struct {
 	Line   int
 }
 
-// Entry is one markdown file in the content tree.
+// Entry is one markdown file in the content tree. Its canonical, always-present
+// metadata is the path (identity) and type (the one required, validated field);
+// those are the columns of tabular output. Every other frontmatter field (title,
+// tags, status, …) lives only in fm and is read on demand, like `timestamp`, so
+// there is a single source of truth. Links/Checkboxes/Headings are parsed from
+// the body, not frontmatter, so they are materialized.
 type Entry struct {
-	Path       string           `json:"path"` // root-absolute, e.g. /finance/income/index.md
-	Name       string           `json:"name"` // base name, e.g. index.md
+	Path       string           `json:"_path"` // root-absolute, e.g. /finance/income/index.md
 	Type       string           `json:"type"`
-	Title      string           `json:"title"`
-	Tags       []string         `json:"tags"`
 	Links      []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
 	Outside    []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
 	Checkboxes []parse.Checkbox `json:"-"`
@@ -41,6 +43,10 @@ type Entry struct {
 	abs        string
 	fm         map[string]any
 }
+
+// base is the entry's filename (basename of Path), computed on demand: the path
+// is the single source of truth for identity, so the basename is not stored.
+func (e *Entry) base() string { return path.Base(e.Path) }
 
 // Depth is the number of folders below the content root (a top-level file is 0).
 func (e *Entry) Depth() int {
@@ -80,29 +86,39 @@ func (e *Entry) Body() (string, error) {
 	return body, nil
 }
 
-// MarshalJSON renders the entry as a flat object: its canonical fields (path,
-// name, type, title, tags) plus every other frontmatter key it carries, so
-// `list --format json` exposes the full frontmatter (status, assignee, epic, …)
-// that structured tooling needs. CSV/TSV keep the fixed canonical columns (the
-// struct's json tags), since arbitrary keys don't fit a fixed column set.
+// MarshalJSON renders the entry as its frontmatter verbatim plus its file path
+// under the reserved key `_path`. The underscore prefix keeps `_path` off the
+// frontmatter namespace, so a user's own `name:`/`path:` field round-trips
+// untouched (a person's `name:` is their name, not the filename); the basename
+// is just `basename(_path)`, so it is not emitted separately. Frontmatter is
+// left exactly as written, with no per-field coercion, `tags` included: the tool
+// is opaque about field meaning, so it can't single out one field to normalize.
+// (Matching still treats a scalar and a one-element list alike, but that lives in
+// the query layer, not here.) So `list --format json` exposes the full
+// frontmatter (status, assignee, epic, …) that structured tooling needs. CSV/TSV
+// keep the fixed canonical columns (the struct's json tags), since arbitrary
+// keys don't fit a fixed column set.
 func (e *Entry) MarshalJSON() ([]byte, error) {
-	m := make(map[string]any, len(e.fm)+5)
+	m := make(map[string]any, len(e.fm)+1)
 	for k, v := range e.fm {
 		m[k] = v
 	}
-	m["path"] = e.Path
-	m["name"] = e.Name
-	m["type"] = e.Type
-	m["title"] = e.Title
-	m["tags"] = e.Tags
+	m["_path"] = e.Path
 	return json.Marshal(m)
 }
 
 // MatchProperty reports whether the entry's frontmatter key holds value: a
 // list-valued key (e.g. tags) matches when any element equals value, a scalar
-// matches on equality. A missing key never matches. Backs the `--where` filter.
+// matches on equality. A missing key never matches a non-empty value. Comparing
+// against the empty string tests emptiness: `key=` matches when the key has no
+// non-empty value (absent, blank, or an empty list), so its negation `key!=`
+// matches when the key is present and non-empty. Backs the `--where` filter.
 func (e *Entry) MatchProperty(key, value string) bool {
-	return slices.Contains(parse.Strings(e.fm, key), value)
+	vals := parse.Strings(e.fm, key)
+	if value == "" {
+		return len(vals) == 0
+	}
+	return slices.Contains(vals, value)
 }
 
 // Index is the built model of a bundle.
@@ -202,10 +218,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	}
 	return &Entry{
 		Path:       entryPath,
-		Name:       filepath.Base(abs),
 		Type:       parse.String(fm, "type"),
-		Title:      parse.String(fm, "title"),
-		Tags:       parse.Strings(fm, "tags"),
 		Links:      links,
 		Outside:    outside,
 		Checkboxes: checkboxes,
@@ -298,7 +311,7 @@ func (idx *Index) Resolve(arg string) (*Entry, error) {
 	}
 	var matches []*Entry
 	for _, e := range idx.Entries {
-		if e.Name == arg {
+		if e.base() == arg {
 			matches = append(matches, e)
 		}
 	}
@@ -363,7 +376,7 @@ func (e *Entry) matchesAll(props []PropFilter) bool {
 func (idx *Index) TagCounts(pathPrefix string) map[string]int {
 	counts := map[string]int{}
 	for _, e := range idx.Filter(pathPrefix, nil) {
-		for _, t := range dedupe(e.Tags) {
+		for _, t := range dedupe(parse.Strings(e.fm, "tags")) {
 			counts[t]++
 		}
 	}
@@ -420,9 +433,8 @@ type SearchLine struct {
 
 // SearchHit is an entry with at least one line matching a search query.
 type SearchHit struct {
-	Path    string       `json:"path"`
+	Path    string       `json:"_path"`
 	Type    string       `json:"type"`
-	Title   string       `json:"title"`
 	Matches int          `json:"matches"`
 	Lines   []SearchLine `json:"lines,omitempty"`
 }
@@ -445,7 +457,7 @@ func (idx *Index) Search(query, pathPrefix string, props []PropFilter) []SearchH
 			}
 		}
 		if len(lines) > 0 {
-			hits = append(hits, SearchHit{e.Path, e.Type, e.Title, len(lines), lines})
+			hits = append(hits, SearchHit{e.Path, e.Type, len(lines), lines})
 		}
 	}
 	slices.SortFunc(hits, func(a, b SearchHit) int { return strings.Compare(a.Path, b.Path) })
@@ -485,7 +497,7 @@ func (idx *Index) Orphans() []*Entry {
 	}
 	var out []*Entry
 	for _, e := range idx.Entries {
-		if e.Name == "index.md" || e.Name == "log.md" || idx.orphanExempt(e.Path) {
+		if b := e.base(); b == "index.md" || b == "log.md" || idx.orphanExempt(e.Path) {
 			continue
 		}
 		if incoming[e.Path] == 0 {
@@ -550,7 +562,7 @@ func (idx *Index) Backlinks(target string) []LinkRef {
 // FileRewrite records what a move rewrote in one entry: body links, and, when
 // --include-frontmatter is set, frontmatter values equal to the moved path.
 type FileRewrite struct {
-	Path            string `json:"path"`
+	Path            string `json:"_path"`
 	Links           int    `json:"links"`
 	FrontmatterRefs int    `json:"frontmatter_refs,omitempty"` // frontmatter values rewritten under --include-frontmatter
 }
@@ -737,7 +749,8 @@ func (idx *Index) Check() []Issue {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
 	}
 	for _, e := range idx.Entries {
-		if e.Name == "index.md" || e.Name == "log.md" {
+		b := e.base()
+		if b == "index.md" || b == "log.md" {
 			// Reserved files (OKF §6/§7) are not concept documents: they carry no
 			// frontmatter (the bundle-root index.md may carry okf_version) and are
 			// exempt from the type requirement.
@@ -748,7 +761,7 @@ func (idx *Index) Check() []Issue {
 				issues = append(issues, Issue{"warning", e.Path, "reserved file should carry no frontmatter"})
 				break
 			}
-			if e.Name == "log.md" {
+			if b == "log.md" {
 				// OKF §7: log date headings use ISO YYYY-MM-DD.
 				for _, h := range e.Headings {
 					if looksLikeNonISODate(h.Text) {
@@ -894,10 +907,11 @@ func (idx *Index) NormalizeLinks(apply bool) ([]Fix, error) {
 func (idx *Index) Slugify(apply bool) ([]Fix, error) {
 	var changes []Fix
 	for _, e := range idx.Entries {
-		if !strings.Contains(e.Name, " ") {
+		b := e.base()
+		if !strings.Contains(b, " ") {
 			continue
 		}
-		dest := path.Join(path.Dir(e.Path), slugifyName(e.Name))
+		dest := path.Join(path.Dir(e.Path), slugifyName(b))
 		if _, err := idx.Move(e.Path, dest, !apply, false); err != nil {
 			continue // collision or unmovable: leave it (check still flags the space)
 		}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/agentic-wiki/wiki/internal/bundle"
+	"github.com/agentic-wiki/wiki/internal/parse"
 )
 
 func build(t *testing.T, files map[string]string) *Index {
@@ -43,11 +44,12 @@ func TestBuildParsesEntry(t *testing.T) {
 		t.Fatalf("entries = %d", len(idx.Entries))
 	}
 	e := idx.Entries[0]
-	if e.Path != "/a.md" || e.Type != "note" || e.Title != "A" {
+	// type is a materialized field; title/tags are read from frontmatter on demand
+	if e.Path != "/a.md" || e.Type != "note" || parse.String(e.fm, "title") != "A" {
 		t.Errorf("entry = %+v", e)
 	}
-	if len(e.Tags) != 2 || len(e.Links) != 1 || len(e.Checkboxes) != 1 || len(e.Headings) != 1 {
-		t.Errorf("counts: tags=%v links=%v checkboxes=%v headings=%v", e.Tags, e.Links, e.Checkboxes, e.Headings)
+	if tags := parse.Strings(e.fm, "tags"); len(tags) != 2 || len(e.Links) != 1 || len(e.Checkboxes) != 1 || len(e.Headings) != 1 {
+		t.Errorf("counts: tags=%v links=%v checkboxes=%v headings=%v", tags, e.Links, e.Checkboxes, e.Headings)
 	}
 	// line numbers are file-relative: 5 frontmatter lines, then # H, link, task
 	if e.Headings[0].Line != 6 || e.Links[0].Line != 7 || e.Checkboxes[0].Line != 8 {
@@ -285,6 +287,38 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+// TestFilterEmptyValue covers comparing against the empty string, which tests
+// emptiness rather than a literal value: `key=` matches when the key has no
+// non-empty value (absent, blank, or empty list), so `key!=` is a presence
+// filter (present and non-empty).
+func TestFilterEmptyValue(t *testing.T) {
+	idx := build(t, map[string]string{
+		"present.md": "---\ntype: task\nassignee: ana\ntags: [x]\n---\n",
+		"empty.md":   "---\ntype: task\nassignee: \"\"\ntags: []\n---\n",
+		"bare.md":    "---\ntype: task\nassignee:\n---\n",
+		"absent.md":  "---\ntype: task\n---\n",
+	})
+	paths := func(es []*Entry) []string {
+		out := make([]string, len(es))
+		for i, e := range es {
+			out[i] = e.Path
+		}
+		return out
+	}
+	// key!= is present-and-non-empty
+	if got := paths(idx.Filter("", []PropFilter{{Key: "assignee", Value: "", Negate: true}})); len(got) != 1 || got[0] != "/present.md" {
+		t.Errorf("assignee!= = %v, want only /present.md", got)
+	}
+	// key= is the complement: absent, blank, or empty
+	if got := len(idx.Filter("", []PropFilter{{Key: "assignee", Value: ""}})); got != 3 {
+		t.Errorf("assignee= = %d, want 3 (empty/bare/absent)", got)
+	}
+	// an empty list counts as no value too: tags!= keeps only the tagged entry
+	if got := paths(idx.Filter("", []PropFilter{{Key: "tags", Value: "", Negate: true}})); len(got) != 1 || got[0] != "/present.md" {
+		t.Errorf("tags!= = %v, want only /present.md", got)
+	}
+}
+
 func TestMoveIncludeFrontmatter(t *testing.T) {
 	files := map[string]string{
 		"index.md":      "---\nokf_version: \"0.1\"\n---\n[e](/epics/auth.md)\n",
@@ -444,8 +478,10 @@ func TestDepth(t *testing.T) {
 }
 
 func TestScalarTagCoercion(t *testing.T) {
+	// a scalar tags: value is read as a one-element list (the coercion lives in
+	// parse.Strings, the on-demand accessor that filtering and TagCounts share)
 	idx := build(t, map[string]string{"a.md": "---\ntype: note\ntags: solo\n---\nbody\n"})
-	if got := idx.Entries[0].Tags; len(got) != 1 || got[0] != "solo" {
+	if got := parse.Strings(idx.Entries[0].fm, "tags"); len(got) != 1 || got[0] != "solo" {
 		t.Errorf("tags = %#v, want [solo]", got)
 	}
 }

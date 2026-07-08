@@ -129,6 +129,7 @@ Most questions are a query plus a moment of judgment: `wiki` narrows the set, yo
 - **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next. His *open* load is `--where assignee=john --where status!=done`.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
 - **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked --prefix active/` for the committed ones blocking now. (`--where` is bundle-wide unless you add `--prefix`; drop it to include parked `backlog/` items too.)
+- **"What's unassigned?"**: `wiki list --where type=task --where assignee=` (an empty value tests emptiness, so this is tasks with no assignee; `assignee!=` is the ones that have one).
 - **"What's in the backlog?"**: `wiki list --where type=task --prefix backlog/`.
 - **"How much debt are we carrying?"**: `wiki list --where type=task --where tags=debt`.
 - **"What's left for v1?"**: `wiki backlinks /milestones/v1.md` gives its epics; roll up each epic's tasks (`wiki backlinks`) and drop the `done` ones, a two-hop query (a small skill).

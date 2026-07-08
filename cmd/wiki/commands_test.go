@@ -73,7 +73,7 @@ func TestCmdRead(t *testing.T) {
 	}
 
 	out, code = capture(t, func() int { return cmdRead([]string{"--format", "json", "guide.md"}) })
-	if code != 0 || !strings.Contains(out, `"body"`) || !strings.Contains(out, `"path": "/guide.md"`) {
+	if code != 0 || !strings.Contains(out, `"body"`) || !strings.Contains(out, `"_path": "/guide.md"`) {
 		t.Errorf("json read: %q (code %d)", out, code)
 	}
 
@@ -610,6 +610,17 @@ func TestCmdListWhere(t *testing.T) {
 	if !strings.Contains(out, "/c.md") || strings.Contains(out, "/a.md") || strings.Contains(out, "/d.md") {
 		t.Errorf("--where assignee=ana AND status!=done: %q, want c.md only", out)
 	}
+
+	// comparing against the empty string tests emptiness: status= is the entries
+	// with no status (only d.md), status!= is those that have one (a/b/c)
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "status="}) })
+	if !strings.Contains(out, "/d.md") || strings.Contains(out, "/a.md") || strings.Contains(out, "/c.md") {
+		t.Errorf("--where status= (unset): %q, want d.md only", out)
+	}
+	out, _ = capture(t, func() int { return cmdList([]string{"--where", "status!="}) })
+	if strings.Contains(out, "/d.md") || !strings.Contains(out, "/a.md") || !strings.Contains(out, "/c.md") {
+		t.Errorf("--where status!= (present): %q, want a/b/c, not d.md", out)
+	}
 }
 
 func TestWhereFiltersSet(t *testing.T) {
@@ -627,6 +638,11 @@ func TestWhereFiltersSet(t *testing.T) {
 		{in: "ref!=/a.md?x=1", want: index.PropFilter{Key: "ref", Value: "/a.md?x=1", Negate: true}},
 		// surviving shell quotes are unquoted like frontmatter
 		{in: `k="v"`, want: index.PropFilter{Key: "k", Value: "v"}},
+		// an empty value is valid (it tests emptiness); only a missing operator
+		// or an empty key is an error
+		{in: "name!=", want: index.PropFilter{Key: "name", Value: "", Negate: true}},
+		{in: `name!=""`, want: index.PropFilter{Key: "name", Value: "", Negate: true}},
+		{in: "name=", want: index.PropFilter{Key: "name", Value: ""}},
 		{in: "novalue", wantErr: true},
 		{in: "=novalue", wantErr: true},
 	}
@@ -656,8 +672,11 @@ func TestCmdListJSONFrontmatter(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"task\"]\n")
-	write("a.md", "---\ntype: task\ntitle: A\nstatus: done\nassignee: ana\ntags: [feature]\n---\nx\n")
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"person\"]\n")
+	// this entry deliberately carries a frontmatter `name:` (a person's name) and
+	// `path:`, which must NOT be clobbered by the entry's structural identity; and
+	// a scalar `tags:` to prove frontmatter is emitted verbatim, not coerced
+	write("dana.md", "---\ntype: person\ntitle: A\nname: Dana Smith\npath: /custom\nstatus: active\ntags: staff\n---\nx\n")
 	t.Chdir(dir)
 
 	// json carries the full frontmatter (arbitrary keys), not just the canonical set
@@ -665,15 +684,29 @@ func TestCmdListJSONFrontmatter(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit=%d", code)
 	}
-	for _, want := range []string{`"status": "done"`, `"assignee": "ana"`, `"path": "/a.md"`, `"type": "task"`} {
+	for _, want := range []string{`"status": "active"`, `"type": "person"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("json list missing %s: %q", want, out)
 		}
 	}
+	// structural identity lives under the reserved _path key; the basename is
+	// derivable from it, so it is not emitted separately (no _name)
+	if !strings.Contains(out, `"_path": "/dana.md"`) || strings.Contains(out, `"_name"`) {
+		t.Errorf("want _path and no _name: %q", out)
+	}
+	// the frontmatter name:/path: round-trip untouched (not shadowed by structure)
+	if !strings.Contains(out, `"name": "Dana Smith"`) || !strings.Contains(out, `"path": "/custom"`) {
+		t.Errorf("frontmatter name/path clobbered by structural identity: %q", out)
+	}
+	// frontmatter is verbatim: a scalar tags stays a scalar, not force-listed
+	if !strings.Contains(out, `"tags": "staff"`) {
+		t.Errorf("tags should be emitted verbatim (scalar), got: %q", out)
+	}
 
-	// csv keeps the fixed canonical columns (arbitrary frontmatter is json-only)
+	// csv keeps the fixed canonical columns: just _path,type (title/tags and any
+	// other frontmatter are json-only)
 	out, _ = capture(t, func() int { return cmdList([]string{"--format", "csv"}) })
-	if !strings.Contains(out, "path,name,type,title,tags") || strings.Contains(out, "assignee") {
+	if !strings.Contains(out, "_path,type") || strings.Contains(out, "title") || strings.Contains(out, "status") {
 		t.Errorf("csv should keep canonical columns only: %q", out)
 	}
 }

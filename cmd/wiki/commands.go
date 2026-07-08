@@ -57,13 +57,9 @@ func cmdStatus(args []string) int {
 	}
 
 	links, checkboxes := 0, 0
-	tagset := map[string]bool{}
 	for _, e := range idx.Entries {
 		links += len(e.Links)
 		checkboxes += len(e.Checkboxes)
-		for _, t := range e.Tags {
-			tagset[t] = true
-		}
 	}
 	s := struct {
 		Dir        string `json:"dir"`
@@ -76,7 +72,7 @@ func cmdStatus(args []string) int {
 		Orphans    int    `json:"orphans"`
 	}{
 		idx.Bundle.Dir, idx.Bundle.Spec,
-		len(idx.Entries), links, len(tagset), checkboxes,
+		len(idx.Entries), links, len(idx.TagCounts("")), checkboxes,
 		len(idx.Broken()), len(idx.Orphans()),
 	}
 	lines := []string{
@@ -167,7 +163,7 @@ func cmdList(args []string) int {
 	}
 	var lines []string
 	for _, e := range entries {
-		lines = append(lines, fmt.Sprintf("%-44s %-9s %s", e.Path, e.Type, e.Title))
+		lines = append(lines, fmt.Sprintf("%-44s %s", e.Path, e.Type))
 	}
 	output.Emit(os.Stdout, *format, lines, entries)
 	return 0
@@ -502,11 +498,10 @@ func cmdRead(args []string) int {
 		return 2
 	}
 	out := struct {
-		Path  string `json:"path"`
-		Type  string `json:"type"`
-		Title string `json:"title"`
-		Body  string `json:"body"`
-	}{e.Path, e.Type, e.Title, body}
+		Path string `json:"_path"`
+		Type string `json:"type"`
+		Body string `json:"body"`
+	}{e.Path, e.Type, body}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
 	output.Emit(os.Stdout, *format, lines, out)
 	return 0
@@ -538,7 +533,7 @@ func cmdOutline(args []string) int {
 		heads = []parse.Heading{}
 	}
 	out := struct {
-		Path     string          `json:"path"`
+		Path     string          `json:"_path"`
 		Headings []parse.Heading `json:"headings"`
 	}{e.Path, heads}
 	output.Emit(os.Stdout, *format, lines, out)
@@ -572,7 +567,7 @@ func cmdSearch(args []string) int {
 		}
 	} else {
 		for _, h := range hits {
-			lines = append(lines, fmt.Sprintf("%-44s %-9s %s", h.Path, h.Type, h.Title))
+			lines = append(lines, fmt.Sprintf("%-44s %s", h.Path, h.Type))
 		}
 		for i := range hits {
 			hits[i].Lines = nil // json carries per-line detail only with --lines

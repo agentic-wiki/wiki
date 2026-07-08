@@ -130,7 +130,7 @@ echo "--- json output ---"
 contains "$($BIN list --where type=concept --format json)" '"type": "concept"'
 
 echo "--- csv output: header row from json fields ---"
-contains "$($BIN list --where type=concept --format csv)" "path,name,type,title,tags"
+contains "$($BIN list --where type=concept --format csv)" "_path,type"
 
 echo "--- tsv output: tab-separated header ---"
 contains "$($BIN property type --format tsv)" "$(printf 'name\tcount')"
