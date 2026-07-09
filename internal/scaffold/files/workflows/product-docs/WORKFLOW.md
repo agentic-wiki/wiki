@@ -39,6 +39,8 @@ my-docs/
 └── log.md                # dated record of enrichment / sync passes (see Ingesting)
 ```
 
+**As one product grows, group its pages by area.** A flat root is fine for a handful of pages; once a couple dozen pile up (concepts, references, examples, longer deep-dives) it stops being scannable. Sort them into shallow folders by **area**, a sub-system or domain a reader would look under (`payments/`, `webhooks/`, `auth/`), each with its own `index.md`. This applies to **every graph-layer page, not just concepts** (only guides are exempt, they live in the `guides/` layer). It is a browsing aid, not a boundary: pages still link freely across areas (define-once-link-everywhere), and the graph, not the tree, carries the relationships. Keep it one level deep, group by area (not by `type`, no `concepts/` folder), and create an area only once a real cluster exists rather than pre-building empty folders.
+
 **Multiple products?** Add one folder level, a folder per product (`checkout/`, `billing/`), each repeating the shape above (its own concepts + `guides/` + `index.md`); the root `index.md` then links to each product. Keep it shallow either way: the graph (links), not the folder tree, is how readers navigate.
 
 ## The entry point (`index.md`)
@@ -56,6 +58,7 @@ Guides are the **parallel entry layer**: when they exist they are the primary wa
 Each concept is **one atomic idea**, defined **once**, and linked to what it relates to:
 
 - **Define once, link everywhere.** A term is explained on its own page; every other page that mentions it **links** to that page instead of re-explaining it (a link is a reference, not a copy). This one rule is what keeps docs consistent: the definition changes in a single place.
+- **Distinct ideas stay distinct.** Closely related or similarly named things (a type and its factory, a resource and its setup/lifecycle) are still separate concepts: give each its own page and link them. Being adjacent is a reason to link, not to merge. Atomic cuts both ways, don't split one idea across pages, don't fold two into one.
 - **Link generously.** The value is the graph. `wiki backlinks /checkout/idempotency.md` shows everything that depends on the concept; `wiki links` shows what it builds on.
 - **concept vs reference**: a `concept` explains an idea ("what idempotency is, and why"); a `reference` is precise lookup material ("the `/charges` endpoint and its fields"). Same graph, different texture. Split them when readers want "understand" apart from "look up"; merge them if that is overkill.
 
@@ -83,7 +86,7 @@ When products coexist (a folder each, see *Structure*), a concept **shared** by 
 Docs are usually distilled from **source material**: source code, specs, tickets, existing docs, a subject-matter expert. That material is the *input*, not the wiki; your job is to turn it into atomic, linked concepts. Do it in two phases, and gradually, not one giant edit:
 
 1. **Extract, into an intermediate place.** Pull the relevant facts out of the source into rough `type: draft` notes in `inbox/` (one draft per source, area, or question), *before* shaping them. This is a good task to delegate to a separate extraction pass or agent: point it at the source, have it dump facts as drafts, no wiki conventions required yet. `inbox/` is `ignore_orphans`'d, so these unshaped drafts don't pollute `wiki orphans`.
-2. **Build incrementally, from the drafts.** Promote drafts into concept/reference entries a few at a time: write one atomic page, link it to what exists, `wiki check`, repeat. Small batches keep the graph consistent and reviewable, and let `wiki unresolved` guide you, each concept you write names others, and those names become your next to-write items. Prefer this over a single massive dump: a hundred pages landed at once are unlinked, unreviewed, and inconsistent.
+2. **Build incrementally, from the drafts.** Promote drafts into concept/reference entries a few at a time: write one atomic page, **file it into its area folder** (see *Structure*) rather than leaving everything at the root, link it to what exists, `wiki check`, repeat. Small batches keep the graph consistent and reviewable, and let `wiki unresolved` guide you, each concept you write names others, and those names become your next to-write items. Prefer this over a single massive dump: a hundred pages landed at once are unlinked, unreviewed, and dumped flat at the root.
 
 Keep **provenance**: link a concept back to where it came from (a `type: source` entry, or a `source:` / `resource:` field), so a fact can be re-checked against the source later.
 
@@ -96,6 +99,7 @@ Scale the ceremony to the job: a small, well-understood product can skip the inb
 - `wiki check`, then `wiki unresolved` (the to-write list) and `wiki orphans` (a concept nothing links to is **undiscoverable**, link it in from a related concept or the product index).
 - Reread the stalest pages (`wiki list --sort=timestamp --reverse`) as the product changes.
 - Watch for a concept explained in two places: merge to one and link.
+- When the root gets crowded (a couple dozen pages, concepts and deep-dives alike, or clear clusters emerge), sort them into **area folders** with `wiki move` (see *Structure*), which rewrites the links as it goes. Group by area, keep it one level deep, and let the graph keep crossing folders.
 
 ## Answering everyday questions
 

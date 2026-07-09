@@ -58,7 +58,7 @@ wiki list                     # every entry
 
 `wiki init` scaffolds a general purpose knowledge base with a light backlog. It can also start from other shapes (a kanban tracker, an org knowledge base, product docs): see [Starter workflows](#starter-workflows).
 
-That `my-wiki` folder is the whole thing. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
+That's the whole thing: a folder of plain Markdown. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
 > [!NOTE]
 > If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Absolute path in vault*, turn on **Automatically update internal links**. (`wiki` recognizes `[[wikilinks]]` for compatibility but flags them in `wiki check`, and `wiki tidy --wikilinks` converts them to standard links). See the [format spec](https://github.com/agentic-wiki/spec#links).
