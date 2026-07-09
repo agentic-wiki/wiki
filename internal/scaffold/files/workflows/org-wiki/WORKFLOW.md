@@ -12,7 +12,7 @@ This file ships as a **template with options**. Before filling the base, sit wit
 
 - **Which entities are first-class** (each a `type` and a folder). The shipped set is `project, client, product, person, team, decision, meeting, process`, plus `note`/`concept` for everything else and `source` for external references. Keep the ones you will actually file; drop the rest. `entity` is the generic fallback for a named thing with no dedicated type (a vendor, a competitor, a place).
 - **How far the people model goes**: `person` alone, or `person` + `team`? Do you track external people (client contacts) as `person` too, or only staff?
-- **Whether you track work here at all** (see *Projects and initiatives*): light inline checklists, or a separate `project-backlog` bundle.
+- **How much work-tracking lives here** (see *Projects and initiatives*): inline milestone checklists, a basic per-project board, or a richer project backlog for anything heavier. Check `wiki init --workflow project-backlog` on `/tmp` to get a `WORKFLOW.md` example if that's what is needed.
 - **The tag vocabulary** for cross-cutting themes (`security`, `2026`, `gdpr`, ...).
 
 Then scaffold a **skeleton** the user validates: the chosen folders (each with an `index.md`), the root `index.md` linking to them, and one real entry of each main type in the right shape. Confirm it reads right, then fill in the rest. **When this is done, delete this "First run" section: it has served its purpose.**
@@ -73,7 +73,9 @@ Fully-formed knowledge can be created in place; the inbox is only for unrefined 
 
 ## Projects and initiatives
 
-A **project** (or a broader **initiative**, add the type in first run if you want it distinct) is a knowledge entry: what it is, who is on it, its client/product, its current `status`, and its **mid-term milestones as an inline `- [ ]` checklist** on the entry. Those checkboxes are the project's *own* subtasks (a checklist belongs to the entry it lives in), a quick way to track achievements without a separate tracker:
+A **project** (or a broader **initiative**, add the type in first run if you want it distinct) is a knowledge entry: what it is, who is on it, its client/product, and its current `status`. How you track the work under it scales; stop at the lightest step that fits.
+
+**1. Milestones as an inline checklist.** For a handful of checkpoints, list them as `- [ ]` items on the project entry. Those checkboxes are the project's *own* subtasks (a checklist belongs to the entry it lives in):
 
 ```markdown
 ---
@@ -89,7 +91,21 @@ Migrate Acme off the legacy stack. Client: [Acme](/clients/acme.md). Product: [V
 - [ ] Cutover
 ```
 
-`wiki checkboxes /projects/acme-migration.md` then shows that project's checklist. Keep this **light**: when a project needs real task-tracking (many tasks, assignees, sprints, a board), give it its own **`project-backlog` bundle** (a sub-folder or a sibling repo) and link to it from the project entry, that is the tool for the job. org-wiki stays the knowledge layer; don't grow a full backlog in here.
+`wiki checkboxes /projects/acme-migration.md` shows that checklist.
+
+**2. A basic board.** When the work is real items to schedule and query (not just checkpoints), track each as a `type: task` entry that owns its `status`, and turn the **project entry itself into the board**: `## Now` / `## Next` sections of **plain links** to those tasks (not checkboxes, the task owns its state, so nothing on the board can drift). Keep the tasks in a folder beside the project so they group and scope cleanly:
+
+```
+projects/
+├── acme-migration.md         # type: project, and the board (## Now / ## Next link the tasks)
+└── acme-migration/           # this project's tasks
+    ├── migrate-schema.md     (type: task, status: in-progress)
+    └── cutover-plan.md       (type: task, status: todo)
+```
+
+List the tasks with `wiki list --where type=task --prefix projects/acme-migration/` (add `--where status=blocked`, and so on). Done work leaves the board: set `status: done` and remove its link (delete the file, git keeps it). A deliberately bare kanban, one board and one `status` field: grow it as you need priorities, cycles, or epics.
+
+**3. A dedicated `project-backlog` bundle.** When a project outgrows the basic board (many tasks, assignees, sprints, cross-team work, epics/milestones), give it its own **`project-backlog` bundle** (`wiki init --workflow project-backlog`, a sub-folder or a sibling repo) and link to it from the project entry. org-wiki stays the knowledge layer; the backlog bundle is the tracker.
 
 ## Decisions and meetings (optional)
 
@@ -108,52 +124,23 @@ Little and often, aim for a base that gets **more discoverable** over time.
 
 ## Answering everyday questions
 
-Most questions are a query plus judgment: `wiki` narrows the set, you read and decide. The palette, roughly grouped:
-
-**Recall a specific thing**
+Most questions are a query plus judgment: `wiki` narrows the set, you read and decide. Beyond AGENTS.md's general palette (`search`, `read`, `backlinks`/`links`, `unresolved`/`orphans`), the queries you reach for most here filter the entity graph:
 
 ```sh
-wiki read /projects/acme-migration.md          # its body (frontmatter stripped)
-wiki search "postgres migration"               # free-text over every entry (frontmatter + body)
-wiki search "gdpr" --lines                     # matching lines as file:line
+wiki list --where type=project --where status=active            # active projects (status!=archived excludes only archived)
+wiki list --where type=project --where tags=security            # by cross-cutting tag
+wiki list --where type=person --where team=/teams/web.md        # a team's people (if you use a team field)
+wiki list --where type=person --where team=                     # people on no team yet (empty tests emptiness)
+wiki list --where type=task --prefix projects/acme-migration/   # one project's tasks (basic-board layout)
 ```
 
-**Filter the set** (any frontmatter field; repeat `--where` for AND; `--prefix` scopes to a subtree)
-
-```sh
-wiki list --where type=project --where status=active      # active projects
-wiki list --where type=project --where status!=archived   # everything not archived (!= negates)
-wiki list --where type=project --where tags=security      # by topic tag
-wiki list --where type=person --where team=/teams/web.md  # a team's people (if you use a team field)
-wiki list --where type=person --where team=               # people on no team yet (empty tests emptiness; team!= = those with one)
-wiki list --where type=task --prefix projects/acme-migration/   # scope to one project's subtree
-```
-
-**Follow the graph** (what links to what)
-
-```sh
-wiki backlinks /clients/acme.md      # every project, meeting, decision touching Acme
-wiki backlinks /people/dana.md       # what Dana is on
-wiki links /projects/acme-migration.md   # what that project references
-```
-
-**Export and report** (the tool narrows; a skill does the rest)
-
-```sh
-wiki table /clients/acme/headcount.md --format csv          # a dataset's table, for a sheet or duckdb
-wiki list --where type=project --format json \             # a status roll-up
-  | jq -r '.[] | [.title, .status, .lead] | @csv'
-```
-
-Worked examples:
-
-- **"Who leads the Acme migration?"**: `wiki read /projects/acme-migration.md` and read its lead link; or, if you keep a `lead:` field, `wiki list --where type=project --where lead=/people/dana.md` for everything Dana leads.
+- **"Who leads the Acme migration?"**: `wiki read /projects/acme-migration.md` and read its lead link (or `wiki list --where lead=/people/dana.md` if you keep a `lead:` field).
 - **"What do we have on Acme?"**: `wiki backlinks /clients/acme.md`, plus `wiki read /clients/acme.md`.
 - **"Which projects are blocked?"**: `wiki list --where type=project --where status=blocked`.
 - **"What's unwritten?"**: `wiki unresolved` (a client or person you referenced but never gave a page).
 
-Anything beyond a filter (a roll-up, a burndown, a report) is a small skill over `wiki list --format json` (which carries every frontmatter field), not a `wiki` feature. The tool finds the candidates; you and the skill do the judgment and the math.
+Anything beyond a filter (a roll-up, a headcount, a report) is a small skill over `wiki list --format json` (which carries every frontmatter field), not a `wiki` feature.
 
 ## Make it yours
 
-Nothing here is fixed beyond "every entry has a `type`." Which entities are first-class, how people and teams are modeled, whether you track work inline or in a `project-backlog`: reshape this file and the folders to match how your org actually runs.
+Nothing here is fixed beyond "every entry has a `type`." Which entities are first-class, how people and teams are modeled, whether work is inline checklists, a basic board, or a `project-backlog`: reshape this file and the folders to match how your org actually runs.

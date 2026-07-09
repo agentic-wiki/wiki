@@ -1,7 +1,7 @@
 spec = "0.1"
 
 # The entry vocabulary
-types = ["note", "concept", "entity", "person", "team", "client", "product", "project", "decision", "meeting", "process", "source", "draft"]
+types = ["note", "concept", "entity", "person", "team", "client", "product", "project", "task", "decision", "meeting", "process", "source", "draft"]
 
 # Files that are NOT wiki entries (excluded from index and check; globs supported)
 ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
