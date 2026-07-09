@@ -1,9 +1,9 @@
 spec = "0.1"
 # The entry vocabulary
-types = ["concept", "reference", "guide", "example", "note", "decision", "source", "draft"]
+types = ["concept", "reference", "guide", "example", "note", "decision", "source"]
 
 # Files that are NOT wiki entries (excluded from index and check; globs supported)
-ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
+ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md", "raw/**"]
 
-# Entries that stay indexed and queryable but are kept out of `wiki orphans` (globs supported)
-ignore_orphans = ["inbox/**"]
+# Optionally keep a subtree indexed but out of the `wiki orphans` report, e.g. a parked backlog (globs supported)
+# ignore_orphans = ["archive/**"]

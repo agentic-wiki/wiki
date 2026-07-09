@@ -11,7 +11,7 @@ A few paragraphs on what this product is (the entry point, see WORKFLOW.md).
 - [ ] Link the guides (if any): the guided way in.
 - [ ] Link the key concepts to start from, for readers not following a guide.
 
-_One product: keep it flat (concepts at the root, a `guides/` folder). Multiple: a folder each, linked from here._
+_One product: file pages into a few area folders (`payments/`, `auth/`, …) plus a `guides/` folder; only general-purpose pages sit at the root. Multiple products: a folder each, linked from here._
 
 ---
 

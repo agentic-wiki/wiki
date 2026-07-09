@@ -3,3 +3,6 @@
 .env
 .env.local
 .DS_Store
+
+# Ephemeral scratch, regenerable content
+raw/
