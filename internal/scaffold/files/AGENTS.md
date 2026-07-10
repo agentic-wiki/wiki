@@ -19,7 +19,7 @@ On a brand-new base, treat `WORKFLOW.md` as the starting point, not the final sp
 Three orthogonal axes classify every entry (keep them separate and the base stays friction-free):
 
 - **Folder** = one stable home, by domain (`finance/`, `tech/infra/`). Moving is `wiki move` (it rewrites the links for you); never hand-move a file.
-- **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), declared in `wiki.toml`, required on every entry.
+- **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), required on every entry. Free-form by default; declare a `types` vocabulary in `wiki.toml` to enforce a fixed set (`wiki check` then errors on any undeclared type). `wiki property type --counts` shows what's in use.
 - **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
 
 **One thing per entry.** Similar-but-distinct things (a `type` and its factory) each get their own entry, linked to each other, never folded into one. Being adjacent or similarly named is a reason to link, not to merge. Merge only true duplicates: two entries for the *same* thing.

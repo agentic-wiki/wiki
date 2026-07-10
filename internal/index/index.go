@@ -855,7 +855,9 @@ func (idx *Index) Check() []Issue {
 			case e.Type == "":
 				issues = append(issues, Issue{"error", e.Path, "missing required `type` (or add this file to `ignore` in wiki.toml if it is not a bundle entry)"})
 			case !idx.Bundle.KnownType(e.Type):
-				issues = append(issues, Issue{"warning", e.Path, "type not in vocabulary: " + e.Type})
+				// A vocabulary is opt-in (KnownType is true when none is declared), so
+				// reaching here means wiki.toml `types` is set and this type is not in it.
+				issues = append(issues, Issue{"error", e.Path, "type `" + e.Type + "` not in wiki.toml `types`; add it there or fix the entry"})
 			}
 			// timestamp is optional, but if present it must be valid ISO 8601.
 			if _, ok := e.fm["timestamp"]; ok {

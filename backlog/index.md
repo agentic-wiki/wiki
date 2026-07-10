@@ -11,6 +11,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](/2-query-surface/013-fuzzy-search.md) (low)
 
 ## 3 — Graph & mutation
+- [ ] [switch canonical on-disk links to relative](/3-graph-and-mutation/012-switch-canonical-links.md)
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
 
@@ -18,11 +19,13 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [reframe stack: format + tool + workflow](/4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](/4-release-and-docs/004-skills-sync.md)
 
+
 ## Debt
 - [ ] [table parser: rare `|` edge cases](/debt/002-table-pipe-edge-cases.md)
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [wiki.toml `types` is an opt-in vocabulary](/conformance/008-types-vocabulary-optional.md): declaring `types = [...]` is now optional, no list (or empty) means any non-empty `type` is valid (free-form, like tags); a declared list is an enforced gate where `wiki check` **errors** (was: warned) on an undeclared type, naming the fix. Fixes the footgun where an absent list warned on everything, and makes missing-type and undeclared-type consistently errors. `KnownType` returns true when no vocabulary is declared; scaffold starters ship the suggested vocabulary **commented out** (free-form until you opt in). Swept AGENTS + `default`/`product-docs` workflows, tests + smoke.
 - [x] [search: match by word (AND default) + `--any` / `--exact`](/2-query-surface/012-search-any-word.md): `wiki search` tokenizes a multi-word query and matches a line holding **every** word (any order) by default (was: the whole query as one contiguous substring). `--any` broadens to any one word (OR); `--exact` restores the verbatim-phrase match (the literal-phrase escape hatch). A single-word query is unchanged. Mode is a param into `index.Search` (one `Contains`-per-line site, zero value = the AND default); `--any` and `--exact` are mutually exclusive. Swept CLI usage/help, AGENTS, README, smoke.
 - [x] [detect & convert wikilinks](/conformance/003-wikilink-detection.md): Obsidian `[[wikilinks]]` are now recognized as a compat shim (ported from the `obsy` predecessor into an isolated `internal/wikilink` package, zero-dep). They resolve into the graph Obsidian-style (basename-anywhere + shortest-path tiebreak + `#anchor`/`|display`/`![[embed]]`/`aliases:`), so `backlinks`/`orphans`/`links` see them and a relocation re-resolves them by basename; `wiki check` flags them once per file; `wiki tidy --wikilinks` converts them to standard root-absolute markdown (embed -> plain reference), leaving+reporting the unresolvable. Format stays markdown-links-only; the compat footprint is quarantined (`internal/wikilink` + one `Link.Wikilink` bool for `Move` to skip + `Entry.wikilinks`), no query-output-contract changes. The stderr nudge was dropped as an avoidable spread (check + tidy cover it).
 - [x] stress-test 6/7 polish: `check`'s missing-`type` error now points at the fix (add a type, or list the file in `wiki.toml` `ignore`), since two testers hit a dead end with a stray `PROMPT.md`; and AGENTS.md now states reserved files carry **no frontmatter** (root `index.md` excepted for `okf_version`), since testers added `okf_version` to sub-folder `index.md` files. Rest of the feedback was confirmations, already-resolved (the `title: ""` json complaint is fixed by the verbatim-json/Entry-trim work), or out-of-scope by design (search `--exclude`, tag governance, multi-hop graph queries).

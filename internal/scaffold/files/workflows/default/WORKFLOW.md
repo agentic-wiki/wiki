@@ -10,7 +10,7 @@ This is the `default` workflow: a general-purpose knowledge base (notes, concept
 
 - **Group by domain, not by type.** A travel plan (`concept`), its flights (`dataset`), and the trip (`event`) sit together in `personal/travel/`, sliced by `type` on demand, not scattered across `concepts/ datasets/ events/`.
 - **Keep the top levels stable and relatively shallow** (2–3 folders deep). The deciding question for a folder is *what it is*. A **collection** folder (`projects/`, `research/`) holds otherwise-independent entries; its `index.md` is just the entry point that links what's inside, so you and an agent read top-down. A folder that is a single **concept** with parts (one initiative, one product) is load-bearing: front it with a typed `thing.md` beside its `thing/` folder, since a concept needs a `type` and a link target, and a typeless `thing/index.md` can be neither.
-- The starting `type` vocabulary is in `wiki.toml`; extend it as you introduce new kinds.
+- Types are free-form: use whatever kinds fit, and `wiki property type --counts` shows what's in use. To enforce a fixed set, uncomment (and edit) `types` in `wiki.toml`; `wiki check` then errors on any undeclared type. The commented list there is a suggested starting vocabulary.
 
 A shape to steal (pick buckets that match how *you* think, not these):
 

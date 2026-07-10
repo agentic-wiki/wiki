@@ -392,7 +392,7 @@ func TestCheckSeverity(t *testing.T) {
 		"index.md":     "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n", // valid
 		"a.md":         "---\ntype: note\n---\nok\n",                   // valid, linked
 		"notype.md":    "---\ntitle: x\n---\nbody\n",                   // ERROR: missing type
-		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",       // WARNING unknown type + WARNING broken link
+		"weird.md":     "---\ntype: bogus\n---\n[x](/gone.md)\n",       // ERROR undeclared type (vocab declared) + WARNING broken link
 		"sub/index.md": "---\ntype: note\n---\nbody\n",                 // WARNING: reserved file carries frontmatter
 		"a/b/c/d/e.md": "---\ntype: note\n---\nbody\n",                 // WARNING: depth > 3
 	})
@@ -405,11 +405,11 @@ func TestCheckSeverity(t *testing.T) {
 			warns++
 		}
 	}
-	if errs != 1 {
-		t.Errorf("errors = %d, want 1 (missing type only; a broken link is a warning, not an error)", errs)
+	if errs != 2 {
+		t.Errorf("errors = %d, want 2 (missing type + undeclared type; a broken link is a warning, not an error)", errs)
 	}
-	if warns != 4 {
-		t.Errorf("warnings = %d, want 4 (unknown type, broken link, reserved-file frontmatter, depth)", warns)
+	if warns != 3 {
+		t.Errorf("warnings = %d, want 3 (broken link, reserved-file frontmatter, depth)", warns)
 	}
 	// A broken link is a warning per OKF (not-yet-written knowledge), so it never fails the lint.
 	if !hasWarning(idx.Check(), "/weird.md", "broken link") {
@@ -425,6 +425,44 @@ func TestCheckSeverity(t *testing.T) {
 	}
 	if !strings.Contains(typeErr, "ignore") {
 		t.Errorf("missing-type error should hint at wiki.toml `ignore`, got %q", typeErr)
+	}
+}
+
+func TestCheckTypeVocabulary(t *testing.T) {
+	// A declared vocabulary (build() sets types=[note,concept]) makes an undeclared
+	// type an error that names the fix.
+	idx := build(t, map[string]string{"a.md": "---\ntype: widget\n---\nx\n"})
+	var msg string
+	for _, is := range idx.Check() {
+		if is.Level == "error" && is.Entry == "/a.md" {
+			msg = is.Msg
+		}
+	}
+	if msg == "" || !strings.Contains(msg, "wiki.toml `types`") {
+		t.Errorf("undeclared type should error and name the fix, got %q; all=%+v", msg, idx.Check())
+	}
+
+	// No declared vocabulary (opt-in): any non-empty type passes, only a missing
+	// type still errors.
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "wiki.toml"), []byte("spec=\"0.1\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("---\ntype: widget\n---\nx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := bundle.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	free, err := Build(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, is := range free.Check() {
+		if is.Level == "error" {
+			t.Errorf("no declared vocabulary: type should be free-form, got error %+v", is)
+		}
 	}
 }
 

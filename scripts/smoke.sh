@@ -79,6 +79,13 @@ $BIN check >/dev/null   # broken link no longer fails the lint
 contains "$($BIN check)" "/finance/q1-receipts.md"
 contains "$($BIN check)" "warning"
 
+echo "--- undeclared type errors when a vocabulary is declared (opt-in) ---"
+printf -- '---\ntype: bogustype\n---\nx\n' > "$TMP/finance/bogus.md"
+! $BIN check >/dev/null 2>&1                          # undeclared type => exit 1
+contains "$($BIN check 2>&1 || true)" "bogustype"     # and the error names it
+rm "$TMP/finance/bogus.md"
+$BIN check >/dev/null                                 # clean again (only the pre-existing warning)
+
 echo "--- unresolved finds the broken link ---"
 contains "$($BIN unresolved)" "/finance/q1-receipts.md"
 

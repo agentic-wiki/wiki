@@ -66,10 +66,17 @@ func TestKnownType(t *testing.T) {
 			t.Errorf("%q should be known", ty)
 		}
 	}
-	// index/log are reserved filenames, not content types; bogus is undeclared.
+	// With a declared vocabulary, an undeclared type is unknown.
 	for _, ty := range []string{"index", "log", "bogus"} {
 		if b.KnownType(ty) {
 			t.Errorf("%q is not a declared content type", ty)
+		}
+	}
+	// No declared vocabulary (opt-in): every type is allowed.
+	none := &Bundle{}
+	for _, ty := range []string{"note", "anything", "made-up"} {
+		if !none.KnownType(ty) {
+			t.Errorf("%q should be allowed when no vocabulary is declared", ty)
 		}
 	}
 }

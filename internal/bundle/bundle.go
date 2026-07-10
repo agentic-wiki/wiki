@@ -68,9 +68,11 @@ func load(root, cfg string) (*Bundle, error) {
 	}, nil
 }
 
-// KnownType reports whether t is a content type declared in wiki.toml.
+// KnownType reports whether t is an allowed content type. A declared vocabulary
+// (`types` in wiki.toml) is opt-in: when none is declared (empty list), every
+// type is allowed and this returns true; when one is declared, t must be in it.
 func (b *Bundle) KnownType(t string) bool {
-	return slices.Contains(b.Types, t)
+	return len(b.Types) == 0 || slices.Contains(b.Types, t)
 }
 
 // okfVersions maps an agentic-wiki spec version to the OKF version it embeds.

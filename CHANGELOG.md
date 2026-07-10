@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.7.0
+
+### Improved
+
+- **`wiki.toml` `types` is now an opt-in vocabulary.** Declaring `types = [...]` is optional: with no list (or an empty one) any non-empty `type` is valid, types are free-form, like tags. Declaring a list turns it into an enforced gate, `wiki check` now **errors** (was: only warned) on any entry whose `type` is not in the list, and the message names the fix. This removes the old footgun where an *absent* list warned on every entry, and makes the two type problems consistent (a missing type and an undeclared type are both errors). The scaffold starters ship the suggested vocabulary **commented out**, so a fresh base is free-form until you opt in. `wiki property type --counts` remains the way to see which types are in use.
+
 ## v0.6.0
 
 ### New
