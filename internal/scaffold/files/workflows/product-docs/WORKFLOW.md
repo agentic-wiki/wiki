@@ -34,8 +34,8 @@ my-docs/
 ├── guides/                     # the linear layer (type: guide): the only layer not area-filed
 │   ├── index.md                # guides in reading order
 │   ├── getting-started.md      # a single-page guide
-│   └── accepting-payments/     # a longer guide is a sequence of chapters
-│       ├── index.md            # lists its chapters in order
+│   ├── accepting-payments.md   # a sequence's landing (type: guide): intro + chapter order
+│   └── accepting-payments/     # its chapters
 │       ├── 01-setup.md         # each chapter links next / prev
 │       └── 02-first-charge.md
 │
@@ -91,7 +91,7 @@ Each concept is **one atomic idea**, defined **once**, and linked to what it rel
 A **guide** (`type: guide`) walks a reader through a task start to finish, **linking into concepts** for depth rather than restating them. It comes in two sizes:
 
 - **A single page** for something short.
-- **A sequence** for anything longer: one `type: guide` entry per chapter/step, each with a **next** and **previous** link so the reader clicks through in order (like a book's chapters). Keep the chapters in a folder (`guides/accepting-payments/01-setup.md`, `02-first-charge.md`, …) with a short landing page listing them in order.
+- **A sequence** for anything longer: one `type: guide` entry per chapter/step, each with a **next** and **previous** link so the reader clicks through in order (like a book's chapters). Give the sequence a **landing entry** (`guides/accepting-payments.md`, `type: guide`: the intro, listing the chapters in order) and keep the chapters beside it under `guides/accepting-payments/` (`01-setup.md`, `02-first-charge.md`, …). The landing is a real typed guide, not a typeless `.../index.md`.
 
 Rules either way:
 
@@ -138,7 +138,7 @@ wiki list --where type=reference --where tags=deprecated   # combine fields (rep
 wiki list --prefix checkout/                               # everything for one product (multi-product layout)
 ```
 
-- **"What is X?"**: `wiki search "X"`, then `wiki read` the concept.
+- **"What is an idempotency key?"**: `wiki search "idempotency key"`, then `wiki read` the concept (every word by default; `--any` broadens, `--exact` matches the phrase).
 - **"What must I understand first?"**: `wiki links <page>` (its prerequisites) and `wiki backlinks <page>` (what builds on it).
 - **"What's missing or unreachable?"**: `wiki unresolved` (unwritten) plus `wiki orphans` (unlinked).
 

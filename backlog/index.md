@@ -6,6 +6,10 @@ okf_version: "0.1"
 
 Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki checkboxes`. Every entry: `wiki list --where type=task`. Debt only: `wiki list --where type=task --where tags=debt`.
 
+## 2 — Query surface
+- [ ] [status: count of ignored files](/2-query-surface/011-status-ignored-count.md)
+- [ ] [search --fuzzy: opt-in typo-tolerant matching](/2-query-surface/013-fuzzy-search.md) (low)
+
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](/3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](/3-graph-and-mutation/008-spec-upgrade.md)
@@ -19,6 +23,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [move: no rollback on a partial write](/debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [search: match by word (AND default) + `--any` / `--exact`](/2-query-surface/012-search-any-word.md): `wiki search` tokenizes a multi-word query and matches a line holding **every** word (any order) by default (was: the whole query as one contiguous substring). `--any` broadens to any one word (OR); `--exact` restores the verbatim-phrase match (the literal-phrase escape hatch). A single-word query is unchanged. Mode is a param into `index.Search` (one `Contains`-per-line site, zero value = the AND default); `--any` and `--exact` are mutually exclusive. Swept CLI usage/help, AGENTS, README, smoke.
 - [x] [detect & convert wikilinks](/conformance/003-wikilink-detection.md): Obsidian `[[wikilinks]]` are now recognized as a compat shim (ported from the `obsy` predecessor into an isolated `internal/wikilink` package, zero-dep). They resolve into the graph Obsidian-style (basename-anywhere + shortest-path tiebreak + `#anchor`/`|display`/`![[embed]]`/`aliases:`), so `backlinks`/`orphans`/`links` see them and a relocation re-resolves them by basename; `wiki check` flags them once per file; `wiki tidy --wikilinks` converts them to standard root-absolute markdown (embed -> plain reference), leaving+reporting the unresolvable. Format stays markdown-links-only; the compat footprint is quarantined (`internal/wikilink` + one `Link.Wikilink` bool for `Move` to skip + `Entry.wikilinks`), no query-output-contract changes. The stderr nudge was dropped as an avoidable spread (check + tidy cover it).
 - [x] stress-test 6/7 polish: `check`'s missing-`type` error now points at the fix (add a type, or list the file in `wiki.toml` `ignore`), since two testers hit a dead end with a stray `PROMPT.md`; and AGENTS.md now states reserved files carry **no frontmatter** (root `index.md` excepted for `okf_version`), since testers added `okf_version` to sub-folder `index.md` files. Rest of the feedback was confirmations, already-resolved (the `title: ""` json complaint is fixed by the verbatim-json/Entry-trim work), or out-of-scope by design (search `--exclude`, tag governance, multi-hop graph queries).
 - [x] trimmed the `Entry` struct to a single source of truth: dropped the materialized `Title`/`Tags` fields (they duplicated `fm`) and the `Name` field (it duplicated `basename(Path)`; replaced by a computed `base()` accessor used by Resolve, reserved-file checks, and the spaced-name lint), following the `timestamp` precedent (read/compute on demand, never stored). Canonical columns for text `list`/`search` + csv/tsv are now just `_path,type` (the two fields every entry is guaranteed to have); title/tags/status/etc are json-only (emitted verbatim from `fm`). `wiki tags`/`status` tag counts read via `parse.Strings`/`TagCounts`; `read` json is `{_path,type,body}`; `SearchHit` dropped `title`. Kept `Type` (the one required, validated field, and the classifier shown in every listing).

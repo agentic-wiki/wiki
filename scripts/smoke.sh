@@ -155,6 +155,12 @@ contains "$($BIN search --lines income)" "/finance/income.md:"
 echo "--- search --where filters ---"
 contains "$($BIN search --where type=dataset rent)" "/finance/expenses.md"
 
+echo "--- search modes: all (default) / --any / --exact ---"
+contains "$($BIN search 'monthly tracking')" "/finance/income.md"          # default AND: both words, same line
+! $BIN search "monthly rent" >/dev/null                                     # AND: words in different files => no match
+contains "$($BIN search --any 'monthly rent')" "/finance/income.md"         # --any: either word matches
+! $BIN search --exact "monthly tracking" >/dev/null                         # not a verbatim phrase => exit 1
+
 echo "--- search no match => exit 1 ---"
 ! $BIN search zzzznope >/dev/null
 

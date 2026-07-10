@@ -22,7 +22,18 @@ Three orthogonal axes classify every entry (keep them separate and the base stay
 - **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), declared in `wiki.toml`, required on every entry.
 - **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
 
-Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no frontmatter at all (so no `type`): `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle); the one exception is the bundle-root `index.md`, which carries `okf_version`. Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries: absent from the index and from `check`. Paths matched by `ignore_orphans` stay full entries (indexed and `check`ed), only kept out of the `orphans` report (a parked backlog, say). So a file you want left out entirely (a `LEARNINGS.md`, a `README`) goes in `ignore`, not `ignore_orphans`. Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
+**One thing per entry.** Similar-but-distinct things (a `type` and its factory) each get their own entry, linked to each other, never folded into one. Being adjacent or similarly named is a reason to link, not to merge. Merge only true duplicates: two entries for the *same* thing.
+
+Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no frontmatter at all (so no `type`): `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle); the one exception is the bundle-root `index.md`, which carries `okf_version`.
+
+Since an `index.md` holds no frontmatter (no `type`, so no concept of its own), the two serve different jobs, and the deciding question is what the folder *is*.
+
+- A **`thing.md` is load-bearing**: when a folder's contents are the parts of one thing (a project, a product, a plugin), that thing needs a home that can be typed, linked to, and found, so it gets a `thing.md` beside its `thing/` folder, never a typeless `thing/index.md`. 
+- A **folder `index.md` is only the entry point into a collection**: it fronts a folder of otherwise-independent entries (the bundle root, `projects/`, `people/`) to navigate what's inside, and carries no concept of its own.
+
+Ask which the folder is: one concept with parts (`thing.md`), or a bag of separate entries (`index.md`).
+
+`wiki` only indexes `.md` files. Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries: absent from the index and from `check`. Paths matched by `ignore_orphans` stay full entries (indexed and `check`ed), only kept out of the `orphans` report (a parked backlog, say). So a file you want left out entirely (a `LEARNINGS.md`, a `README.md`) goes in `ignore`, not `ignore_orphans`. Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
 
 ## Get oriented
 
@@ -50,7 +61,9 @@ A query is only as good as the indexing preceding it: an entry nothing links to 
 ### Find and recall
 
 ```sh
-wiki search "docker networking"                # literal, case-insensitive, over frontmatter + body
+wiki search "docker networking"                # every word by default (AND), case-insensitive, over frontmatter + body
+wiki search "docker networking" --any          # any word (OR): broadens the net
+wiki search "docker networking" --exact        # the verbatim phrase (contiguous)
 wiki search "docker" --lines                   # matching lines as file:line
 wiki list --where type=concept --where tags=docker   # filter by kind and topic (repeatable = AND)
 wiki list --where type=task --where status=done       # any frontmatter field, one flag
@@ -61,7 +74,7 @@ wiki outline /tech/infra/docker.md             # its heading map
 wiki table /finance/expenses.md --format csv   # extract a dataset's table, for jq/duckdb
 ```
 
-`--prefix <path>` scopes to a subtree and works on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which is a substring scan of the whole file and will also match body text. Use `key!=value` for negation (`status!=done` is everything still open, including entries with no `status` yet). Compare against the empty string to test emptiness: `--where assignee=` is entries with no assignee (unset or blank), and `--where assignee!=` is those that have one. It stays equality/inequality only; richer reporting is a skill over `--format json`.
+`--prefix <path>` scopes to a subtree and works on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which matches query words as substrings anywhere in the file (frontmatter + body): by default every word must appear, in any order (broaden with `--any`, or narrow to a verbatim phrase with `--exact`). Use `key!=value` for negation (`status!=done` is everything still open, including entries with no `status` yet). Compare against the empty string to test emptiness: `--where assignee=` is entries with no assignee (unset or blank), and `--where assignee!=` is those that have one. It stays equality/inequality only; richer reporting is a skill over `--format json`.
 
 ### Follow the graph (what grep can't do)
 
@@ -118,7 +131,7 @@ wiki check        # warnings (e.g. a broken link) exit 0; errors (missing/unknow
 wiki check --fix  # apply the safe auto-repairs (e.g. okf_version sync)
 ```
 
-Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge duplicates, consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it).
+Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge true duplicates (two entries for one thing; similar-but-distinct entries stay separate and linked), consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it).
 
 ## Git and safety
 

@@ -139,6 +139,32 @@ func TestCmdSearch(t *testing.T) {
 		t.Errorf("type-filter search: %q", out)
 	}
 
+	// default (AND, every word): both words on one line matches ("step one")
+	out, code = capture(t, func() int { return cmdSearch([]string{"--lines", "step one"}) })
+	if code != 0 || !strings.Contains(out, "step one") {
+		t.Errorf("default all-words: %q (code %d)", out, code)
+	}
+	// default (AND): words on different lines -> no single line holds both -> no match
+	if _, code := capture(t, func() int { return cmdSearch([]string{"step run"}) }); code != 1 {
+		t.Errorf("default all-words disjoint exit=%d want 1", code)
+	}
+	// --any (OR): words on different lines both match ("step one", "run it")
+	out, code = capture(t, func() int { return cmdSearch([]string{"--lines", "--any", "step run"}) })
+	if code != 0 || !strings.Contains(out, "step one") || !strings.Contains(out, "run it") {
+		t.Errorf("--any OR search: %q (code %d)", out, code)
+	}
+	// --exact: the phrase "step one" is contiguous -> match; "step run" is not
+	if _, code := capture(t, func() int { return cmdSearch([]string{"--exact", "step one"}) }); code != 0 {
+		t.Errorf("--exact phrase exit=%d want 0", code)
+	}
+	if _, code := capture(t, func() int { return cmdSearch([]string{"--exact", "step run"}) }); code != 1 {
+		t.Errorf("--exact non-contiguous exit=%d want 1", code)
+	}
+	// --any and --exact are mutually exclusive -> usage error (exit 2)
+	if _, code := capture(t, func() int { return cmdSearch([]string{"--any", "--exact", "step"}) }); code != 2 {
+		t.Errorf("--any --exact exit=%d want 2", code)
+	}
+
 	// no match -> exit 1; no query -> exit 2
 	if _, code := capture(t, func() int { return cmdSearch([]string{"zzzznope"}) }); code != 1 {
 		t.Errorf("no-match exit=%d want 1", code)

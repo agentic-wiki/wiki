@@ -928,7 +928,7 @@ func TestSearch(t *testing.T) {
 	})
 
 	// case-insensitive, across files, sorted by path
-	hits := idx.Search("income", "", nil)
+	hits := idx.Search("income", "", nil, SearchAny)
 	if len(hits) != 2 || hits[0].Path != "/finance/income.md" || hits[1].Path != "/tech/notes.md" {
 		t.Fatalf("hits = %+v", hits)
 	}
@@ -938,23 +938,62 @@ func TestSearch(t *testing.T) {
 	}
 
 	// filters narrow the candidate set
-	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "note"}}); len(got) != 2 {
+	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "note"}}, SearchAny); len(got) != 2 {
 		t.Errorf("type=note = %d want 2", len(got))
 	}
-	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "concept"}}); len(got) != 0 {
+	if got := idx.Search("income", "", []PropFilter{{Key: "type", Value: "concept"}}, SearchAny); len(got) != 0 {
 		t.Errorf("type=concept = %d want 0", len(got))
 	}
-	if got := idx.Search("income", "finance/", nil); len(got) != 1 {
+	if got := idx.Search("income", "finance/", nil, SearchAny); len(got) != 1 {
 		t.Errorf("--prefix finance/ = %d want 1", len(got))
 	}
 
 	// frontmatter value (a tag) is searchable
-	if got := idx.Search("money", "", nil); len(got) != 1 || got[0].Path != "/finance/income.md" {
+	if got := idx.Search("money", "", nil, SearchAny); len(got) != 1 || got[0].Path != "/finance/income.md" {
 		t.Errorf("tag-value search = %+v", got)
 	}
 	// no match
-	if got := idx.Search("zzzznope", "", nil); len(got) != 0 {
+	if got := idx.Search("zzzznope", "", nil, SearchAny); len(got) != 0 {
 		t.Errorf("no-match = %d want 0", len(got))
+	}
+}
+
+func TestSearchModes(t *testing.T) {
+	idx := build(t, map[string]string{
+		"notes/a.md": "---\ntype: note\n---\nthe link graph is walked\nlinks resolve into the graph\napples and oranges\n",
+	})
+
+	// single word behaves identically across modes
+	for _, mode := range []SearchMode{SearchAny, SearchAll, SearchExact} {
+		if got := idx.Search("apples", "", nil, mode); len(got) != 1 || got[0].Matches != 1 {
+			t.Errorf("single word mode %d = %+v", mode, got)
+		}
+	}
+
+	// OR: a line matching *either* word. Both graph lines qualify (each holds
+	// "graph" and a link/links token); the apples line does not.
+	if got := idx.Search("link graph", "", nil, SearchAny); len(got) != 1 || got[0].Matches != 2 {
+		t.Errorf("OR = %+v", got)
+	}
+
+	// ALL: only lines containing every word. Both graph lines hold both.
+	if got := idx.Search("link graph", "", nil, SearchAll); len(got) != 1 || got[0].Matches != 2 {
+		t.Errorf("ALL = %+v", got)
+	}
+	// ALL where no single line holds both words → no hit
+	if got := idx.Search("graph oranges", "", nil, SearchAll); len(got) != 0 {
+		t.Errorf("ALL disjoint = %+v", got)
+	}
+
+	// EXACT: the contiguous phrase. Only "the link graph is walked" holds
+	// "link graph" verbatim; "links resolve into the graph" does not.
+	if got := idx.Search("link graph", "", nil, SearchExact); len(got) != 1 || got[0].Matches != 1 {
+		t.Errorf("EXACT = %+v", got)
+	}
+	// EXACT phrase whose words appear (on different lines) but never contiguously
+	// → no hit, though OR/ALL-style token logic would have matched
+	if got := idx.Search("graph apples", "", nil, SearchExact); len(got) != 0 {
+		t.Errorf("EXACT non-contiguous = %+v", got)
 	}
 }
 

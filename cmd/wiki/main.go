@@ -25,7 +25,7 @@ Commands:
   read          print an entry's body (frontmatter stripped)
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
-  search        full-text search over entries (--where key=value --prefix --lines)
+  search        full-text search over entries (every word; --any --exact --where --prefix --lines)
   checkboxes    list open checklist items; optional [file] scopes to one entry (--all --done --prefix)
   tags          list tags in use (--counts --sort=name|count --prefix)
   properties    list frontmatter keys in use (--counts --sort --prefix)

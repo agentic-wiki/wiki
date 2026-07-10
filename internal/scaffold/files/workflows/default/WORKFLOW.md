@@ -9,7 +9,7 @@ This is the `default` workflow: a general-purpose knowledge base (notes, concept
 ## Structure
 
 - **Group by domain, not by type.** A travel plan (`concept`), its flights (`dataset`), and the trip (`event`) sit together in `personal/travel/`, sliced by `type` on demand, not scattered across `concepts/ datasets/ events/`.
-- **Keep the top levels stable and relatively shallow** (2–3 folders deep). Each folder gets an `index.md` linking to what is inside, so you and an agent read top-down.
+- **Keep the top levels stable and relatively shallow** (2–3 folders deep). The deciding question for a folder is *what it is*. A **collection** folder (`projects/`, `research/`) holds otherwise-independent entries; its `index.md` is just the entry point that links what's inside, so you and an agent read top-down. A folder that is a single **concept** with parts (one initiative, one product) is load-bearing: front it with a typed `thing.md` beside its `thing/` folder, since a concept needs a `type` and a link target, and a typeless `thing/index.md` can be neither.
 - The starting `type` vocabulary is in `wiki.toml`; extend it as you introduce new kinds.
 
 A shape to steal (pick buckets that match how *you* think, not these):
@@ -18,18 +18,19 @@ A shape to steal (pick buckets that match how *you* think, not these):
 my-base/
 ├── index.md
 ├── inbox/             # rough drafts (type: draft) until promoted
-├── projects/          # one folder per initiative
-│   ├── index.md
-│   ├── acme-migration/
-│   └── website-redo/
+├── projects/          # grouping: one entry per initiative
+│   ├── index.md       # the map: links each initiative
+│   ├── acme-migration.md      # the initiative (a typed hub) ...
+│   ├── acme-migration/        # ... its notes, specs, sub-pages
+│   └── website-redo.md
 ├── products/
 │   ├── index.md
-│   ├── checkout-v2/
-│   └── billing/
+│   ├── checkout-v2.md
+│   └── billing.md
 ├── research/          # topics you're digging into
 │   ├── index.md
-│   ├── llm-agents/
-│   └── vector-search/
+│   ├── llm-agents.md          # a topic; grows an llm-agents/ folder if it needs depth
+│   └── vector-search.md
 ├── content/           # ideas → drafts → published
 │   ├── index.md
 │   ├── ideas/
@@ -42,7 +43,7 @@ my-base/
     └── archive/       # shipped or dropped
 ```
 
-Each `index.md` is the map for its level; the leaves are entries.
+A grouping folder's `index.md` is the map for its level; a folder that is one thing is fronted by its typed `thing.md`, not an `index.md`. The leaves are entries.
 
 ## Capture → promote (the inbox)
 
@@ -84,7 +85,7 @@ A plain-linked task's truth is its entry's `status` (done work leaves the board)
 Little and often. Aim for a base that gets **more discoverable** over time, so **change something only when it adds that value (never restructure for its own sake):**
 
 - Run `wiki check` and fix what it flags. Turn `wiki unresolved` links into entries when it helps. Re-home `wiki orphans`.
-- **Surface redundancy:** duplicate or near-duplicate entries to merge, `k8s`/`kubernetes`-style tag variants to consolidate, a cluster of entries circling a missing hub that wants its own `index.md`.
+- **Surface redundancy:** true duplicates to merge (two entries for one thing; keep similar-but-distinct ones separate and linked), `k8s`/`kubernetes`-style tag variants to consolidate, a cluster of entries circling a missing hub that wants its own page (a grouping's `index.md`, or a `thing.md` if they orbit one thing).
 - Skim the stalest entries (`wiki list --sort=timestamp --reverse`) and add the links between related ones that were never made.
 - Optionally keep a root `LEARNINGS.md` (give it a `type`): a running list of gaps and inconsistencies you notice while working, to batch-fix later.
 - When grooming reclassifies or merges entries, an optional dated note in the folder's `log.md` records *why*.

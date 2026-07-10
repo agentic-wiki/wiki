@@ -562,17 +562,31 @@ func cmdSearch(args []string) int {
 	var where whereFilters
 	fs.Var(&where, "where", "filter by frontmatter key=value or key!=value (repeatable = AND; e.g. type=note, status!=done)")
 	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
+	any := fs.Bool("any", false, "match lines containing any word of the query (default: every word)")
+	exact := fs.Bool("exact", false, "match the query verbatim as one phrase (default: every word)")
 	query, ok := parseWithArg(fs, args)
 	if !ok || strings.TrimSpace(query) == "" {
-		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--where key=value --prefix --lines]  (quote a multi-word query)")
+		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--any|--exact --where key=value --prefix --lines]  (every word by default; quote a multi-word query)")
 		return 2
+	}
+	if *any && *exact {
+		fmt.Fprintln(os.Stderr, "wiki search: --any and --exact are mutually exclusive")
+		return 2
+	}
+	// Default is all-words (AND); --any broadens to OR, --exact narrows to the verbatim phrase.
+	mode := index.SearchAll
+	switch {
+	case *exact:
+		mode = index.SearchExact
+	case *any:
+		mode = index.SearchAny
 	}
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
 
-	hits := idx.Search(query, *prefix, where)
+	hits := idx.Search(query, *prefix, where, mode)
 	var lines []string
 	if *showLines {
 		for _, h := range hits {

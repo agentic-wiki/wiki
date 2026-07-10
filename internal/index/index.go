@@ -479,11 +479,26 @@ type SearchHit struct {
 	Lines   []SearchLine `json:"lines,omitempty"`
 }
 
+// SearchMode selects how a multi-word query matches a line. A single-word query
+// behaves identically in all three modes.
+type SearchMode int
+
+const (
+	SearchAll   SearchMode = iota // AND: the line contains every query word (any order) — the default (zero value)
+	SearchAny                     // OR: the line contains any query word
+	SearchExact                   // the line contains the query verbatim as one substring
+)
+
 // Search returns entries whose file (frontmatter + body) contains query,
-// case-insensitively, after applying the path-prefix and property filters. Each
-// hit carries its matching lines, sorted by path. Unreadable files are skipped.
-func (idx *Index) Search(query, pathPrefix string, props []PropFilter) []SearchHit {
+// case-insensitively, after applying the path-prefix and property filters. mode
+// selects all-words (default), any-word, or exact-phrase matching. Each hit
+// carries its matching lines, sorted by path. Unreadable files are skipped.
+func (idx *Index) Search(query, pathPrefix string, props []PropFilter, mode SearchMode) []SearchHit {
 	q := strings.ToLower(query)
+	var words []string
+	if mode != SearchExact {
+		words = strings.Fields(q)
+	}
 	var hits []SearchHit
 	for _, e := range idx.Filter(pathPrefix, props) {
 		raw, err := e.Raw()
@@ -492,7 +507,7 @@ func (idx *Index) Search(query, pathPrefix string, props []PropFilter) []SearchH
 		}
 		var lines []SearchLine
 		for i, line := range strings.Split(raw, "\n") {
-			if strings.Contains(strings.ToLower(line), q) {
+			if matchLine(strings.ToLower(line), q, words, mode) {
 				lines = append(lines, SearchLine{i + 1, line})
 			}
 		}
@@ -502,6 +517,30 @@ func (idx *Index) Search(query, pathPrefix string, props []PropFilter) []SearchH
 	}
 	slices.SortFunc(hits, func(a, b SearchHit) int { return strings.Compare(a.Path, b.Path) })
 	return hits
+}
+
+// matchLine reports whether a (lowercased) line satisfies the query under mode.
+// SearchExact tests the whole query as one substring; the word modes test each
+// whitespace-split token (SearchAny = any token, SearchAll = every token).
+func matchLine(line, q string, words []string, mode SearchMode) bool {
+	switch mode {
+	case SearchExact:
+		return strings.Contains(line, q)
+	case SearchAny:
+		for _, w := range words {
+			if strings.Contains(line, w) {
+				return true
+			}
+		}
+		return false
+	default: // SearchAll (the default)
+		for _, w := range words {
+			if !strings.Contains(line, w) {
+				return false
+			}
+		}
+		return true
+	}
 }
 
 // BrokenLink is an internal link with no target file.

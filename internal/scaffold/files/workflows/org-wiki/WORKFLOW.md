@@ -36,7 +36,7 @@ my-org/
 └── log.md            # optional: a dated org-wide changelog
 ```
 
-Not every org needs every folder, prune in first run. Keep it shallow (2-3 levels); a big domain can nest (`projects/acme-migration/` with its own sub-entries).
+Not every org needs every folder, prune in first run. Keep it shallow (2-3 levels). A project stays one `type: project` entry even as it grows sub-pages: keep it as `projects/acme-migration.md`, with the extra pages under `projects/acme-migration/` (as the basic board does below), not folded into a `projects/acme-migration/index.md` (which holds no frontmatter, so could not be the project entry).
 
 ## The graph is the point
 
@@ -120,7 +120,7 @@ Little and often, aim for a base that gets **more discoverable** over time.
 - `wiki orphans`: `inbox/` is `ignore_orphans`'d, so a hit is a *filed* entry nothing links to, wire it into its domain (a client with no project? a person on no team?). This is how an org KB rots: entries that never got linked.
 - `wiki unresolved`: links to entities not yet written, a to-write list (the client you referenced but never gave a page).
 - Skim the stalest entries (`wiki list --sort=timestamp --reverse`) and add the links between related ones that were never made.
-- Consolidate duplicates (two pages for one client) by hand, `wiki` can't merge: fold one entry's content into the other, run `wiki backlinks` on the one you're dropping to find its references and repoint them, then delete it. (`wiki move` relocates or renames; it does not merge.)
+- Consolidate true duplicates (two pages for one client), not two distinct-but-similar things (a plugin and its setup, a client and its parent company), which stay separate and linked. `wiki` can't merge: fold one entry's content into the other, run `wiki backlinks` on the one you're dropping to find its references and repoint them, then delete it. (`wiki move` relocates or renames; it does not merge.)
 
 ## Answering everyday questions
 

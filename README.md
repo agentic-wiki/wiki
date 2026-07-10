@@ -73,7 +73,7 @@ Everything is a fast, scriptable query over the folder.
 wiki list --where type=concept --where tags=crypto --prefix tech/   # by kind, topic, and subtree
 wiki list --where type=task --where status!=done        # key!=value negates (here: still-open work)
 wiki list --where type=note --sort=timestamp            # most-recently-changed first (--reverse: oldest first)
-wiki search "language model" --lines                    # full-text over frontmatter + body
+wiki search "language model" --lines                    # every word by default (--any: broaden to any word; --exact: verbatim phrase)
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
 wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
@@ -178,7 +178,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `init [dir]` | Scaffold a new bundle from a `--workflow` starter (`--force` to write into a non-empty dir) |
 | `status` | Bundle counts: entries, links, tags, checkboxes, broken links, orphans |
 | `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
-| `search <q>` | Full-text over frontmatter and body (`--lines` for file:line) |
+| `search <q>` | Full-text over frontmatter and body; every word by default (`--any` any word, `--exact` verbatim phrase, `--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
 | `outline <path>` | An entry's heading hierarchy |
 | `table <path>` | Extract a dataset's markdown table as text/csv/json (`--n` to pick one) |

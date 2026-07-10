@@ -41,7 +41,7 @@ Only three tracking folders, because scheduling stays in the board (moving a tas
 
 Three things track a task, and they stay in agreement: its **folder** says whether it is committed / parked / retired, the **board (`index.md`) is the scheduled view** (its `## Now` / `## Next` sections), and **`status` frontmatter is progress**. Let the tool do the moving:
 
-1. **Capture.** A new item is a `type: task` file in `backlog/`. `wiki list --where type=task --prefix backlog/` is the raw backlog; keep a `backlog/index.md` too if you want a browsable list.
+1. **Capture.** A new item is a `type: task` file in `backlog/`. `wiki list --where type=task --prefix backlog/` is the raw backlog; keep a `backlog/index.md` too if you want a browsable list. A task is load-bearing: if one grows detail pages (a spec, notes), it stays the typed `that-task.md` entry with its parts under `that-task/`, never a typeless `that-task/index.md` (an `index.md` holds no frontmatter, so it could not be the task). An `index.md` here is only ever a **board**: the entry point into a collection of task links, not a task itself.
 2. **Commit.** When you commit to an item, `wiki move` it from `backlog/` into `active/` and add a link to it under the board's `## Next` (or `## Now`). `wiki move` rewrites every link to it, so nothing dangles.
 3. **Schedule & work.** Reschedule by moving its link between `## Next` and `## Now` on the board, no file move. Advance `status` in place (`todo`, `in-progress`, `in-review`, `blocked`) as the work moves. The file stays in `active/` the whole time.
 4. **Finish.** Set `status: done` and retire it (below): remove its board link and archive or delete the file. There is no box to tick, done work simply leaves the board.
@@ -126,7 +126,7 @@ Keep statuses, priorities, and work-kind tags consistent across teams, so `wiki 
 Most questions are a query plus a moment of judgment: `wiki` narrows the set, you read and decide.
 
 - **"What's next?"**: read the board's `## Now`; `wiki list --where type=task --prefix active/` lists what's active regardless of the board. (This board uses plain links, not `- [ ]` checkboxes, so `wiki checkboxes`, a checkbox scanner, is not used here.)
-- **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring scan like `search`), then read their `status` / `priority` and the board to say which is genuinely next. His *open* load is `--where assignee=john --where status!=done`.
+- **"What's next for John?"**: `wiki list --where type=task --where assignee=john` lists John's issues exactly (an exact frontmatter match, not a substring text search like `search`), then read their `status` / `priority` and the board to say which is genuinely next. His *open* load is `--where assignee=john --where status!=done`.
 - **"What's the status of X?"**: `wiki read /active/x.md` for its `status` and detail, plus `wiki backlinks /active/x.md` to see what it is blocking.
 - **"What's blocked?"**: `wiki property status --counts` for the tally, then `wiki list --where type=task --where status=blocked --prefix active/` for the committed ones blocking now. (`--where` is bundle-wide unless you add `--prefix`; drop it to include parked `backlog/` items too.)
 - **"What's unassigned?"**: `wiki list --where type=task --where assignee=` (an empty value tests emptiness, so this is tasks with no assignee; `assignee!=` is the ones that have one).
