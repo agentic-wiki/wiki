@@ -10,7 +10,7 @@ tags: [dx, conformance]
 
 **Change:** demote broken links from `error` to `warning` in `check`. Warnings keep exit `0`, so a bundle with dangling links still passes `check`. Genuine malformations (missing or invalid `type`) stay `error` (exit `1`). `wiki unresolved` is unaffected: it remains the dedicated surface for the to-write list.
 
-This makes `check` a clean linter: `0` clean or warnings only, `1` real conformance errors, `2` couldn't run. See the [exit-codes task](/2-query-surface/008-exit-codes.md).
+This makes `check` a clean linter: `0` clean or warnings only, `1` real conformance errors, `2` couldn't run. See the [exit-codes task](../2-query-surface/008-exit-codes.md).
 
 **Also update:** spec `README.md` and the skills note "errors like broken links exit 1"; adjust to reflect the demotion.
 

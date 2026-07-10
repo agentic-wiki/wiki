@@ -460,9 +460,10 @@ func TestCmdCheckFix(t *testing.T) {
 
 func TestCmdTidy(t *testing.T) {
 	dir := writeBundle(t)
-	// a relative link in index.md, and a spaced filename to slug
+	// a root-absolute link in index.md (tidy normalizes it to relative), and a
+	// spaced filename to slug
 	if err := os.WriteFile(filepath.Join(dir, "index.md"),
-		[]byte("---\nokf_version: \"0.1\"\n---\n# Home\n[g](guide.md)\n"), 0o644); err != nil {
+		[]byte("---\nokf_version: \"0.1\"\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "a note.md"), []byte("---\ntype: note\n---\nx\n"), 0o644); err != nil {
@@ -475,7 +476,7 @@ func TestCmdTidy(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "would") || !strings.Contains(out, "/guide.md") || !strings.Contains(out, "a-note.md") {
 		t.Errorf("bare tidy preview: %q (code %d)", out, code)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); strings.Contains(string(b), "(/guide.md)") {
+	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); strings.Contains(string(b), "(./guide.md)") {
 		t.Errorf("bare tidy must not write")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "a note.md")); err != nil {
@@ -494,8 +495,8 @@ func TestCmdTidy(t *testing.T) {
 	if _, code := capture(t, func() int { return cmdTidy([]string{"--links"}) }); code != 0 {
 		t.Errorf("tidy --links exit=%d", code)
 	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); !strings.Contains(string(b), "[g](/guide.md)") {
-		t.Errorf("--links should normalize: %s", b)
+	if b, _ := os.ReadFile(filepath.Join(dir, "index.md")); !strings.Contains(string(b), "[g](./guide.md)") {
+		t.Errorf("--links should normalize to relative: %s", b)
 	}
 
 	// nothing left -> ok message; json is an array

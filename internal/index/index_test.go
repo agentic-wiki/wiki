@@ -237,15 +237,20 @@ func TestLinksToSameTargetAcrossForms(t *testing.T) {
 	if bl := idx.Backlinks("/hello.md"); len(bl) != 3 {
 		t.Fatalf("want 3 backlinks across forms, got %+v", bl)
 	}
-	// NormalizeLinks rewrites the two relatives; the absolute one is left as-is
+	// NormalizeLinks rewrites the one absolute link to relative; the relatives are
+	// already canonical and left as-is.
 	changes, _ := idx.NormalizeLinks(true)
-	if len(changes) != 2 {
-		t.Errorf("want 2 normalized links (the relatives), got %+v", changes)
+	if len(changes) != 1 {
+		t.Errorf("want 1 normalized link (the absolute), got %+v", changes)
+	}
+	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	if !strings.Contains(string(root), "[a](./hello.md)") {
+		t.Errorf("absolute link not normalized to relative:\n%s", root)
 	}
 	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/b.md"))
 	c, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/c.md"))
-	if !strings.Contains(string(b), "[b](/hello.md)") || !strings.Contains(string(c), "[c](/hello.md#x)") {
-		t.Errorf("relatives not normalized:\n%s%s", b, c)
+	if !strings.Contains(string(b), "[b](../hello.md)") || !strings.Contains(string(c), "[c](../hello.md#x)") {
+		t.Errorf("relatives should be left as-is:\n%s%s", b, c)
 	}
 }
 
@@ -338,8 +343,8 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 	if _, err := base.Move("/epics/auth.md", "/epics/authn.md", false, false); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(read(base, "login.md"), "[see](/epics/authn.md)") {
-		t.Errorf("body link should move: %q", read(base, "login.md"))
+	if !strings.Contains(read(base, "login.md"), "[see](./epics/authn.md)") {
+		t.Errorf("body link should move (relative): %q", read(base, "login.md"))
 	}
 	if !strings.Contains(read(base, "login.md"), "epic: /epics/auth.md") {
 		t.Errorf("default move must NOT touch the epic: field: %q", read(base, "login.md"))
@@ -639,13 +644,14 @@ func TestConvertWikilinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
-	for _, want := range []string{"[b](/b.md)", "[the C](/sub/c.md)", "[b](/b.md#Setup)", "[[ghost]]"} {
+	// a.md is at root, so targets resolve to relative "./…" forms
+	for _, want := range []string{"[b](./b.md)", "[the C](./sub/c.md)", "[b](./b.md#Setup)", "[[ghost]]"} {
 		if !strings.Contains(string(got), want) {
 			t.Errorf("converted a.md missing %q:\n%s", want, got)
 		}
 	}
 	// an embed becomes a plain reference, never a markdown image
-	if strings.Contains(string(got), "![b](/b.md)") {
+	if strings.Contains(string(got), "![b](./b.md)") {
 		t.Errorf("embed must convert to a plain link, not an image:\n%s", got)
 	}
 	// the unresolvable link is reported as a skip
@@ -1097,11 +1103,11 @@ func TestMove(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "a.md")); !os.IsNotExist(err) {
 		t.Errorf("source still present after move")
 	}
-	// links rewritten; anchor preserved
-	if !strings.Contains(read("index.md"), "[a](/sub/a.md)") {
+	// links rewritten to relative (from each linking file); anchor preserved
+	if !strings.Contains(read("index.md"), "[a](./sub/a.md)") {
 		t.Errorf("index.md not rewritten: %q", read("index.md"))
 	}
-	if !strings.Contains(read("b.md"), "[a](/sub/a.md#intro)") || !strings.Contains(read("b.md"), "again [a](/sub/a.md)") {
+	if !strings.Contains(read("b.md"), "[a](./sub/a.md#intro)") || !strings.Contains(read("b.md"), "again [a](./sub/a.md)") {
 		t.Errorf("b.md not rewritten/anchor lost: %q", read("b.md"))
 	}
 	// c.md untouched: prose mention + fenced-code link stay as /a.md
@@ -1120,12 +1126,46 @@ func TestMoveRewritesRelativeLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
-	if !strings.Contains(string(root), "[abs](/b.md)") || !strings.Contains(string(root), "[rel](/b.md)") {
-		t.Errorf("both absolute and relative links to the moved file should be rewritten:\n%s", root)
+	if !strings.Contains(string(root), "[abs](./b.md)") || !strings.Contains(string(root), "[rel](./b.md)") {
+		t.Errorf("both absolute and relative links to the moved file should be rewritten (relative):\n%s", root)
 	}
 	sub, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/x.md"))
-	if !strings.Contains(string(sub), "[up](/b.md#sec)") {
-		t.Errorf("relative+anchor link should rewrite to absolute dest + anchor:\n%s", sub)
+	if !strings.Contains(string(sub), "[up](../b.md#sec)") {
+		t.Errorf("relative+anchor link should rewrite relative to dest + anchor:\n%s", sub)
+	}
+}
+
+func TestMoveRewritesMovedFileOwnLinks(t *testing.T) {
+	// Cross-folder move: the moved file's own relative outgoing links must be
+	// recomputed from its new directory, or they dangle.
+	idx := build(t, map[string]string{
+		"index.md":  "---\ntype: index\n---\nx\n",
+		"a.md":      "---\ntype: note\n---\nsee [t](./target.md) and [u](./target.md#s)\n",
+		"target.md": "---\ntype: note\n---\nhi\n",
+	})
+	if _, err := idx.Move("/a.md", "/sub/a.md", false, false); err != nil {
+		t.Fatal(err)
+	}
+	moved, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/a.md"))
+	// target.md stayed at root; from /sub/ it is ../target.md
+	if !strings.Contains(string(moved), "[t](../target.md)") || !strings.Contains(string(moved), "[u](../target.md#s)") {
+		t.Errorf("moved file's own outgoing links not recomputed from new dir:\n%s", moved)
+	}
+	if rebuilt, _ := Build(idx.Bundle); len(rebuilt.Broken()) != 0 {
+		t.Errorf("move left a broken link: %+v", rebuilt.Broken())
+	}
+
+	// Same-directory rename: the moved file's own links are unchanged (no churn).
+	idx2 := build(t, map[string]string{
+		"docs/a.md":      "---\ntype: note\n---\n[t](./target.md)\n",
+		"docs/target.md": "---\ntype: note\n---\nhi\n",
+	})
+	if _, err := idx2.Move("/docs/a.md", "/docs/b.md", false, false); err != nil {
+		t.Fatal(err)
+	}
+	moved2, _ := os.ReadFile(filepath.Join(idx2.Bundle.Dir, "docs/b.md"))
+	if !strings.Contains(string(moved2), "[t](./target.md)") {
+		t.Errorf("same-dir rename should leave own links unchanged:\n%s", moved2)
 	}
 }
 
@@ -1147,9 +1187,9 @@ func TestSlugify(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(idx.Bundle.Dir, "my note.md")); err == nil {
 		t.Errorf("old spaced file should be gone")
 	}
-	// the angle-bracketed inbound link is rewritten to the slug (space gone -> bare)
+	// the angle-bracketed inbound link is rewritten to the slug, relative (space gone)
 	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
-	if !strings.Contains(string(root), "[n](/my-note.md)") {
+	if !strings.Contains(string(root), "[n](./my-note.md)") {
 		t.Errorf("inbound <…> link not rewritten:\n%s", root)
 	}
 }
@@ -1165,9 +1205,9 @@ func TestMoveAcrossLinkForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	for f, want := range map[string]string{
-		"index.md": "[a](/world.md)",
-		"sub/b.md": "[b](/world.md)",
-		"sub/c.md": "[c](/world.md#x)", // anchor preserved through the rewrite
+		"index.md": "[a](./world.md)",  // from root
+		"sub/b.md": "[b](../world.md)", // from sub/
+		"sub/c.md": "[c](../world.md#x)", // from sub/, anchor preserved
 	} {
 		got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(f)))
 		if !strings.Contains(string(got), want) {
@@ -1225,16 +1265,18 @@ func TestMoveTitledLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the title and the anchor are both preserved through the rewrite
-	if !strings.Contains(string(s), `[t](/b.md "keep me")`) || !strings.Contains(string(s), `[u](/b.md#sec 'k')`) {
+	// the title and the anchor are both preserved through the relative rewrite
+	if !strings.Contains(string(s), `[t](./b.md "keep me")`) || !strings.Contains(string(s), `[u](./b.md#sec 'k')`) {
 		t.Errorf("title/anchor not preserved on rewrite: %q", s)
 	}
 }
 
 func TestRelativeLinksResolveAndNormalize(t *testing.T) {
 	idx := build(t, map[string]string{
-		"index.md":    "---\ntype: index\nokf_version: \"0.1\"\n---\n[up](sub/page.md) [bad](nope.md)\n[anc](sub/page.md#sec) [tit](sub/page.md \"hi\")\n",
-		"sub/page.md": "---\ntype: note\n---\nhi\n",
+		// index.md carries bare relative links (already canonical); sub/page.md
+		// carries root-absolute links (the non-canonical form tidy rewrites).
+		"index.md":    "---\ntype: index\nokf_version: \"0.1\"\n---\n[up](sub/page.md) [bad](nope.md)\n",
+		"sub/page.md": "---\ntype: note\n---\n[home](/index.md) [anc](/index.md#sec) [tit](/index.md \"hi\")\n",
 	})
 
 	// Relative links are valid (OKF) and resolved into the graph: sub/page.md is
@@ -1242,8 +1284,8 @@ func TestRelativeLinksResolveAndNormalize(t *testing.T) {
 	if bl := idx.Backlinks("/sub/page.md"); len(bl) == 0 {
 		t.Errorf("relative link should resolve to a backlink edge, got %+v", bl)
 	}
-	if hasWarning(idx.Check(), "/index.md", "not root-absolute") {
-		t.Errorf("relative links are valid; check must not flag them: %+v", idx.Check())
+	if hasWarning(idx.Check(), "/index.md", "not relative") {
+		t.Errorf("both link forms are valid; check must not flag the form: %+v", idx.Check())
 	}
 	// The one that resolves nowhere is still reported broken (check audits).
 	broken := false
@@ -1256,27 +1298,32 @@ func TestRelativeLinksResolveAndNormalize(t *testing.T) {
 		t.Errorf("unresolvable relative link should be broken (-> /nope.md), got %+v", idx.Broken())
 	}
 
-	// NormalizeLinks canonicalizes every relative link (anchor + title preserved),
-	// including the unresolvable one (the absolute form is deterministic).
+	// NormalizeLinks canonicalizes the root-absolute links to relative (anchor +
+	// title preserved); the already-relative links in index.md are left alone.
 	changes, err := idx.NormalizeLinks(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(changes) != 4 { // up, bad, anc, tit
-		t.Errorf("expected 4 normalized links, got %+v", changes)
+	if len(changes) != 3 { // home, anc, tit (all in sub/page.md)
+		t.Errorf("expected 3 normalized links, got %+v", changes)
 	}
-	raw, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	page, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, "sub/page.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := string(raw)
-	for _, want := range []string{"[up](/sub/page.md)", "[bad](/nope.md)", "[anc](/sub/page.md#sec)", `[tit](/sub/page.md "hi")`} {
+	got := string(page)
+	for _, want := range []string{"[home](../index.md)", "[anc](../index.md#sec)", `[tit](../index.md "hi")`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
+	// index.md's bare relative links are untouched.
+	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
+	if !strings.Contains(string(root), "[up](sub/page.md)") {
+		t.Errorf("relative links should be left as-is:\n%s", root)
+	}
 
-	// Once everything is absolute, there is nothing left to normalize.
+	// Once everything is relative, there is nothing left to normalize.
 	rebuilt, err := Build(idx.Bundle)
 	if err != nil {
 		t.Fatal(err)

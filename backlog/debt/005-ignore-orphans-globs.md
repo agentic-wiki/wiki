@@ -6,7 +6,7 @@ priority: low
 tags: [debt, config]
 ---
 
-`ignore_orphans` ([conformance/006](/conformance/006-orphan-exempt-globs.md)) ships with minimal matching: `index.orphanExempt` treats each pattern as a **directory subtree** (`backlog/**`, `backlog/`, and bare `backlog` all mean "under `/backlog`") or an **exact path**. It does **not** support finer globs:
+`ignore_orphans` ([conformance/006](../conformance/006-orphan-exempt-globs.md)) ships with minimal matching: `index.orphanExempt` treats each pattern as a **directory subtree** (`backlog/**`, `backlog/`, and bare `backlog` all mean "under `/backlog`") or an **exact path**. It does **not** support finer globs:
 
 - a segment wildcard, e.g. `drafts/*.md` or `something-*.md`;
 - a mid-path `**`, e.g. `teams/**/scratch.md`.

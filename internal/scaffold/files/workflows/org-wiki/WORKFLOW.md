@@ -1,6 +1,6 @@
 # How this knowledge base works
 
-This is the **workflow** layer for an `org-wiki` bundle: the conventions on top of what [AGENTS.md](/AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how your organization works.**
+This is the **workflow** layer for an `org-wiki` bundle: the conventions on top of what [AGENTS.md](./AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how your organization works.**
 
 This bundle is one organization's internal knowledge base: its **projects, clients, products, people, teams**, and the decisions, meetings, and processes that connect them. The value is not the pages in isolation, it is the **graph between them**: a project links to its client, its product, and the people on it, so `wiki backlinks /clients/acme.md` tells you everything Acme touches.
 
@@ -58,7 +58,7 @@ wiki links /projects/acme-migration.md   # what that project points to
 
 **How you record a relationship is a recipe, pick one per relationship and keep it** (the same trade-off as epic links elsewhere):
 
-- **Body link** (`[Acme](/clients/acme.md)` in the prose): a real graph edge that `wiki backlinks` follows, and it keeps the target off `wiki orphans`. Best for the org graph, which is the whole point here, so this is the default.
+- **Body link** (`[Acme](./clients/acme.md)` in the prose): a real graph edge that `wiki backlinks` follows, and it keeps the target off `wiki orphans`. Best for the org graph, which is the whole point here, so this is the default.
 - **Frontmatter field** (`client: /clients/acme.md`): filterable with `wiki list --where client=/clients/acme.md`, but *not* an edge, so `backlinks` won't see it, the target still needs a link from somewhere to stay off `orphans`, and `wiki move` won't rewrite frontmatter fields by default if you move the target (opt in with `--include-frontmatter`). Reach for it when you want to filter by the relationship.
 
 ## Capture then promote
@@ -83,7 +83,7 @@ type: project
 status: active
 ---
 
-Migrate Acme off the legacy stack. Client: [Acme](/clients/acme.md). Product: [Vault](/products/vault.md).
+Migrate Acme off the legacy stack. Client: [Acme](./clients/acme.md). Product: [Vault](./products/vault.md).
 
 ## Milestones
 - [x] Discovery and plan signed off

@@ -6,7 +6,7 @@ priority: low
 tags: [feature, query]
 ---
 
-An opt-in `wiki search --fuzzy` that tolerates typos (Levenshtein distance), for when you misremember a spelling. Deliberately **not** the default: plain `search` stays an exact, explainable substring match (all-words AND default / `--any` / `--exact`, task 012). Fuzzy is the escape hatch when that finds nothing. See [search: match by word](/2-query-surface/012-search-any-word.md).
+An opt-in `wiki search --fuzzy` that tolerates typos (Levenshtein distance), for when you misremember a spelling. Deliberately **not** the default: plain `search` stays an exact, explainable substring match (all-words AND default / `--any` / `--exact`, task 012). Fuzzy is the escape hatch when that finds nothing. See [search: match by word](./012-search-any-word.md).
 
 Efficiency is not the constraint (full-text scan is already grep-scale, and bounded Levenshtein is ~15 zero-dep lines with early-exit once a row exceeds the max distance). The cost is that fuzzy forces a **ranking** and a **threshold**, which is why it is a separate mode, not a default.
 

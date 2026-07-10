@@ -14,7 +14,7 @@ The rule: enumeration and diagnostic commands answer "what's here" (like `ls`/`f
 |---|---|---|
 | `list`, `tasks`, `tags`, `properties`, `property`, `links`, `backlinks`, `orphans`, `unresolved` | `ls` / `find` | `0` |
 | `search` | `grep` | `1` (no match) |
-| `check` | linter | `0` clean/warnings, `1` errors (see [broken-links task](/conformance/002-broken-links-warning.md)) |
+| `check` | linter | `0` clean/warnings, `1` errors (see [broken-links task](../conformance/002-broken-links-warning.md)) |
 
 `2` stays the universal "couldn't run" code everywhere (missing bundle, bad args, unreadable file).
 

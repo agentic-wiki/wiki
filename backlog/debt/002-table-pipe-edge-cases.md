@@ -6,7 +6,7 @@ priority: low
 tags: [debt, parser]
 ---
 
-`parse.Tables` (behind [`wiki table`](/2-query-surface/007-table-extract.md)) splits a row on `|` and unescapes `\|`, but two rare cases are still there:
+`parse.Tables` (behind [`wiki table`](../2-query-surface/007-table-extract.md)) splits a row on `|` and unescapes `\|`, but two rare cases are still there:
 
 - A `|` inside an inline-code span in a cell (`` | `a|b` | c | ``) splits as a column separator; GFM treats it as literal. Fix: skip pipes inside backtick spans when splitting a row (without stripping the code text, which is why `maskedLines` is not reused here).
 - A cell ending in `\|` with no closing outer pipe (`| a | b\|`) can be nipped by the outer-pipe `TrimSuffix`.

@@ -4,6 +4,10 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 ## v0.7.0
 
+### Changed
+
+- **Relative links are the canonical on-disk form.** Internal links are now stored relative to the linking file (`../ref/api.md`), so they navigate in any renderer, GitHub/GitLab, a plain editor, Obsidian, not just tools that resolve a bundle-root `/…` (which breaks on GitHub). The internal graph is unchanged (every link still resolves to a root-absolute key), so `backlinks`/`orphans`/`search`/`links` are unaffected. `wiki tidy --links` now normalizes root-absolute links **to** relative (the reverse of before); `wiki move` writes relative links, respelling both the links *to* a moved file (relative from each linking file) and the moved file's **own** outgoing links (relative from its new directory, which previously would have dangled on a cross-folder move); `wiki tidy --wikilinks` emits relative links too. A hand-written root-absolute link still resolves and is never "broken", `tidy` just respells it. Frontmatter path values (opt-in `move --include-frontmatter`) stay root-absolute, as metadata rather than rendered links. AGENTS/spec/scaffold docs updated.
+
 ### Improved
 
 - **`wiki.toml` `types` is now an opt-in vocabulary.** Declaring `types = [...]` is optional: with no list (or an empty one) any non-empty `type` is valid, types are free-form, like tags. Declaring a list turns it into an enforced gate, `wiki check` now **errors** (was: only warned) on any entry whose `type` is not in the list, and the message names the fix. This removes the old footgun where an *absent* list warned on every entry, and makes the two type problems consistent (a missing type and an undeclared type are both errors). The scaffold starters ship the suggested vocabulary **commented out**, so a fresh base is free-form until you opt in. `wiki property type --counts` remains the way to see which types are in use.

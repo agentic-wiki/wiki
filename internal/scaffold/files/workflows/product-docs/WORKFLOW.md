@@ -1,6 +1,6 @@
 # How these docs work
 
-This is the **workflow** layer for a `product-docs` bundle: the conventions on top of what [AGENTS.md](/AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit your product(s).**
+This is the **workflow** layer for a `product-docs` bundle: the conventions on top of what [AGENTS.md](./AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit your product(s).**
 
 This is **wiki-first product documentation**, in two layers:
 
@@ -95,7 +95,7 @@ A **guide** (`type: guide`) walks a reader through a task start to finish, **lin
 
 Rules either way:
 
-- A guide **references** concepts, it never duplicates them: "set up a webhook (see [Webhooks](/webhooks/webhooks.md))", not a re-explanation. If you are tempted to explain a concept inside a guide, that concept wants its own page.
+- A guide **references** concepts, it never duplicates them: "set up a webhook (see [Webhooks](./webhooks/webhooks.md))", not a re-explanation. If you are tempted to explain a concept inside a guide, that concept wants its own page.
 - **Order is explicit**, since a guide is read start to finish (unlike a concept): the next/prev links within a sequence, and `guides/index.md` listing the guides (and a sequence's chapters) in reading order.
 - Guides are entry points, so little links *to* the first page, that is fine; link it from `guides/index.md` (and the product `index.md`) so it is reachable and not an orphan. Within a sequence the prev/next links keep the middle chapters linked, so none show up as orphans.
 

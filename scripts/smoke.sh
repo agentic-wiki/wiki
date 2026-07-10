@@ -205,14 +205,13 @@ sed -i.bak 's/okf_version: "0.1"/okf_version: "0.2"/' "$TMP/fresh/index.md" && r
 ( cd "$TMP/fresh" && $BIN check >/dev/null )                    # now clean
 contains "$(cat "$TMP/fresh/index.md")" 'okf_version: "0.1"'
 
-echo "--- tidy --links normalizes relative links (which are valid, not flagged) ---"
+echo "--- tidy --links normalizes links to relative (absolute is valid, not flagged) ---"
 mkdir -p "$TMP/fresh/notes"
-printf -- '---\ntype: note\n---\nhi\n[home](../index.md)\n' > "$TMP/fresh/notes/example.md"
-( cd "$TMP/fresh" && ! contains "$($BIN check)" "not root-absolute" )           # relative is valid
-( cd "$TMP/fresh" && $BIN check >/dev/null )                                    # resolves, so still clean
+printf -- '---\ntype: note\n---\nhi\n[home](/index.md)\n' > "$TMP/fresh/notes/example.md"
+( cd "$TMP/fresh" && $BIN check >/dev/null )                                    # absolute resolves, so still clean
 ( cd "$TMP/fresh" && contains "$($BIN tidy)" "would link" )                     # bare tidy = preview, writes nothing
-( cd "$TMP/fresh" && $BIN tidy --links >/dev/null )                             # normalize to absolute
-contains "$(cat "$TMP/fresh/notes/example.md")" 'home](/index.md)'
+( cd "$TMP/fresh" && $BIN tidy --links >/dev/null )                             # normalize to relative
+contains "$(cat "$TMP/fresh/notes/example.md")" 'home](../index.md)'           # /index.md -> ../index.md from notes/
 
 echo "--- ignore: an out-of-bundle ref can be acknowledged in wiki.toml ---"
 OOB="$TMP/oob"; mkdir -p "$OOB"
@@ -251,8 +250,8 @@ echo "--- wikilinks: survive a relocation (re-resolve by basename, [[…]] left 
 
 echo "--- tidy --wikilinks converts them to standard markdown ---"
 ( cd "$WL" && $BIN tidy --wikilinks >/dev/null )
-( cd "$WL" && contains "$(cat a.md)" '\[b\](/sub/b.md)' )        # [[b]] -> [b](/sub/b.md)
-( cd "$WL" && contains "$(cat a.md)" '\[the C\](/sub/c.md)' )    # [[sub/c|the C]] -> [the C](/sub/c.md)
+( cd "$WL" && contains "$(cat a.md)" '\[b\](./sub/b.md)' )       # [[b]] -> [b](./sub/b.md) (relative)
+( cd "$WL" && contains "$(cat a.md)" '\[the C\](./sub/c.md)' )   # [[sub/c|the C]] -> [the C](./sub/c.md)
 ( cd "$WL" && ! contains "$(cat a.md)" '\[\[' )                  # no wikilinks left
 ( cd "$WL" && ! contains "$($BIN check)" "wikilink" )            # and check no longer flags any
 

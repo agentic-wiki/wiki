@@ -12,7 +12,7 @@ The escape guard itself is deliberate and stays: the tool must never stat or rea
 
 **Change:**
 - `normalizeLink` resolves a target to its final on-disk path and uses `withinDir` (the same containment guard `FileExists` uses) to decide in/out — one containment check for the whole codebase, correct for relative *and* absolute `..`.
-- A link resolving outside the bundle is no longer an edge and no longer "broken". It is collected per entry (`Entry.Outside`) and surfaced by `check` as its own advisory, `out-of-bundle link -> ../PRD.md`, at warning level so `check` still exits `0`. See the sibling [broken-links demotion](/conformance/002-broken-links-warning.md).
+- A link resolving outside the bundle is no longer an edge and no longer "broken". It is collected per entry (`Entry.Outside`) and surfaced by `check` as its own advisory, `out-of-bundle link -> ../PRD.md`, at warning level so `check` still exits `0`. See the sibling [broken-links demotion](./002-broken-links-warning.md).
 - `tidy --links` leaves out-of-bundle links exactly as authored.
 - To silence the advisory, reference the outside file as a code span or a full URL, not a markdown link.
 

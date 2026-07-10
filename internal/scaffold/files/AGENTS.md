@@ -3,14 +3,14 @@
 This folder is an **agentic wiki bundle**: plain Markdown (someone's notes, documents, datasets, and tasks) that you operate with the `wiki` CLI. The goal is knowledge that stays plain and human-readable (portable, greppable, diffable, open in any editor or by any LLM, the user's forever) yet is **structured well enough to answer questions like a database**. Three things make that work, and upholding them is your job:
 
 - **Every entry has one home** (a folder), **one kind** (`type`), and **tags** for what cuts across. So the base is never a loose pile: you can ask for every dataset, everything tagged `2026`, everything under `finance/`.
-- **Entries link to what they relate to**, root-absolute (`/finance/income.md`). Those links form a **graph** (you can see what points at a page), what has no home (orphans), and what's been promised but not yet written (unresolved). A well-kept base can be *navigated* from `index.md` top-down, not grepped blindly.
+- **Entries link to what they relate to**, with relative Markdown links (`../finance/income.md`), so they navigate in any tool (GitHub, an editor, Obsidian). Those links form a **graph** (you can see what points at a page), what has no home (orphans), and what's been promised but not yet written (unresolved). A well-kept base can be *navigated* from `index.md` top-down, not grepped blindly.
 - **The structure is the value.** The better everything is filed and linked, the more findable it all becomes. Filing precisely, linking generously, and never leaving a dangling reference is the point, not overhead.
 
 `grep` and `ls` can't compute that graph or answer "which notes have no home." `wiki` indexes the folder and does, deterministically. The files are the source (the index `wiki` builds is derived and disposable): **you are the librarian, `wiki` is your database engine.** So for anything structural (finding, moving, checking) call `wiki` rather than guessing or hand-editing paths.
 
 `wiki` runs within the bundle (it walks up to find `wiki.toml`) or from anywhere with `wiki --root <dir>`. This file teaches *how to operate it*; run `wiki <command> -h` for a command's exact flags, and `wiki help` for the full list.
 
-**How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](/WORKFLOW.md); read it next.**
+**How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](./WORKFLOW.md); read it next.**
 
 On a brand-new base, treat `WORKFLOW.md` as the starting point, not the final spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second. (This base came from a `--workflow` starter; `wiki init -h` lists the others, and both this file and `WORKFLOW.md` are yours to reshape.)
 
@@ -24,7 +24,7 @@ Three orthogonal axes classify every entry (keep them separate and the base stay
 
 **One thing per entry.** Similar-but-distinct things (a `type` and its factory) each get their own entry, linked to each other, never folded into one. Being adjacent or similarly named is a reason to link, not to merge. Merge only true duplicates: two entries for the *same* thing.
 
-Entries link with standard Markdown, root-absolute from the bundle root: `[Income](/finance/income.md)`. No `[[wikilinks]]`. Two reserved filenames carry no frontmatter at all (so no `type`): `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle); the one exception is the bundle-root `index.md`, which carries `okf_version`.
+Entries link with standard Markdown, relative to the linking file: `[Income](../finance/income.md)`, so they navigate in any renderer. Two conveniences, both normalized by `wiki tidy`: a hand-written root-absolute link (`/finance/income.md`) still resolves and `tidy --links` respells it relative; an Obsidian `[[wikilink]]` resolves too and `tidy --wikilinks` converts it to a standard Markdown link. Two reserved filenames carry no frontmatter at all (so no `type`): `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle); the one exception is the bundle-root `index.md`, which carries `okf_version`.
 
 Since an `index.md` holds no frontmatter (no `type`, so no concept of its own), the two serve different jobs, and the deciding question is what the folder *is*.
 
@@ -93,7 +93,7 @@ Knowledge often arrives rough and matures in place. You write the file; `wiki` o
 2. **Refine**: read it back (`wiki read`), ask the user a sharpening question or two, fill it in.
 3. **Promote**: give it a real `type`, `wiki move` it into its domain, and **link it in** from the domain's `index.md` and related entries. An unlinked entry is lost knowledge.
 
-*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](/WORKFLOW.md) choice.)*
+*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](./WORKFLOW.md) choice.)*
 
 ### Reshape safely
 
@@ -120,7 +120,7 @@ wiki list --where type=task     # the task entries themselves
 
 A **board** (`index.md`) references task entries with **plain links**, not by checkboxing them: a link is an external reference and never carries the target's state (the entry owns that, so a board checkbox would just be a second copy that drifts). A genuinely trivial to-do not worth its own entry can sit as a bare `- [ ]` on the board, but then it is a checklist item, not a queryable entry, that is the trade-off. The board is **authored, not generated**: `wiki` never edits it, you keep it current; a task the board omits shows up under `wiki orphans` if nothing else links it.
 
-*(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](/WORKFLOW.md).)*
+*(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](./WORKFLOW.md).)*
 
 ## Keep it healthy
 

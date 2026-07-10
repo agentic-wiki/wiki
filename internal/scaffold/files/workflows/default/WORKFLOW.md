@@ -1,6 +1,6 @@
 # How this base is organized
 
-This is the **workflow** layer: the conventions for *this* base, on top of what [AGENTS.md](/AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how you work.**
+This is the **workflow** layer: the conventions for *this* base, on top of what [AGENTS.md](./AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how you work.**
 
 This is the `default` workflow: a general-purpose knowledge base (notes, concepts, datasets) with a task backlog. Other starter workflows will exist (`wiki init --workflow <name>`); or just reshape this file.
 
@@ -70,12 +70,12 @@ Treat tasks as a **backlog**, not a flat checklist. A `tasks/index.md` (or the r
 **Goal:** ship v1 of the importer this quarter.
 
 ## Now
-- 🔵 [CSV header parser](/tasks/active/csv-parser.md)
-- 🔴 [Timezone bug in ingest](/tasks/active/tz-bug.md)
+- 🔵 [CSV header parser](./tasks/active/csv-parser.md)
+- 🔴 [Timezone bug in ingest](./tasks/active/tz-bug.md)
 - [ ] bump the changelog       # a trivial inline to-do, no entry
 
 ## Next
-- [Dedup incoming rows](/tasks/active/dedup.md)
+- [Dedup incoming rows](./tasks/active/dedup.md)
 ```
 
 A plain-linked task's truth is its entry's `status` (done work leaves the board); an inline `- [ ]` to-do is just checked off in place. A subtle leading emoji (🔵 in progress, 🔴 blocked, ✅ done) shows progress at a glance; skip it when the grouping already says it.
@@ -92,4 +92,4 @@ Little and often. Aim for a base that gets **more discoverable** over time, so *
 
 ## Make it yours
 
-Nothing here is fixed beyond "every entry has a `type`." Have one inbox or none, a backlog or just inline checkboxes, these folders or your own. Rewrite this file to match your base; [AGENTS.md](/AGENTS.md) points here for the specifics.
+Nothing here is fixed beyond "every entry has a `type`." Have one inbox or none, a backlog or just inline checkboxes, these folders or your own. Rewrite this file to match your base; [AGENTS.md](./AGENTS.md) points here for the specifics.

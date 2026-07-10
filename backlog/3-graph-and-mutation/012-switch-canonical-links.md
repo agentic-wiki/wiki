@@ -1,7 +1,7 @@
 ---
 type: task
 title: "switch canonical on-disk links to relative"
-status: todo
+status: done
 priority: medium
 tags: [feature, links]
 ---
@@ -29,7 +29,7 @@ Options to weigh (pick with the user):
 - **C. Accept both (already true), make `tidy` emit either** via a flag, and choose the default. Authoring stays easy; canonical form is a publish-time choice.
 - **D. Per-bundle `wiki.toml` `link_style = relative | root-absolute`**: the bundle owner picks based on where it's browsed (GitHub repo vs Obsidian vault). Most flexible, most surface.
 
-Code touchpoints when a direction is chosen: `normalizeLink` (keep, it already yields the absolute key), a new relativize helper (`filepath.Rel` over bundle paths, mirroring `normalizeLink`), the `tidy --links` direction, `move` write-back (recompute a moved file's outgoing relative links from its new dir), and a docs/spec/AGENTS/scaffold sweep. See [consolidate relative links](/3-graph-and-mutation/006-relative-link-lint.md) and [out-of-bundle links warn](/conformance/004-out-of-bundle-links.md) for the current resolver behavior.
+Code touchpoints when a direction is chosen: `normalizeLink` (keep, it already yields the absolute key), a new relativize helper (`filepath.Rel` over bundle paths, mirroring `normalizeLink`), the `tidy --links` direction, `move` write-back (recompute a moved file's outgoing relative links from its new dir), and a docs/spec/AGENTS/scaffold sweep. See [consolidate relative links](./006-relative-link-lint.md) and [out-of-bundle links warn](../conformance/004-out-of-bundle-links.md) for the current resolver behavior.
 
 ## Assessment (findings, decision still needs sign-off)
 

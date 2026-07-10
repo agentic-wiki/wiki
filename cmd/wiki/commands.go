@@ -420,7 +420,7 @@ func cmdCheck(args []string) int {
 func cmdTidy(args []string) int {
 	fs := flag.NewFlagSet("tidy", flag.ExitOnError)
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
-	links := fs.Bool("links", false, "normalize relative links to root-absolute")
+	links := fs.Bool("links", false, "normalize links to relative (the canonical on-disk form)")
 	slug := fs.Bool("slug", false, "rename spaced filenames to hyphenated slugs (rewriting inbound links)")
 	wikilinks := fs.Bool("wikilinks", false, "convert [[wikilinks]] to standard markdown links")
 	all := fs.Bool("all", false, "apply every category")

@@ -22,4 +22,4 @@ Notes:
 - No ranking/scoring change: hits stay sorted by path; a line counts once per hit regardless of how many tokens it holds. `--lines` output shape is unchanged (`path:line: text`); the mode only changes which lines match.
 - Swept the usage string, AGENTS, README, main help, and product-docs search wording; `index`/command tests + smoke cover all three modes and the `--any`/`--exact` conflict.
 
-Follow-up: opt-in typo tolerance is [013](/2-query-surface/013-fuzzy-search.md).
+Follow-up: opt-in typo tolerance is [013](./013-fuzzy-search.md).

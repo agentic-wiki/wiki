@@ -337,6 +337,51 @@ func normalizeLink(bundleRoot, fromPath, target string) (abs string, escapes boo
 	return "/" + filepath.ToSlash(rel) + anchor, false
 }
 
+// relativeLink is the inverse of normalizeLink for an in-bundle target: it returns
+// the on-disk relative spelling of a resolved root-absolute target (anchor kept),
+// as written from the entry at fromPath. The result is slash-separated and always
+// carries a leading "./" or "../", so it is unambiguously relative and resolves back
+// to target from fromPath's directory. This is the canonical on-disk link form.
+func relativeLink(fromPath, target string) string {
+	anchor := ""
+	if h := strings.IndexByte(target, '#'); h >= 0 {
+		anchor, target = target[h:], target[:h]
+	}
+	return relPath(path.Dir(fromPath), target) + anchor
+}
+
+// relPath returns the relative slash-path from directory fromDir to target, both
+// root-absolute bundle paths ("/…"). The result is prefixed with "./" (target at or
+// below fromDir) or a run of "../" (target above it).
+func relPath(fromDir, target string) string {
+	from, to := splitSlash(fromDir), splitSlash(target)
+	i := 0
+	for i < len(from) && i < len(to) && from[i] == to[i] {
+		i++
+	}
+	parts := make([]string, 0, len(from)-i+len(to)-i)
+	for range from[i:] {
+		parts = append(parts, "..")
+	}
+	parts = append(parts, to[i:]...)
+	joined := strings.Join(parts, "/")
+	if joined == "" {
+		return "." // target is fromDir itself (degenerate for a file target)
+	}
+	if !strings.HasPrefix(joined, "../") && joined != ".." {
+		joined = "./" + joined
+	}
+	return joined
+}
+
+// anchorOf returns the "#…" suffix of an on-disk link target, or "" if none.
+func anchorOf(raw string) string {
+	if h := strings.IndexByte(raw, '#'); h >= 0 {
+		return raw[h:]
+	}
+	return ""
+}
+
 // Resolve finds a single entry by a "/"-containing path (matched exactly,
 // root-absolute, leading slash optional) or a bare basename (matched across the
 // tree). It errors if nothing matches or a basename is ambiguous. This is the
@@ -656,14 +701,17 @@ type MoveResult struct {
 }
 
 // Move relocates the entry at srcArg to dest (a root-absolute path) and rewrites
-// every internal link that targets it across the bundle, relative and
-// root-absolute alike: links are matched by their resolved target and rewritten
-// by their on-disk form. With includeFrontmatter it also rewrites frontmatter
-// values equal to src's path (an opt-in: frontmatter is otherwise opaque, since
-// the tool cannot know a path-shaped value is a reference rather than a snapshot).
-// The moved file's own outgoing links stay valid. With dryRun it computes the plan
-// without writing. There is no rollback: on a mid-way write error it returns what
-// was already done so `unresolved` can surface any leftovers.
+// links to the canonical relative on-disk form: every internal link that targets
+// src (relative or root-absolute alike, matched by resolved target) is respelled
+// relative from the linking file to dest, and the moved file's own outgoing links
+// are respelled relative from its new directory (its dir changed, so its relative
+// links would otherwise dangle). With includeFrontmatter it also rewrites
+// frontmatter values equal to src's path (an opt-in: frontmatter is otherwise
+// opaque, since the tool cannot know a path-shaped value is a reference rather than
+// a snapshot; these stay root-absolute, as frontmatter is metadata, not a rendered
+// link). With dryRun it computes the plan without writing. There is no rollback: on
+// a mid-way write error it returns what was already done so `unresolved` can surface
+// any leftovers.
 func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
 	src, err := idx.Resolve(srcArg)
 	if err != nil {
@@ -683,17 +731,37 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	}
 	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
 
-	// Rewrite every link whose resolved target is src, matching each by its
-	// on-disk form (Raw) so relative and root-absolute links are both handled.
+	// Rewrite links as relative (the canonical on-disk form), matching each by its
+	// on-disk form (Raw) so relative and root-absolute links are both handled. Two
+	// jobs: every link whose resolved target is src is respelled to point at dest
+	// (relative from the *linking* file), and the moved file's own outgoing links
+	// are respelled relative from its new directory (its dir changed, so its
+	// relative links would otherwise dangle).
 	for _, e := range idx.Entries {
-		var hits []Link
+		epath := e.Path
+		if e == src {
+			epath = dest // e's location after the move (only src moves)
+		}
+		type rewrite struct {
+			line           int
+			oldRaw, newRaw string
+		}
+		var rws []rewrite
 		for _, l := range e.Links {
 			// Wikilinks resolve by basename each run, so a relocation needs no
 			// rewrite; and their [[…]] form isn't a markdown `](…)` target anyway.
-			if l.Target == src.Path && !l.Wikilink {
-				hits = append(hits, l)
+			if l.Wikilink {
+				continue
+			}
+			switch {
+			case l.Target == src.Path: // a link to the moved file
+				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(epath, dest+anchorOf(l.Raw))})
+			case e == src: // the moved file's own outgoing link to an unmoved target
+				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(dest, l.Target+anchorOf(l.Raw))})
 			}
 		}
+		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
+		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
 		var fmKeys map[string]bool
 		if includeFrontmatter {
 			for k := range e.fm {
@@ -705,7 +773,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 				}
 			}
 		}
-		if len(hits) == 0 && len(fmKeys) == 0 {
+		if len(rws) == 0 && len(fmKeys) == 0 {
 			continue
 		}
 		raw, err := e.Raw()
@@ -714,20 +782,16 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 		lines := strings.Split(raw, "\n") // link lines are file-relative
 		n := 0
-		for _, l := range hits {
-			if l.Line-1 < 0 || l.Line-1 >= len(lines) {
+		for _, r := range rws {
+			if r.line-1 < 0 || r.line-1 >= len(lines) {
 				continue
-			}
-			anchor := ""
-			if h := strings.IndexByte(l.Raw, '#'); h >= 0 {
-				anchor = l.Raw[h:]
 			}
 			// Match the on-disk form, which may be angle-bracketed (`<…>`) if the
 			// old target had a space. Re-wrap only if the new target still has one.
-			re := regexp.MustCompile(`\]\(<?` + regexp.QuoteMeta(l.Raw) + `>?(\s[^)]*)?\)`)
-			lines[l.Line-1] = re.ReplaceAllStringFunc(lines[l.Line-1], func(m string) string {
+			re := regexp.MustCompile(`\]\(<?` + regexp.QuoteMeta(r.oldRaw) + `>?(\s[^)]*)?\)`)
+			lines[r.line-1] = re.ReplaceAllStringFunc(lines[r.line-1], func(m string) string {
 				n++
-				nt := dest + anchor
+				nt := r.newRaw
 				if strings.ContainsAny(nt, " \t") {
 					nt = "<" + nt + ">"
 				}
@@ -1014,8 +1078,8 @@ func slugifyName(name string) string {
 	return strings.Join(strings.Fields(name), "-")
 }
 
-// ConvertWikilinks rewrites each entry's [[wikilinks]] to canonical root-absolute
-// markdown, resolving Obsidian-style (internal/wikilink): `[[t]]` -> `[t](/…/t.md)`,
+// ConvertWikilinks rewrites each entry's [[wikilinks]] to canonical relative
+// markdown, resolving Obsidian-style (internal/wikilink): `[[t]]` -> `[t](./t.md)`,
 // `[[t|d]]` -> `[d](…)`, `[[t#h]]` -> `[t](…#h)`, and an embed `![[e]]` -> `[e](…)`
 // (wiki has no transclusion, so an embed is just a reference). An unresolvable
 // wikilink is left as written and reported (Field "wikilink-skip"; check flags it
@@ -1070,9 +1134,13 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 				changes = append(changes, Fix{Entry: e.Path, Field: "wikilink-skip", From: wl.Full()})
 				continue
 			}
-			url := resolved
+			abs := resolved
 			if anchor != "" {
-				url += "#" + anchor
+				abs += "#" + anchor
+			}
+			url := relativeLink(e.Path, abs) // canonical relative on-disk form
+			if strings.ContainsAny(url, " \t") {
+				url = "<" + url + ">"
 			}
 			text := display
 			if text == "" {
@@ -1096,10 +1164,10 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 	return changes, nil
 }
 
-// normalizeEntryLinks rewrites each relative link in one entry to its absolute
-// form (anchor and title preserved), writing the file once. The absolute form is
-// deterministic (path arithmetic), so it applies whether or not the target
-// exists. Returns one Fix per link.
+// normalizeEntryLinks rewrites each root-absolute link in one entry to its
+// canonical relative form (anchor and title preserved), writing the file once.
+// The relative form is deterministic (path arithmetic), so it applies whether or
+// not the target exists. Returns one Fix per link.
 func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	raw, err := e.Raw()
 	if err != nil {
@@ -1107,28 +1175,29 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	}
 	_, body := parse.Frontmatter(raw)
 	offset := strings.Count(raw[:len(raw)-len(body)], "\n")
-	rels := parse.Links(body).Relative
-	if len(rels) == 0 {
+	abs := parse.Links(body).Absolute
+	if len(abs) == 0 {
 		return nil, nil
 	}
 	var changes []Fix
 	lines := strings.Split(raw, "\n") // link lines are file-relative
-	for _, l := range rels {
-		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, l.Target)
+	for _, l := range abs {
+		target, escapes := normalizeLink(idx.Bundle.Dir, e.Path, l.Target)
 		if escapes {
 			continue // out-of-bundle link: leave it exactly as authored, never clamp it
 		}
-		if strings.ContainsAny(abs, " \t") {
+		rel := relativeLink(e.Path, target)
+		if strings.ContainsAny(rel, " \t") {
 			continue // a space target is flagged by check; the fix is renaming the file, not normalizing the link
 		}
-		changes = append(changes, Fix{e.Path, "link", l.Target, abs})
+		changes = append(changes, Fix{e.Path, "link", l.Target, rel})
 		ln := l.Line + offset - 1
 		if !apply || ln < 0 || ln >= len(lines) {
 			continue
 		}
 		re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(l.Target) + `(\s[^)]*)?\)`)
 		lines[ln] = re.ReplaceAllStringFunc(lines[ln], func(m string) string {
-			return "](" + abs + re.FindStringSubmatch(m)[1] + ")" // keep any title
+			return "](" + rel + re.FindStringSubmatch(m)[1] + ")" // keep any title
 		})
 	}
 	if apply {
