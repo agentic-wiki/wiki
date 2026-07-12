@@ -112,6 +112,39 @@ List the tasks with `wiki list --where type=task --prefix projects/acme-migratio
 - A **decision** (`type: decision`) is a short record: the choice, the context, the alternatives, dated. Link it to what it affects, so `wiki backlinks /decisions/adopt-sqlite.md` shows what rests on it.
 - A **meeting** (`type: meeting`) is dated notes linking to its attendees (`/people/...`) and any decisions it produced. Keep the durable outcomes; let the play-by-play fade.
 
+## Records and datasets
+
+Not everything an org tracks is an entity. High-volume, uniform records (invoices, expenses, timesheets, inventory, contract line-items) are **data, not graph nodes**: you rarely open one on its own, you total and filter them. Model these as a single `type: dataset` entry holding one Markdown table, one row per record, **not one file per invoice**:
+
+```
+finance/
+├── index.md          # links the finance datasets and entries
+├── invoices.md       # type: dataset (table below)
+└── expenses.md       # type: dataset
+```
+
+Hold **raw, machine-readable values** from the first row so `wiki table` aggregates with no cleanup: unformatted numbers, ISO dates, and any unit (currency) in its own column, never `1,234.55 USD` in the amount cell:
+
+```markdown
+| number  | client | date       | amount    | currency | status |
+| ------- | ------ | ---------- | --------- | -------- | ------ |
+| INV-001 | Acme   | 2026-01-05 | 1200.00   | USD      | paid   |
+| INV-002 | Globex | 2026-02-05 | 834423.99 | EUR      | open   |
+```
+
+Bulk questions are then one line, not a fold over hundreds of files:
+
+```sh
+wiki table /finance/invoices.md --format csv | duckdb -c \
+  "SELECT currency, status, sum(amount) FROM read_csv_auto('/dev/stdin') GROUP BY currency, status"
+```
+
+One file per invoice instead would make each record a graph node (cluttering `orphans`/`backlinks`) and turn "total outstanding" into a script over every file. Reach for an entity entry only when an individual record genuinely needs its own page, links, and narrative, which for invoices is rare.
+
+When a table grows large, **partition it** (`finance/invoices/2026.md`, one `type: dataset` per year) and front the folder with a typeless `finance/invoices/index.md` that *links* the yearly tables. The `index.md` navigates; each yearly file is the dataset `wiki table` reads. An `index.md` holds no frontmatter, so it can never itself be the dataset: "make the invoices a dataset" and "put them behind `invoices/index.md`" cannot be the same node.
+
+The trade-off to accept: a table cell can hold `/clients/acme.md` as text, but it is not an edge `wiki backlinks` follows. Keep the client an entity for the graph, and let the dataset carry the client name as a column for grouping.
+
 ## Grooming
 
 Little and often, aim for a base that gets **more discoverable** over time.
@@ -139,7 +172,7 @@ wiki list --where type=task --prefix projects/acme-migration/   # one project's 
 - **"Which projects are blocked?"**: `wiki list --where type=project --where status=blocked`.
 - **"What's unwritten?"**: `wiki unresolved` (a client or person you referenced but never gave a page).
 
-Anything beyond a filter (a roll-up, a headcount, a report) is a small skill over `wiki list --format json` (which carries every frontmatter field), not a `wiki` feature.
+Rollups over *entry* frontmatter (a headcount, a count of active projects) are a small skill over `wiki list --format json` (which carries every field), not a `wiki` feature. Rollups over *tabular records* (total invoiced, expenses by month) are the other case: model those as a `dataset` and total them with `wiki table` piped to `duckdb`/`jq` (see *Records and datasets*), not as hundreds of entries.
 
 ## Make it yours
 

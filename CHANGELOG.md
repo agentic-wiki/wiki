@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.8.0
+
+### Improved
+
+- **Uniform records go in one `dataset`, not one entry each.** AGENTS.md now teaches the counterpart to "one thing per entry": a pile of homogeneous records you total and filter in bulk (invoices, expenses, transactions) belongs in a single `type: dataset` entry as one Markdown table, queried with `wiki table … | duckdb`/`jq`, not as hundreds of graph nodes. The deciding question is whether you want `backlinks` to each one or `SUM`/`GROUP BY` over all of them. The `org-wiki` workflow gains a **Records and datasets** section with the concrete invoices example and partitioning (`invoices/2026.md` fronted by a typeless `invoices/index.md`), clarifying that a dataset must be a typed file and can never be an `index.md` (which carries no frontmatter); its "rollups are a skill over `list --format json`" note now distinguishes entry-frontmatter rollups from tabular-record rollups. Both also require dataset cells to hold **raw, machine-readable values** from the first row (unformatted numbers `1234.55`, ISO dates, a unit such as currency in its own column), never display-formatted (`1,234.55 USD`), so `wiki table` aggregates in `duckdb`/`jq` with no `gsub`/`tonumber` cleanup; the `org-wiki` example shows the raw table. `org-wiki`'s suggested `types` vocabulary adds `dataset`.
+
 ## v0.7.0
 
 ### Changed

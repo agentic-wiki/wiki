@@ -1,7 +1,7 @@
 spec = "0.1"
 
 # Optional: declare a `types` vocabulary to enforce it (`wiki check` errors on any undeclared type)
-# types = ["note", "concept", "entity", "person", "team", "client", "product", "project", "task", "decision", "meeting", "process", "source", "draft"]
+# types = ["note", "concept", "entity", "person", "team", "client", "product", "project", "task", "dataset", "decision", "meeting", "process", "source", "draft"]
 
 # Files that are NOT wiki entries (excluded from index and check; globs supported)
 ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md"]
