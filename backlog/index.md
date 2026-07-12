@@ -9,10 +9,14 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## 2 — Query surface
 - [ ] [status: count of ignored files](./2-query-surface/011-status-ignored-count.md)
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](./2-query-surface/013-fuzzy-search.md) (low)
+- [ ] [wiki table --links raw|text|path](./2-query-surface/014-table-link-transform.md)
 
 ## 3 — Graph & mutation
 - [ ] [.wiki cache](./3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](./3-graph-and-mutation/008-spec-upgrade.md)
+- [ ] [wiki move on directories](./3-graph-and-mutation/013-move-directories.md)
+- [ ] [check anchor links point at a real heading](./conformance/009-anchor-link-check.md)
+- [ ] [backlinks/links per-page granularity](./3-graph-and-mutation/014-backlinks-granularity.md)
 
 ## 4 — Release & docs
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
@@ -24,6 +28,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [move: no rollback on a partial write](./debt/004-move-no-rollback.md)
 
 ## Done
+- [x] datasets guidance + `org-wiki`→`org-base` rename: AGENTS.md teaches the entry-vs-dataset choice (uniform records you aggregate go in one `type: dataset` table queried via `wiki table | duckdb`/`jq`, not one file each; store cells raw/machine-readable so no `gsub` cleanup; a dataset is a typed file, never an `index.md`). `org-base` (renamed from `org-wiki`, since a base holds knowledge **and** datasets) gains a Records-and-datasets section with a raw invoices table, and its rollup note now splits entry-frontmatter rollups from tabular ones. Synced spec README's dataset definition and `org-base`'s suggested `types` (+`dataset`). Historical mentions of `org-wiki` in older Done entries left as-is.
 - [x] [relative links are the canonical on-disk form](./3-graph-and-mutation/012-switch-canonical-links.md): internal links are stored relative to the linking file (`../ref/api.md`), so they navigate in any renderer (GitHub, editors, Obsidian), not just bundle-root-aware tools. Internal graph unchanged (still keyed on the resolved root-absolute path), so `backlinks`/`orphans`/`search`/`links` are unaffected. `tidy --links` now normalizes absolute→relative; `move` writes relative and also respells the **moved file's own** outgoing links from its new dir (previously they'd dangle on a cross-folder move); `tidy --wikilinks` emits relative too. A hand-written absolute link still resolves (never "broken"); frontmatter path refs stay absolute (metadata, not rendered links). New `relativeLink` helper (inverse of `normalizeLink`); AGENTS/spec/scaffold docs + tests + smoke swept.
 - [x] [wiki.toml `types` is an opt-in vocabulary](./conformance/008-types-vocabulary-optional.md): declaring `types = [...]` is now optional, no list (or empty) means any non-empty `type` is valid (free-form, like tags); a declared list is an enforced gate where `wiki check` **errors** (was: warned) on an undeclared type, naming the fix. Fixes the footgun where an absent list warned on everything, and makes missing-type and undeclared-type consistently errors. `KnownType` returns true when no vocabulary is declared; scaffold starters ship the suggested vocabulary **commented out** (free-form until you opt in). Swept AGENTS + `default`/`product-docs` workflows, tests + smoke.
 - [x] [search: match by word (AND default) + `--any` / `--exact`](./2-query-surface/012-search-any-word.md): `wiki search` tokenizes a multi-word query and matches a line holding **every** word (any order) by default (was: the whole query as one contiguous substring). `--any` broadens to any one word (OR); `--exact` restores the verbatim-phrase match (the literal-phrase escape hatch). A single-word query is unchanged. Mode is a param into `index.Search` (one `Contains`-per-line site, zero value = the AND default); `--any` and `--exact` are mutually exclusive. Swept CLI usage/help, AGENTS, README, smoke.

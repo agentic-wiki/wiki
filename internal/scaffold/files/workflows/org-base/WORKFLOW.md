@@ -1,6 +1,6 @@
 # How this knowledge base works
 
-This is the **workflow** layer for an `org-wiki` bundle: the conventions on top of what [AGENTS.md](./AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how your organization works.**
+This is the **workflow** layer for an `org-base` bundle: the conventions on top of what [AGENTS.md](./AGENTS.md) and the `wiki` tool define. It is a starting point: **edit it to fit how your organization works.**
 
 This bundle is one organization's internal knowledge base: its **projects, clients, products, people, teams**, and the decisions, meetings, and processes that connect them. The value is not the pages in isolation, it is the **graph between them**: a project links to its client, its product, and the people on it, so `wiki backlinks /clients/acme.md` tells you everything Acme touches.
 
@@ -105,7 +105,7 @@ projects/
 
 List the tasks with `wiki list --where type=task --prefix projects/acme-migration/` (add `--where status=blocked`, and so on). Done work leaves the board: set `status: done` and remove its link (delete the file, git keeps it). A deliberately bare kanban, one board and one `status` field: grow it as you need priorities, cycles, or epics.
 
-**3. A dedicated `project-backlog` bundle.** When a project outgrows the basic board (many tasks, assignees, sprints, cross-team work, epics/milestones), give it its own **`project-backlog` bundle** (`wiki init --workflow project-backlog`, a sub-folder or a sibling repo) and link to it from the project entry. org-wiki stays the knowledge layer; the backlog bundle is the tracker.
+**3. A dedicated `project-backlog` bundle.** When a project outgrows the basic board (many tasks, assignees, sprints, cross-team work, epics/milestones), give it its own **`project-backlog` bundle** (`wiki init --workflow project-backlog`, a sub-folder or a sibling repo) and link to it from the project entry. org-base stays the knowledge layer; the backlog bundle is the tracker.
 
 ## Decisions and meetings (optional)
 
@@ -141,9 +141,11 @@ wiki table /finance/invoices.md --format csv | duckdb -c \
 
 One file per invoice instead would make each record a graph node (cluttering `orphans`/`backlinks`) and turn "total outstanding" into a script over every file. Reach for an entity entry only when an individual record genuinely needs its own page, links, and narrative, which for invoices is rare.
 
+Suggest installing duckdb is not present.
+
 When a table grows large, **partition it** (`finance/invoices/2026.md`, one `type: dataset` per year) and front the folder with a typeless `finance/invoices/index.md` that *links* the yearly tables. The `index.md` navigates; each yearly file is the dataset `wiki table` reads. An `index.md` holds no frontmatter, so it can never itself be the dataset: "make the invoices a dataset" and "put them behind `invoices/index.md`" cannot be the same node.
 
-The trade-off to accept: a table cell can hold `/clients/acme.md` as text, but it is not an edge `wiki backlinks` follows. Keep the client an entity for the graph, and let the dataset carry the client name as a column for grouping.
+The trade-off to accept: a cell can be a clean value **or** a graph edge, not both. A plain `Acme` in the column is groupable but not a link, so `wiki backlinks` won't see it. A real `[Acme](../clients/acme.md)` *is* an edge, but then `wiki table` exports the literal `[Acme](…)` into that column (no longer clean for `duckdb`), and `backlinks` counts it once **per row**, not once per dataset, flooding the client with dataset noise. So keep the client an entity, put its name in the column for grouping, and if the dataset should be reachable from the client, add a single ordinary link in the dataset's prose.
 
 ## Grooming
 

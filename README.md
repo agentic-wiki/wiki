@@ -145,7 +145,7 @@ my-wiki/
 |---|---|
 | `default` | A general knowledge base with a light backlog. |
 | `project-backlog` | A plain-Markdown kanban tracker. |
-| `org-wiki` | An organization's internal knowledge base: projects, clients, products, people. |
+| `org-base` | An organization's internal knowledge and data: projects, clients, products, people, plus datasets like invoices and expenses. |
 | `product-docs` | Wiki-first product documentation: a linked concept graph plus an optional guides layer. |
 
 ## Run by an agent
