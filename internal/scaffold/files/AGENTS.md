@@ -133,7 +133,7 @@ wiki check        # warnings (e.g. a broken link) exit 0; errors (missing/unknow
 wiki check --fix  # apply the safe auto-repairs (e.g. okf_version sync)
 ```
 
-Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge true duplicates (two entries for one thing; similar-but-distinct entries stay separate and linked), consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it).
+Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge true duplicates (two entries for one thing; similar-but-distinct entries stay separate and linked), consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it); `check` likewise warns on a `#anchor` link whose target has no such heading.
 
 ## Git and safety
 

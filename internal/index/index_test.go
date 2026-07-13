@@ -197,6 +197,93 @@ func TestCheckLogDateHeadings(t *testing.T) {
 	}
 }
 
+func TestCheckAnchorLinks(t *testing.T) {
+	// A #anchor pointing at a missing heading warns; a valid one does not.
+	idx := build(t, map[string]string{
+		"a.md":     "---\ntype: note\n---\n[bad](./thing.md#title-that-does-not-exist)\n[ok](./thing.md#the-real-heading)\n",
+		"thing.md": "---\ntype: note\n---\n# The Real Heading\ntext\n",
+	})
+	if !hasWarning(idx.Check(), "/a.md", "anchor not found") {
+		t.Errorf("missing anchor should warn, got %+v", idx.Check())
+	}
+	for _, is := range idx.Check() {
+		if strings.Contains(is.Msg, "the-real-heading") {
+			t.Errorf("valid anchor must not warn: %+v", is)
+		}
+	}
+
+	// Punctuation/case in the heading slugs GitHub-style; a matching anchor is clean.
+	clean := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n[x](./t.md#whats-new-in-2026)\n",
+		"t.md": "---\ntype: note\n---\n## What's New in 2026?\n",
+	})
+	if got := clean.Check(); len(got) != 0 {
+		t.Errorf("slugged anchor should be clean, got %+v", got)
+	}
+
+	// Duplicate headings: the second is reachable as `-1`, a third-level miss warns.
+	dup := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n[first](./t.md#notes)\n[second](./t.md#notes-1)\n[none](./t.md#notes-2)\n",
+		"t.md": "---\ntype: note\n---\n## Notes\n## Notes\n",
+	})
+	if !hasWarning(dup.Check(), "/a.md", "notes-2") {
+		t.Errorf("#notes-2 (only two Notes headings) should warn, got %+v", dup.Check())
+	}
+	for _, is := range dup.Check() {
+		if strings.Contains(is.Msg, "#notes)") || strings.Contains(is.Msg, "#notes-1") {
+			t.Errorf("#notes and #notes-1 must not warn: %+v", is)
+		}
+	}
+
+	// A broken target is reported once (broken link), not also as a missing anchor.
+	broken := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n[x](./gone.md#sec)\n",
+	})
+	if hasWarning(broken.Check(), "/a.md", "anchor not found") {
+		t.Errorf("broken target should not also warn as a missing anchor: %+v", broken.Check())
+	}
+	if !hasWarning(broken.Check(), "/a.md", "broken link") {
+		t.Errorf("broken target should warn as a broken link: %+v", broken.Check())
+	}
+
+	// Obsidian block refs (#^id) are out of scope and never flagged.
+	block := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n[x](./t.md#^abc123)\n",
+		"t.md": "---\ntype: note\n---\n# H\n",
+	})
+	if hasWarning(block.Check(), "/a.md", "anchor not found") {
+		t.Errorf("block ref #^id must not be flagged: %+v", block.Check())
+	}
+
+	// A pure #anchor self-link is validated against the entry's own headings.
+	self := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n## Details\n[jump](#details)\n[oops](#missing)\n",
+	})
+	if !hasWarning(self.Check(), "/a.md", "#missing") {
+		t.Errorf("self-link to a missing heading should warn, got %+v", self.Check())
+	}
+	for _, is := range self.Check() {
+		if strings.Contains(is.Msg, "#details") {
+			t.Errorf("self-link to a present heading must not warn: %+v", is)
+		}
+	}
+
+	// A wikilink's #anchor is checked too, with Obsidian-style (spaced) fragments
+	// slugged the same way, so `[[t#Real Heading]]` resolves to `## Real Heading`.
+	wl := build(t, map[string]string{
+		"a.md": "---\ntype: note\n---\n[[t#Real Heading]]\n[[t#Ghost Section]]\n",
+		"t.md": "---\ntype: note\n---\n## Real Heading\n",
+	})
+	if !hasWarning(wl.Check(), "/a.md", "Ghost Section") {
+		t.Errorf("wikilink to a missing heading should warn, got %+v", wl.Check())
+	}
+	for _, is := range wl.Check() {
+		if strings.Contains(is.Msg, "Real Heading]]") {
+			t.Errorf("wikilink to a present heading must not warn: %+v", is)
+		}
+	}
+}
+
 func TestNormalizeLink(t *testing.T) {
 	// Resolution is pure path math against the root, so any real dir works as root.
 	root := t.TempDir()
@@ -570,9 +657,9 @@ func TestWikilinkGraph(t *testing.T) {
 // embed `![[x]]` is treated as a graph edge (and flagged).
 func TestWikilinkAliasesAndEmbeds(t *testing.T) {
 	idx := build(t, map[string]string{
-		"a.md":     "---\ntype: note\n---\n[[Nickname]] and ![[b]]\n",
+		"a.md":      "---\ntype: note\n---\n[[Nickname]] and ![[b]]\n",
 		"people.md": "---\ntype: note\naliases: [Nickname, Nick]\n---\nreal file has no such basename\n",
-		"b.md":     "---\ntype: note\n---\nplain\n",
+		"b.md":      "---\ntype: note\n---\nplain\n",
 	})
 	// [[Nickname]] resolves via people.md's aliases frontmatter, not its filename
 	if bl := idx.Backlinks("/people.md"); len(bl) != 1 || bl[0].From != "/a.md" {
@@ -1205,8 +1292,8 @@ func TestMoveAcrossLinkForms(t *testing.T) {
 		t.Fatal(err)
 	}
 	for f, want := range map[string]string{
-		"index.md": "[a](./world.md)",  // from root
-		"sub/b.md": "[b](../world.md)", // from sub/
+		"index.md": "[a](./world.md)",    // from root
+		"sub/b.md": "[b](../world.md)",   // from sub/
 		"sub/c.md": "[c](../world.md#x)", // from sub/, anchor preserved
 	} {
 		got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(f)))

@@ -39,6 +39,8 @@ title: Income
 tags: [finance, income]
 ---
 Monthly income tracking. Backup: [Q1 receipts](/finance/q1-receipts.md).
+Dead anchor: [expenses breakdown](/finance/expenses.md#no-such-heading).
+Live anchor: [expenses table](/finance/expenses.md#expenses).
 MD
 
 cat > "$TMP/finance/expenses.md" <<'MD'
@@ -47,6 +49,7 @@ type: dataset
 title: Expenses
 tags: [finance, out-of-pocket]
 ---
+# Expenses
 | month   | category  | amount_eur |
 |---------|-----------|------------|
 | 2026-01 | rent      | 900        |
@@ -85,6 +88,13 @@ printf -- '---\ntype: bogustype\n---\nx\n' > "$TMP/finance/bogus.md"
 contains "$($BIN check 2>&1 || true)" "bogustype"     # and the error names it
 rm "$TMP/finance/bogus.md"
 $BIN check >/dev/null                                 # clean again (only the pre-existing warning)
+
+echo "--- check: a #anchor to a missing heading warns; a live #heading does not ---"
+contains "$($BIN check)" "expenses.md#no-such-heading"       # missing heading => warning
+if $BIN check | grep -q "expenses.md#expenses"; then          # live heading must NOT be flagged
+  echo "FAIL: valid anchor flagged as dead" >&2; exit 1
+fi
+$BIN check >/dev/null                                          # still only warnings => exit 0
 
 echo "--- unresolved finds the broken link ---"
 contains "$($BIN unresolved)" "/finance/q1-receipts.md"

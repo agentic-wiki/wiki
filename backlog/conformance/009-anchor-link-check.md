@@ -1,10 +1,18 @@
 ---
 type: task
 title: check anchor links point at a real heading
-status: todo
+status: done
 priority: medium
 tags: [dx, conformance]
 ---
+
+**Done:** `wiki check` now warns on a link whose target file exists but whose `#anchor` names no heading there (`link anchor not found -> …`), at warning severity so a bundle with one still exits `0` (a dangling reference, like a broken link). Covers **markdown links, `[[wikilink#…]]`, and pure `#anchor` self-links**. Added `headingSlug` (GitHub-style: lowercase, punctuation dropped, spaces→hyphens, `-`/`_` kept) and `Entry.hasHeadingSlug`, which slugs *both* the fragment and each heading so an Obsidian `#Real Heading` and a markdown `#real-heading` converge (duplicate headings disambiguated `-1`/`-2` as GitHub does). A broken target is not double-reported (guarded on `idx.byPath`). Unit tests in `index_test.go` (miss, live heading, slug punctuation/case, duplicate disambiguation, broken-target no-double-report, block-ref skip, self-anchor hit/miss, wikilink-anchor hit/miss) + a smoke case (dead vs live anchor). AGENTS.md, spec README, and CHANGELOG updated.
+
+**Unified-anchor refactor (follow-up, driven by review):** a link now carries a parsed `Anchor` field, populated for both markdown and wikilink forms, so anchor handling is one representation and `anchorOf(Raw)` string-parsing was retired (`Move` and `check` use `Link.Anchor`/`anchorSuffix()`). Pure `#anchor` links are captured in `parse.LinkSet.SelfAnchors` and stored on `Entry.SelfAnchors` (Target = the entry itself), so they are validated without becoming graph edges (no self-backlinks).
+
+**Still out of scope (by design):**
+- **Obsidian block refs** (`#^id`) and HTML anchors are not validated (they address a block, not a heading).
+- Slug matching is **text-based**, not a full markdown render, so a heading containing inline markup slugs its literal characters (rare; documented).
 
 `wiki check` verifies a link's target *file* resolves, but ignores the `#anchor`. So `[Something](./thing.md#title-that-does-not-exist)` passes even when `thing.md` has no such heading: a dangling reference the link graph currently can't see. Detect it.
 

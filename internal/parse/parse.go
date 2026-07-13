@@ -227,21 +227,24 @@ func scanLinks(body string) []Link {
 // Targets are as written (title stripped, anchor kept); resolving them to
 // canonical root-absolute form is the index's job.
 type LinkSet struct {
-	Absolute []Link // root-absolute, e.g. /finance/income.md
-	Relative []Link // relative or bare, e.g. ../x.md, ./x.md, sibling.md
-	External []Link // carries a URL scheme, e.g. https://, mailto:
+	Absolute    []Link // root-absolute, e.g. /finance/income.md
+	Relative    []Link // relative or bare, e.g. ../x.md, ./x.md, sibling.md
+	External    []Link // carries a URL scheme, e.g. https://, mailto:
+	SelfAnchors []Link // pure #anchor (intra-document): not a cross-entry edge, but check validates it against the entry's own headings
 }
 
 // Links classifies every markdown link in body (outside code) by target form.
-// Empty targets and pure #anchors are omitted (they point at no entry). Both
-// Absolute and Relative are valid internal links per OKF; External is the
-// leftover bucket, returned for completeness, no consumer requires it.
+// Empty targets are omitted; a pure #anchor lands in SelfAnchors (an intra-document
+// reference, not a cross-entry edge). Both Absolute and Relative are valid internal
+// links per OKF; External is the leftover bucket, returned for completeness.
 func Links(body string) LinkSet {
 	var set LinkSet
 	for _, l := range scanLinks(body) {
 		switch t := l.Target; {
-		case t == "" || strings.HasPrefix(t, "#"):
-			// intra-document anchor or empty: not a link to another entry
+		case t == "":
+			// empty target: not a link
+		case strings.HasPrefix(t, "#"):
+			set.SelfAnchors = append(set.SelfAnchors, l) // same-page anchor; check validates it against own headings
 		case hasURLScheme(t):
 			set.External = append(set.External, l)
 		case strings.HasPrefix(t, "/"):

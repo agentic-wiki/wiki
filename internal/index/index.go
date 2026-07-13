@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/agentic-wiki/wiki/internal/bundle"
 	"github.com/agentic-wiki/wiki/internal/parse"
@@ -24,9 +25,19 @@ import (
 type Link struct {
 	Text     string
 	Raw      string
-	Target   string
+	Target   string // resolved root-absolute path, anchor stripped (the graph edge is the file)
+	Anchor   string // the "#fragment" without the '#', parsed from both markdown and wikilink forms ("" if none)
 	Line     int
 	Wikilink bool // true if this edge came from an Obsidian [[wikilink]] (Raw is its [[…]] form)
+}
+
+// anchorSuffix reconstructs the "#fragment" of a link (or "" if it has none), the
+// single source for re-spelling an on-disk target with its anchor.
+func (l Link) anchorSuffix() string {
+	if l.Anchor == "" {
+		return ""
+	}
+	return "#" + l.Anchor
 }
 
 // Entry is one markdown file in the content tree. Its canonical, always-present
@@ -36,15 +47,16 @@ type Link struct {
 // there is a single source of truth. Links/Checkboxes/Headings are parsed from
 // the body, not frontmatter, so they are materialized.
 type Entry struct {
-	Path       string           `json:"_path"` // root-absolute, e.g. /finance/income/index.md
-	Type       string           `json:"type"`
-	Links      []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
-	Outside    []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
-	Checkboxes []parse.Checkbox `json:"-"`
-	Headings   []parse.Heading  `json:"-"`
-	wikilinks  []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
-	abs        string
-	fm         map[string]any
+	Path        string           `json:"_path"` // root-absolute, e.g. /finance/income/index.md
+	Type        string           `json:"type"`
+	Links       []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
+	SelfAnchors []Link           `json:"-"` // pure #anchor links (Target = this entry); not graph edges, checked against own headings
+	Outside     []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
+	Checkboxes  []parse.Checkbox `json:"-"`
+	Headings    []parse.Heading  `json:"-"`
+	wikilinks   []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
+	abs         string
+	fm          map[string]any
 }
 
 // base is the entry's filename (basename of Path), computed on demand: the path
@@ -187,7 +199,7 @@ func (idx *Index) resolveWikilinks() {
 	aliases := wikilink.AliasMap(aliasesPerEntry)
 	for _, e := range idx.Entries {
 		for _, wl := range e.wikilinks {
-			target, _, display := wl.Split()
+			target, anchor, display := wl.Split()
 			resolved := wikilink.Resolve(target, e.Path, paths, aliases)
 			if resolved == "" {
 				continue
@@ -196,7 +208,7 @@ func (idx *Index) resolveWikilinks() {
 			if text == "" {
 				text = target
 			}
-			e.Links = append(e.Links, Link{Text: text, Raw: wl.Full(), Target: resolved, Line: wl.Line, Wikilink: true})
+			e.Links = append(e.Links, Link{Text: text, Raw: wl.Full(), Target: resolved, Anchor: anchor, Line: wl.Line, Wikilink: true})
 		}
 	}
 }
@@ -243,7 +255,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// rel is the file's path under the bundle root ("finance/income.md");
 	// entryPath is its root-absolute bundle id ("/finance/income.md").
 	entryPath := "/" + filepath.ToSlash(rel)
-	links, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
+	links, selfAnchors, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
 	checkboxes, heads := parse.Checkboxes(body), parse.Headings(body)
 	for i := range checkboxes {
 		checkboxes[i].Line += offset
@@ -256,15 +268,16 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		wikilinks[i].Line += offset
 	}
 	return &Entry{
-		Path:       entryPath,
-		Type:       parse.String(fm, "type"),
-		Links:      links,
-		Outside:    outside,
-		Checkboxes: checkboxes,
-		Headings:   heads,
-		wikilinks:  wikilinks,
-		abs:        abs,
-		fm:         fm,
+		Path:        entryPath,
+		Type:        parse.String(fm, "type"),
+		Links:       links,
+		SelfAnchors: selfAnchors,
+		Outside:     outside,
+		Checkboxes:  checkboxes,
+		Headings:    heads,
+		wikilinks:   wikilinks,
+		abs:         abs,
+		fm:          fm,
 	}, nil
 }
 
@@ -288,7 +301,7 @@ func (idx *Index) FileExists(target string) bool {
 // separately in outside (Raw kept, no resolved Target): they are not graph edges
 // and the escaping path is never resolved on disk, but check reports them so the
 // author knows the tool cannot verify them.
-func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset int) (links, outside []Link) {
+func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset int) (links, selfAnchors, outside []Link) {
 	links = make([]Link, 0, len(set.Absolute)+len(set.Relative))
 	for _, bucket := range [][]parse.Link{set.Absolute, set.Relative} {
 		for _, l := range bucket {
@@ -297,13 +310,21 @@ func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset
 				outside = append(outside, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
 				continue
 			}
+			anchor := ""
 			if h := strings.IndexByte(target, '#'); h >= 0 {
-				target = target[:h] // the graph edge is the file, not the anchor
+				anchor = target[h+1:] // the graph edge is the file; the anchor is kept for check/rewrite
+				target = target[:h]
 			}
-			links = append(links, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
+			links = append(links, Link{Text: l.Text, Raw: l.Target, Target: target, Anchor: anchor, Line: l.Line + offset})
 		}
 	}
-	return links, outside
+	// A pure #anchor points at a heading in this same entry: not a graph edge (it
+	// would be a self-backlink), so it is kept apart, with Target set to the entry
+	// itself, only for check to validate against the entry's own headings.
+	for _, l := range set.SelfAnchors {
+		selfAnchors = append(selfAnchors, Link{Text: l.Text, Raw: l.Target, Target: entryPath, Anchor: strings.TrimPrefix(l.Target, "#"), Line: l.Line + offset})
+	}
+	return links, selfAnchors, outside
 }
 
 // normalizeLink resolves a link target, as written in the entry at fromPath, to
@@ -374,12 +395,44 @@ func relPath(fromDir, target string) string {
 	return joined
 }
 
-// anchorOf returns the "#…" suffix of an on-disk link target, or "" if none.
-func anchorOf(raw string) string {
-	if h := strings.IndexByte(raw, '#'); h >= 0 {
-		return raw[h:]
+// headingSlug renders heading text to a GitHub-style anchor slug: lowercased,
+// punctuation dropped, spaces turned to hyphens (underscores and existing hyphens
+// kept). It is text-based, not a full markdown render, so a heading with inline
+// markup slugs its literal characters (a rare edge, documented for `check`).
+func headingSlug(text string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(text) {
+		switch {
+		case r == ' ':
+			b.WriteByte('-')
+		case unicode.IsLetter(r) || unicode.IsNumber(r) || r == '-' || r == '_':
+			b.WriteRune(r)
+		}
 	}
-	return ""
+	return b.String()
+}
+
+// hasHeadingSlug reports whether the entry has a heading matching anchor. Both the
+// anchor and each heading are reduced to a GitHub-style slug before comparing, so a
+// markdown fragment (`#my-heading`) and an Obsidian wikilink one (`#My Heading`)
+// both resolve to the same heading. Repeated headings are disambiguated as GitHub
+// does: the Nth occurrence of a slug gains a "-N" suffix, the first stays bare (so a
+// second "## Notes" is reachable as `#notes-1`).
+func (e *Entry) hasHeadingSlug(anchor string) bool {
+	anchor = headingSlug(anchor)
+	seen := map[string]int{}
+	for _, h := range e.Headings {
+		s := headingSlug(h.Text)
+		final := s
+		if n := seen[s]; n > 0 {
+			final = fmt.Sprintf("%s-%d", s, n)
+		}
+		seen[s]++
+		if final == anchor {
+			return true
+		}
+	}
+	return false
 }
 
 // Resolve finds a single entry by a "/"-containing path (matched exactly,
@@ -755,9 +808,9 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 			}
 			switch {
 			case l.Target == src.Path: // a link to the moved file
-				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(epath, dest+anchorOf(l.Raw))})
+				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(epath, dest+l.anchorSuffix())})
 			case e == src: // the moved file's own outgoing link to an unmoved target
-				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(dest, l.Target+anchorOf(l.Raw))})
+				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(dest, l.Target+l.anchorSuffix())})
 			}
 		}
 		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
@@ -950,6 +1003,31 @@ func (idx *Index) Check() []Issue {
 	// link that resolves nowhere shows up here); no separate relative-link check.
 	for _, b := range idx.Broken() {
 		issues = append(issues, Issue{"warning", b.From, "broken link -> " + b.Target})
+	}
+	// A link's #anchor should point at a real heading in its target. The target
+	// file itself is verified above (Broken); this additionally checks the fragment,
+	// so a link to an existing file with a missing #section is caught. A miss is a
+	// warning, like a broken link: a dangling reference, not a malformation. Covers
+	// markdown and wikilink forms (both carry Anchor) and pure-#anchor self-links
+	// (SelfAnchors, resolved against the entry's own headings). Obsidian block refs
+	// (`#^id`) are left alone: they address a block, not a heading.
+	for _, e := range idx.Entries {
+		for _, l := range e.Links {
+			if l.Anchor == "" || strings.HasPrefix(l.Anchor, "^") {
+				continue
+			}
+			if t, ok := idx.byPath[l.Target]; ok && !t.hasHeadingSlug(l.Anchor) {
+				issues = append(issues, Issue{"warning", e.Path, "link anchor not found -> " + l.Raw})
+			}
+		}
+		for _, l := range e.SelfAnchors {
+			if strings.HasPrefix(l.Anchor, "^") {
+				continue
+			}
+			if !e.hasHeadingSlug(l.Anchor) {
+				issues = append(issues, Issue{"warning", e.Path, "link anchor not found -> " + l.Raw})
+			}
+		}
 	}
 	// A link that resolves outside the bundle is not broken (the file lives
 	// elsewhere) and not a graph edge, but it cannot be verified from within the
