@@ -7,6 +7,7 @@ okf_version: "0.1"
 Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood). Open items: `wiki checkboxes`. Every entry: `wiki list --where type=task`. Debt only: `wiki list --where type=task --where tags=debt`.
 
 ## 2 — Query surface
+- [ ] [list --limit and --skip](./2-query-surface/015-list-limit-skip.md)
 - [ ] [status: count of ignored files](./2-query-surface/011-status-ignored-count.md)
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](./2-query-surface/013-fuzzy-search.md) (low)
 - [ ] [wiki table --links raw|text|path](./2-query-surface/014-table-link-transform.md)
