@@ -119,6 +119,38 @@ func TestOutOfBundleReferenceWarns(t *testing.T) {
 	}
 }
 
+// A `[[text](/x.md)]` hybrid (wikilink brackets around a markdown link) parses as
+// a valid, resolvable markdown link, so nothing flags it as broken. But the stray
+// outer brackets render literally, so check must surface it as malformed. The
+// signal is a '[' captured into the link text.
+func TestMalformedHybridLinkWarns(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\nSee [[Guide](/a.md)] here.\n",
+		"a.md":     "---\ntype: note\n---\nx\n",
+	})
+	// The inner link resolves, so it is a real edge and never broken.
+	if got := idx.Broken(); len(got) != 0 {
+		t.Errorf("hybrid link resolves; must not be broken, got %+v", got)
+	}
+	issues := idx.Check()
+	if !hasWarning(issues, "/index.md", "malformed link syntax") {
+		t.Errorf("hybrid `[[text](/x.md)]` should warn as malformed, got %+v", issues)
+	}
+	for _, is := range issues {
+		if is.Level == "error" {
+			t.Errorf("malformed link is advisory, not an error: %+v", is)
+		}
+	}
+	// A well-formed markdown link with ordinary text must stay silent.
+	clean := build(t, map[string]string{
+		"index.md": "---\ntype: index\n---\nSee [Guide](/a.md) here.\n",
+		"a.md":     "---\ntype: note\n---\nx\n",
+	})
+	if hasWarning(clean.Check(), "/index.md", "malformed link syntax") {
+		t.Errorf("a well-formed link must not warn as malformed")
+	}
+}
+
 func TestRelativeLinkCountsForOrphans(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\ntype: index\n---\n[a](./a.md)\n", // relative edge

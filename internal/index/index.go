@@ -63,6 +63,17 @@ type Entry struct {
 // is the single source of truth for identity, so the basename is not stored.
 func (e *Entry) base() string { return path.Base(e.Path) }
 
+// allLinks returns every internal link parsed from the body, across the buckets
+// it is split into (graph edges, self-anchors, out-of-bundle). Used by checks
+// that inspect a link's on-disk form regardless of where it resolves.
+func (e *Entry) allLinks() []Link {
+	out := make([]Link, 0, len(e.Links)+len(e.SelfAnchors)+len(e.Outside))
+	out = append(out, e.Links...)
+	out = append(out, e.SelfAnchors...)
+	out = append(out, e.Outside...)
+	return out
+}
+
 // Depth is the number of folders below the content root (a top-level file is 0).
 func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
@@ -994,6 +1005,16 @@ func (idx *Index) Check() []Issue {
 		// link, is the unit a fix addresses).
 		if n := len(e.wikilinks); n > 0 {
 			issues = append(issues, Issue{"warning", e.Path, fmt.Sprintf("%d wikilink(s), not standard links; run `wiki tidy --wikilinks` to convert", n)})
+		}
+		// A stray '[' inside a markdown link's text is the signature of a
+		// wikilink/markdown hybrid like `[[text](/x.md)]`: the inner `[text](/x.md)`
+		// matches and resolves, so the target is never flagged as broken, but the
+		// outer brackets render as literal `[`…`]` around the link. The parser can't
+		// hold a ']' in link text, so a captured '[' is the reliable tell.
+		for _, l := range e.allLinks() {
+			if strings.Contains(l.Text, "[") {
+				issues = append(issues, Issue{"warning", e.Path, fmt.Sprintf("malformed link syntax (stray '[' in link text) -> [%s](%s)", l.Text, l.Raw)})
+			}
 		}
 	}
 	// Broken links are warnings, not errors: per OKF a broken link may be
