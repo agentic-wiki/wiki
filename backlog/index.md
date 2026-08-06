@@ -8,11 +8,13 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## 2 — Query surface
 - [ ] [list --limit and --skip](./2-query-surface/015-list-limit-skip.md)
+- [ ] [list --body: bodies in the same json call](./2-query-surface/016-list-body.md) (low)
 - [ ] [status: count of ignored files](./2-query-surface/011-status-ignored-count.md)
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](./2-query-surface/013-fuzzy-search.md) (low)
 - [ ] [wiki table --links raw|text|path](./2-query-surface/014-table-link-transform.md)
 
 ## 3 — Graph & mutation
+- [ ] [wiki set: the missing write primitive](./3-graph-and-mutation/016-set-frontmatter.md)
 - [ ] [.wiki cache](./3-graph-and-mutation/004-incremental-cache.md)
 - [ ] [spec upgrade / cross-version migration](./3-graph-and-mutation/008-spec-upgrade.md)
 - [ ] [wiki move on directories](./3-graph-and-mutation/013-move-directories.md)
@@ -28,6 +30,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [move: no rollback on a partial write](./debt/004-move-no-rollback.md)
 
 ## Done
+- [x] [move --include-frontmatter: relative frontmatter refs](./3-graph-and-mutation/015-frontmatter-relative-refs.md): frontmatter refs are matched by **resolved target** (so a relative `blockers: [./task-1.md]` is found, not just an exact root-absolute string) and written in the canonical **relative** form, like body links. The moved file's own frontmatter refs are respelled from its new directory too, closing the same cross-folder dangle that body links already handled. Anchors preserved, out-of-bundle values untouched. A `.md` suffix gates the whole pass, without it, resolving every value would rewrite `title: Some Note` into `./Some Note`. md-in-frontmatter and `check`-flagging stay rejected as opinionated (011).
 - [x] [check anchor links point at a real heading](./conformance/009-anchor-link-check.md): `wiki check` warns on a link to an existing file whose `#anchor` matches no heading there (`link anchor not found -> …`), matched by GitHub-style slug on both sides (`headingSlug` + `Entry.hasHeadingSlug`, duplicate headings disambiguated `-1`/`-2`). Covers markdown, `[[wikilink#…]]`, and same-page `#anchor` self-links. Warning severity, exit `0`; broken targets not double-reported. Refactor: links now carry a parsed `Anchor` field (retired `anchorOf(Raw)`; `Move`/check use it), and pure `#anchor` links are captured off-graph in `SelfAnchors`. Only Obsidian block refs `#^id` and text-vs-rendered-markup slugging remain out of scope. Unit + smoke tests; AGENTS/spec/CHANGELOG synced.
 - [x] datasets guidance + `org-wiki`→`org-base` rename: AGENTS.md teaches the entry-vs-dataset choice (uniform records you aggregate go in one `type: dataset` table queried via `wiki table | duckdb`/`jq`, not one file each; store cells raw/machine-readable so no `gsub` cleanup; a dataset is a typed file, never an `index.md`). `org-base` (renamed from `org-wiki`, since a base holds knowledge **and** datasets) gains a Records-and-datasets section with a raw invoices table, and its rollup note now splits entry-frontmatter rollups from tabular ones. Synced spec README's dataset definition and `org-base`'s suggested `types` (+`dataset`). Historical mentions of `org-wiki` in older Done entries left as-is.
 - [x] [relative links are the canonical on-disk form](./3-graph-and-mutation/012-switch-canonical-links.md): internal links are stored relative to the linking file (`../ref/api.md`), so they navigate in any renderer (GitHub, editors, Obsidian), not just bundle-root-aware tools. Internal graph unchanged (still keyed on the resolved root-absolute path), so `backlinks`/`orphans`/`search`/`links` are unaffected. `tidy --links` now normalizes absolute→relative; `move` writes relative and also respells the **moved file's own** outgoing links from its new dir (previously they'd dangle on a cross-folder move); `tidy --wikilinks` emits relative too. A hand-written absolute link still resolves (never "broken"); frontmatter path refs stay absolute (metadata, not rendered links). New `relativeLink` helper (inverse of `normalizeLink`); AGENTS/spec/scaffold docs + tests + smoke swept.

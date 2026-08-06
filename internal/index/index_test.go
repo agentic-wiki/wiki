@@ -437,22 +437,23 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 		t.Errorf("default move must NOT touch the epic: field: %q", read(base, "login.md"))
 	}
 
-	// --include-frontmatter: frontmatter values equal to the path move too...
+	// --include-frontmatter: frontmatter refs move too, and are written in the
+	// canonical relative form (root-absolute is still accepted on the way in).
 	idx := build(t, files)
 	res, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(read(idx, "login.md"), "epic: /epics/authn.md") {
+	if !strings.Contains(read(idx, "login.md"), "epic: ./epics/authn.md") {
 		t.Errorf("scalar field should move: %q", read(idx, "login.md"))
 	}
-	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [/epics/authn.md, /login.md]") {
+	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [./epics/authn.md, /login.md]") {
 		t.Errorf("flow-list element should move, others untouched: %q", read(idx, "oauth.md"))
 	}
-	if d := read(idx, "deps.md"); !strings.Contains(d, "- /epics/authn.md") || !strings.Contains(d, "- /login.md") {
+	if d := read(idx, "deps.md"); !strings.Contains(d, "- ./epics/authn.md") || !strings.Contains(d, "- /login.md") {
 		t.Errorf("block-list element should move, others untouched: %q", d)
 	}
-	if !strings.Contains(read(idx, "note.md"), "origin: /epics/authn.md") {
+	if !strings.Contains(read(idx, "note.md"), "origin: ./epics/authn.md") {
 		t.Errorf("origin field should move: %q", read(idx, "note.md"))
 	}
 	// ...but a bare path in prose (not a link, not frontmatter) is left alone.
@@ -466,6 +467,52 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 	}
 	if fm != 4 {
 		t.Errorf("expected 4 frontmatter rewrites (scalar + flow elem + origin + block elem), got %d (%+v)", fm, res.Rewrites)
+	}
+}
+
+// Frontmatter refs are matched by resolved target, like body links, so a relative
+// ref is found as readily as a root-absolute one; and because the moved file's own
+// directory changes, its own refs are respelled from the new location.
+func TestMoveIncludeFrontmatterRelative(t *testing.T) {
+	files := map[string]string{
+		"index.md":   "---\nokf_version: \"0.1\"\n---\n[t](/tasks/a.md)\n",
+		"tasks/a.md": "---\ntype: task\ntitle: Some Note\nstatus: todo\nblockers: [./b.md, ../lib/c.md]\nspec: ../lib/c.md#usage\nexternal: ../../outside.md\n---\na\n",
+		"tasks/b.md": "---\ntype: task\nblockers: [./a.md]\n---\nb\n",
+		"lib/c.md":   "---\ntype: note\n---\nc\n",
+	}
+	read := func(idx *Index, rel string) string {
+		b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel)))
+		return string(b)
+	}
+	idx := build(t, files)
+	if _, err := idx.Move("/tasks/a.md", "/archive/2026/a.md", false, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// An inbound relative ref is found and repointed, spelled from its own file.
+	if got := read(idx, "tasks/b.md"); !strings.Contains(got, "blockers: [../archive/2026/a.md]") {
+		t.Errorf("inbound relative ref should be repointed: %q", got)
+	}
+
+	moved := read(idx, "archive/2026/a.md")
+	// The moved file's own refs still resolve, respelled from its new directory.
+	if !strings.Contains(moved, "blockers: [../../tasks/b.md, ../../lib/c.md]") {
+		t.Errorf("moved file's own refs should be respelled: %q", moved)
+	}
+	// An anchor survives the respelling.
+	if !strings.Contains(moved, "spec: ../../lib/c.md#usage") {
+		t.Errorf("anchor should be preserved: %q", moved)
+	}
+	// Values that are not `.md` paths are metadata, not refs, even though they
+	// would resolve to a valid in-bundle path. This is the guard that keeps the
+	// pass from rewriting `title` to `./Some Note`.
+	if !strings.Contains(moved, "title: Some Note") || !strings.Contains(moved, "status: todo") {
+		t.Errorf("non-path values must be left alone: %q", moved)
+	}
+	// A value resolving outside the bundle is left exactly as authored, as
+	// out-of-bundle body links are.
+	if !strings.Contains(moved, "external: ../../outside.md") {
+		t.Errorf("out-of-bundle value must be left alone: %q", moved)
 	}
 }
 

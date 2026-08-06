@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## Unreleased
+
+### Fixed
+
+- **`move --include-frontmatter` handles relative frontmatter refs.** The flag shipped when root-absolute was still the canonical link form, so it matched frontmatter values by exact string equality against the moved entry's root-absolute path. Once relative links became canonical for bodies (v0.7.0), the natural spelling was the broken one: `blockers: [./task-1.md]` never equalled `/active/task-1.md`, so the flag silently did nothing and the ref dangled. Frontmatter refs are now resolved and matched the same way body links are, so relative and root-absolute are both found, and they are **written relative**, the same canonical on-disk form. The moved file's *own* frontmatter refs are now respelled from its new directory as well, closing the cross-folder dangle that body links already handled. Anchors are preserved and out-of-bundle values are left as authored. Only values ending in `.md` are treated as references, which is what keeps the pass from rewriting ordinary metadata like `title: Some Note` (an arbitrary string resolves to a valid in-bundle path). The opt-in caveat is unchanged: the flag rewrites every matching value, snapshot fields included.
+
 ## v0.8.0
 
 ### Changed

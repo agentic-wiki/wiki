@@ -699,7 +699,7 @@ func parseWith2Args(fs *flag.FlagSet, args []string) (string, string, bool) {
 func cmdMove(args []string) int {
 	fs := flag.NewFlagSet("move", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
-	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter values equal to the moved path (opt-in)")
+	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter *.md values referencing the moved path (opt-in)")
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	src, dest, ok := parseWith2Args(fs, args)
 	if !ok {

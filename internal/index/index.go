@@ -737,7 +737,7 @@ func (idx *Index) Backlinks(target string) []LinkRef {
 }
 
 // FileRewrite records what a move rewrote in one entry: body links, and, when
-// --include-frontmatter is set, frontmatter values equal to the moved path.
+// --include-frontmatter is set, frontmatter values referencing the moved path.
 type FileRewrite struct {
 	Path            string `json:"_path"`
 	Links           int    `json:"links"`
@@ -758,11 +758,11 @@ type MoveResult struct {
 // src (relative or root-absolute alike, matched by resolved target) is respelled
 // relative from the linking file to dest, and the moved file's own outgoing links
 // are respelled relative from its new directory (its dir changed, so its relative
-// links would otherwise dangle). With includeFrontmatter it also rewrites
-// frontmatter values equal to src's path (an opt-in: frontmatter is otherwise
+// links would otherwise dangle). With includeFrontmatter it treats `*.md`-suffixed
+// frontmatter values as references and keeps them valid the same way, resolving and
+// respelling them exactly like body links (an opt-in: frontmatter is otherwise
 // opaque, since the tool cannot know a path-shaped value is a reference rather than
-// a snapshot; these stay root-absolute, as frontmatter is metadata, not a rendered
-// link). With dryRun it computes the plan without writing. There is no rollback: on
+// a snapshot). With dryRun it computes the plan without writing. There is no rollback: on
 // a mid-way write error it returns what was already done so `unresolved` can surface
 // any leftovers.
 func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
@@ -815,18 +815,11 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
 		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
-		var fmKeys map[string]bool
+		var fmRWs map[string][]fmRewrite
 		if includeFrontmatter {
-			for k := range e.fm {
-				if slices.Contains(parse.Strings(e.fm, k), src.Path) {
-					if fmKeys == nil {
-						fmKeys = map[string]bool{}
-					}
-					fmKeys[k] = true
-				}
-			}
+			fmRWs = idx.frontmatterRewrites(e, src.Path, dest, epath)
 		}
-		if len(rws) == 0 && len(fmKeys) == 0 {
+		if len(rws) == 0 && len(fmRWs) == 0 {
 			continue
 		}
 		raw, err := e.Raw()
@@ -852,10 +845,10 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 			})
 		}
 		fields := 0
-		if len(fmKeys) > 0 {
+		if len(fmRWs) > 0 {
 			_, body := parse.Frontmatter(raw)
 			fmEnd := strings.Count(raw[:len(raw)-len(body)], "\n")
-			fields = rewriteFrontmatterRefs(lines, fmEnd, fmKeys, src.Path, dest)
+			fields = rewriteFrontmatterRefs(lines, fmEnd, fmRWs)
 		}
 		if n == 0 && fields == 0 {
 			continue
@@ -879,14 +872,87 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	return res, nil
 }
 
-// rewriteFrontmatterRefs rewrites, within the first fmEnd lines (an entry's
-// frontmatter block), any value under a key in hitKeys that equals oldPath,
-// changing it to newPath. hitKeys (derived from the parsed frontmatter) gates the
-// rewrite, so a path that appears only as prose inside some other value is never
-// touched; the token boundaries keep it to whole values (scalar, flow, or block
-// list). Returns the number of values rewritten.
-func rewriteFrontmatterRefs(lines []string, fmEnd int, hitKeys map[string]bool, oldPath, newPath string) int {
-	tok := regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(oldPath) + `([\],\s"']|$)`)
+// fmRewrite is one frontmatter value respelling: the value exactly as written on
+// disk, what it becomes, and the token-boundary pattern that finds it in a line.
+type fmRewrite struct {
+	oldRaw, newRaw string
+	tok            *regexp.Regexp
+}
+
+// frontmatterRewrites plans the frontmatter respellings a move entails for entry
+// e, keyed by frontmatter key. It is the frontmatter twin of the body-link pass in
+// Move, and follows the same two rules: a value referencing src is repointed at
+// dest, and (only for the moved file itself, whose directory changes) a value
+// referencing anything else is respelled from its new location. newPath is e's
+// path after the move, so both cases spell the result relative to where the file
+// will actually live.
+//
+// A frontmatter value is considered a reference only when it ends in `.md` (after
+// any `#anchor`). That suffix is the whole heuristic, and it is what keeps the
+// pass from mangling ordinary metadata: an arbitrary value like `title: Some Note`
+// would otherwise resolve to a perfectly valid in-bundle path and be rewritten to
+// `./Some Note`. Values resolving outside the bundle are left alone, as body links
+// are. Matching is by resolved target, not by spelling, so relative and
+// root-absolute references are both found; the rewrite emits the relative form,
+// the same canonical on-disk spelling body links use.
+func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest, newPath string) map[string][]fmRewrite {
+	var out map[string][]fmRewrite
+	for k := range e.fm {
+		var seen map[string]bool
+		for _, v := range parse.Strings(e.fm, k) {
+			if p, _, _ := strings.Cut(v, "#"); !strings.HasSuffix(p, ".md") {
+				continue
+			}
+			abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, v)
+			if escapes {
+				continue
+			}
+			target := abs
+			switch {
+			case stripAnchor(abs) == srcPath:
+				target = dest + anchorOf(abs)
+			case e.Path != srcPath:
+				continue // only the moved file respells its refs to unmoved targets
+			}
+			newRaw := relativeLink(newPath, target)
+			if newRaw == v || seen[v] {
+				continue
+			}
+			if seen == nil {
+				seen = map[string]bool{}
+			}
+			seen[v] = true
+			if out == nil {
+				out = map[string][]fmRewrite{}
+			}
+			out[k] = append(out[k], fmRewrite{
+				oldRaw: v,
+				newRaw: newRaw,
+				tok:    regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(v) + `([\],\s"']|$)`),
+			})
+		}
+		// Longest first, so a value that is a suffix-substring of another is never
+		// matched inside it.
+		slices.SortFunc(out[k], func(a, b fmRewrite) int { return len(b.oldRaw) - len(a.oldRaw) })
+	}
+	return out
+}
+
+func stripAnchor(p string) string { p, _, _ = strings.Cut(p, "#"); return p }
+
+func anchorOf(p string) string {
+	if _, a, ok := strings.Cut(p, "#"); ok {
+		return "#" + a
+	}
+	return ""
+}
+
+// rewriteFrontmatterRefs applies planned respellings within the first fmEnd lines
+// (an entry's frontmatter block). Keying by frontmatter key gates the rewrite, so a
+// path that appears only as prose inside some other value is never touched; the
+// token boundaries keep it to whole values (scalar, flow, or block list). Returns
+// the number of values rewritten.
+func rewriteFrontmatterRefs(lines []string, fmEnd int, rewrites map[string][]fmRewrite) int {
 	n, lastKey := 0, ""
 	for i := 0; i < fmEnd && i < len(lines); i++ {
 		t := strings.TrimRight(lines[i], "\r")
@@ -903,17 +969,16 @@ func rewriteFrontmatterRefs(lines []string, fmEnd int, hitKeys map[string]bool, 
 			owner = strings.TrimSpace(key)
 			lastKey = owner
 		}
-		if !hitKeys[owner] {
-			continue
-		}
 		c := 0
-		nt := tok.ReplaceAllStringFunc(t, func(m string) string {
-			c++
-			sub := tok.FindStringSubmatch(m)
-			return sub[1] + newPath + sub[2]
-		})
+		for _, rw := range rewrites[owner] {
+			t = rw.tok.ReplaceAllStringFunc(t, func(m string) string {
+				c++
+				sub := rw.tok.FindStringSubmatch(m)
+				return sub[1] + rw.newRaw + sub[2]
+			})
+		}
 		if c > 0 {
-			lines[i] = nt + cr
+			lines[i] = t + cr
 			n += c
 		}
 	}
