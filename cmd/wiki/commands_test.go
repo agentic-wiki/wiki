@@ -310,8 +310,8 @@ func TestCmdMoveIncludeFrontmatter(t *testing.T) {
 		if code != 0 {
 			t.Fatalf("move --include-frontmatter exit %d", code)
 		}
-		// Rewritten in the canonical relative form, as body links are.
-		if b, _ := os.ReadFile(filepath.Join(dir, "ref.md")); !strings.Contains(string(b), "parent: ./moved.md") {
+		// Frontmatter refs stay root-absolute (the stable-key form), unlike body links.
+		if b, _ := os.ReadFile(filepath.Join(dir, "ref.md")); !strings.Contains(string(b), "parent: /moved.md") {
 			t.Errorf("--include-frontmatter should rewrite the field: %s", b)
 		}
 		if !strings.Contains(out, "frontmatter ref") {

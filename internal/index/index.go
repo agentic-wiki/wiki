@@ -759,10 +759,11 @@ type MoveResult struct {
 // relative from the linking file to dest, and the moved file's own outgoing links
 // are respelled relative from its new directory (its dir changed, so its relative
 // links would otherwise dangle). With includeFrontmatter it treats `*.md`-suffixed
-// frontmatter values as references and keeps them valid the same way, resolving and
-// respelling them exactly like body links (an opt-in: frontmatter is otherwise
-// opaque, since the tool cannot know a path-shaped value is a reference rather than
-// a snapshot). With dryRun it computes the plan without writing. There is no rollback: on
+// frontmatter values as references and keeps them valid too, resolving them the same
+// way but writing them root-absolute, the stable-key form a metadata field needs
+// (an opt-in: frontmatter is otherwise opaque, since the tool cannot know a
+// path-shaped value is a reference rather than a snapshot).
+// With dryRun it computes the plan without writing. There is no rollback: on
 // a mid-way write error it returns what was already done so `unresolved` can surface
 // any leftovers.
 func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
@@ -817,7 +818,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
 		var fmRWs map[string][]fmRewrite
 		if includeFrontmatter {
-			fmRWs = idx.frontmatterRewrites(e, src.Path, dest, epath)
+			fmRWs = idx.frontmatterRewrites(e, src.Path, dest)
 		}
 		if len(rws) == 0 && len(fmRWs) == 0 {
 			continue
@@ -881,21 +882,25 @@ type fmRewrite struct {
 
 // frontmatterRewrites plans the frontmatter respellings a move entails for entry
 // e, keyed by frontmatter key. It is the frontmatter twin of the body-link pass in
-// Move, and follows the same two rules: a value referencing src is repointed at
-// dest, and (only for the moved file itself, whose directory changes) a value
-// referencing anything else is respelled from its new location. newPath is e's
-// path after the move, so both cases spell the result relative to where the file
-// will actually live.
+// Move: a value referencing src is repointed at dest, and (only for the moved file
+// itself, whose directory changes, so its relative refs would otherwise dangle) a
+// relative value referencing anything else is normalized in place.
+//
+// Matching is by resolved target, not by spelling, so a relative ref is found as
+// readily as a root-absolute one. The rewrite always emits the **root-absolute**
+// form, which is where frontmatter deliberately parts company with body links:
+// a body link is relative because it must navigate in a renderer, while a
+// frontmatter ref is never rendered as a link and instead must be a *stable key*.
+// Only one spelling per target keeps `--where blockers=/active/x.md` finding every
+// referrer; relative values spell the same target differently from each directory,
+// so no single query can match them all.
 //
 // A frontmatter value is considered a reference only when it ends in `.md` (after
 // any `#anchor`). That suffix is the whole heuristic, and it is what keeps the
 // pass from mangling ordinary metadata: an arbitrary value like `title: Some Note`
-// would otherwise resolve to a perfectly valid in-bundle path and be rewritten to
-// `./Some Note`. Values resolving outside the bundle are left alone, as body links
-// are. Matching is by resolved target, not by spelling, so relative and
-// root-absolute references are both found; the rewrite emits the relative form,
-// the same canonical on-disk spelling body links use.
-func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest, newPath string) map[string][]fmRewrite {
+// would otherwise resolve to a perfectly valid in-bundle path and be rewritten as
+// one. Values resolving outside the bundle are left alone, as body links are.
+func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest string) map[string][]fmRewrite {
 	var out map[string][]fmRewrite
 	for k := range e.fm {
 		var seen map[string]bool
@@ -907,14 +912,13 @@ func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest, newPath string) m
 			if escapes {
 				continue
 			}
-			target := abs
+			newRaw := abs // already root-absolute: the canonical frontmatter form
 			switch {
 			case stripAnchor(abs) == srcPath:
-				target = dest + anchorOf(abs)
+				newRaw = dest + anchorOf(abs)
 			case e.Path != srcPath:
-				continue // only the moved file respells its refs to unmoved targets
+				continue // only the moved file normalizes its refs to unmoved targets
 			}
-			newRaw := relativeLink(newPath, target)
 			if newRaw == v || seen[v] {
 				continue
 			}

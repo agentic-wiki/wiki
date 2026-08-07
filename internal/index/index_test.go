@@ -437,23 +437,23 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 		t.Errorf("default move must NOT touch the epic: field: %q", read(base, "login.md"))
 	}
 
-	// --include-frontmatter: frontmatter refs move too, and are written in the
-	// canonical relative form (root-absolute is still accepted on the way in).
+	// --include-frontmatter: frontmatter refs move too, staying root-absolute (the
+	// stable-key form; body links go relative, frontmatter does not).
 	idx := build(t, files)
 	res, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(read(idx, "login.md"), "epic: ./epics/authn.md") {
+	if !strings.Contains(read(idx, "login.md"), "epic: /epics/authn.md") {
 		t.Errorf("scalar field should move: %q", read(idx, "login.md"))
 	}
-	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [./epics/authn.md, /login.md]") {
+	if !strings.Contains(read(idx, "oauth.md"), "blocked_by: [/epics/authn.md, /login.md]") {
 		t.Errorf("flow-list element should move, others untouched: %q", read(idx, "oauth.md"))
 	}
-	if d := read(idx, "deps.md"); !strings.Contains(d, "- ./epics/authn.md") || !strings.Contains(d, "- /login.md") {
+	if d := read(idx, "deps.md"); !strings.Contains(d, "- /epics/authn.md") || !strings.Contains(d, "- /login.md") {
 		t.Errorf("block-list element should move, others untouched: %q", d)
 	}
-	if !strings.Contains(read(idx, "note.md"), "origin: ./epics/authn.md") {
+	if !strings.Contains(read(idx, "note.md"), "origin: /epics/authn.md") {
 		t.Errorf("origin field should move: %q", read(idx, "note.md"))
 	}
 	// ...but a bare path in prose (not a link, not frontmatter) is left alone.
@@ -471,8 +471,10 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 }
 
 // Frontmatter refs are matched by resolved target, like body links, so a relative
-// ref is found as readily as a root-absolute one; and because the moved file's own
-// directory changes, its own refs are respelled from the new location.
+// ref is found as readily as a root-absolute one. Unlike body links they are
+// *written* root-absolute: one spelling per target is what keeps `--where` able to
+// find every referrer. The moved file's own relative refs are normalized too, since
+// its directory changed and they would otherwise dangle.
 func TestMoveIncludeFrontmatterRelative(t *testing.T) {
 	files := map[string]string{
 		"index.md":   "---\nokf_version: \"0.1\"\n---\n[t](/tasks/a.md)\n",
@@ -489,18 +491,20 @@ func TestMoveIncludeFrontmatterRelative(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// An inbound relative ref is found and repointed, spelled from its own file.
-	if got := read(idx, "tasks/b.md"); !strings.Contains(got, "blockers: [../archive/2026/a.md]") {
+	// An inbound relative ref is found and repointed, and normalized to the
+	// canonical root-absolute form so every referrer spells it identically.
+	if got := read(idx, "tasks/b.md"); !strings.Contains(got, "blockers: [/archive/2026/a.md]") {
 		t.Errorf("inbound relative ref should be repointed: %q", got)
 	}
 
 	moved := read(idx, "archive/2026/a.md")
-	// The moved file's own refs still resolve, respelled from its new directory.
-	if !strings.Contains(moved, "blockers: [../../tasks/b.md, ../../lib/c.md]") {
-		t.Errorf("moved file's own refs should be respelled: %q", moved)
+	// The moved file's own relative refs would dangle from the new directory, so
+	// they are normalized in place.
+	if !strings.Contains(moved, "blockers: [/tasks/b.md, /lib/c.md]") {
+		t.Errorf("moved file's own refs should be normalized: %q", moved)
 	}
-	// An anchor survives the respelling.
-	if !strings.Contains(moved, "spec: ../../lib/c.md#usage") {
+	// An anchor survives the normalization.
+	if !strings.Contains(moved, "spec: /lib/c.md#usage") {
 		t.Errorf("anchor should be preserved: %q", moved)
 	}
 	// Values that are not `.md` paths are metadata, not refs, even though they

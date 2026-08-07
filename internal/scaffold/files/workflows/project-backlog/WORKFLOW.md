@@ -101,7 +101,20 @@ A **milestone** (`type: milestone`) is a release or target; an epic (or a lone t
 
 ## Dependencies
 
-Model *blocks* / *blocked-by* as real Markdown links between issues, not prose like `Depends on: tz-bug`: only a link is an edge the graph can follow. `wiki backlinks /active/tz-bug.md` then shows what finishing it would unblock, and `wiki unresolved` surfaces links to issues or specs not written yet: candidate prerequisites.
+A dependency is *blocks* / *blocked-by* between two issues, and never prose like `Depends on: tz-bug`, which nothing can follow. Two recipes, the same trade-off as epics above; **pick one and keep it**, so every issue records a blocker the same way.
+
+- **Body link.** The blocked issue links its prerequisite in the body: `Blocked by [Timezone bug](./tz-bug.md)`. A real graph edge, so `wiki backlinks /active/tz-bug.md` shows what finishing it would unblock, `wiki move` maintains it with no flag, and it keeps the prerequisite off `wiki orphans`. What it does not carry is *which kind* of relation it is (a link is just a link), so "what is blocked right now" is something you read, not something you query.
+- **`blockers:` field.** The blocked issue lists its prerequisites as paths:
+
+  ```yaml
+  blockers: [/active/tz-bug.md, /backlog/dedup.md]
+  ```
+
+  Explicit, typed, and filterable: `wiki list --where blockers=/active/tz-bug.md` is every issue waiting on that one. Reach for it when something other than a human reads the backlog (a board UI, a scheduling script), since a machine needs the relation named, not inferred from where a link sits. The field-not-an-edge caveats apply: `backlinks` will not follow it, the prerequisite still needs a body link from somewhere to stay off `orphans`, and a relocation needs `wiki move … --include-frontmatter`.
+
+  **Write these root-absolute.** A relative `./tz-bug.md` resolves fine and `move` maintains it, but `--where` is exact string equality, so the same target spelled `./tz-bug.md` from one folder and `../active/tz-bug.md` from another cannot both be found by one query. Root-absolute is one spelling per target, which is the whole point of using a field instead of a link. (`move --include-frontmatter` normalizes to it.)
+
+Either way `wiki unresolved` surfaces links to issues or specs not yet written: candidate prerequisites. And note what neither recipe does: nothing *enforces* a blocker. An issue can be moved to `in-progress` with its blockers open, and the backlog will simply say so.
 
 ## Multiple teams
 
