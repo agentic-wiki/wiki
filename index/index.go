@@ -56,6 +56,7 @@ type Entry struct {
 	Headings    []parse.Heading  `json:"-"`
 	wikilinks   []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
 	abs         string
+	root        string // the bundle dir, so an entry can re-parse itself after a write
 	fm          map[string]any
 }
 
@@ -167,7 +168,7 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
 		}
-		e, err := parseEntry(b, path)
+		e, err := parseEntry(b.Dir, path)
 		if err != nil {
 			return err
 		}
@@ -240,12 +241,12 @@ func (idx *Index) resolveIgnore() {
 	}
 }
 
-func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
+func parseEntry(root, abs string) (*Entry, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(b.Dir, abs)
+	rel, _ := filepath.Rel(root, abs)
 	content := string(data)
 	fm, body := parse.Frontmatter(content)
 	// Links/checkboxes/headings are parsed from the frontmatter-stripped body, so
@@ -255,7 +256,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// rel is the file's path under the bundle root ("finance/income.md");
 	// entryPath is its root-absolute bundle id ("/finance/income.md").
 	entryPath := "/" + filepath.ToSlash(rel)
-	links, selfAnchors, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
+	links, selfAnchors, outside := resolveLinks(root, parse.Links(body), entryPath, offset)
 	checkboxes, heads := parse.Checkboxes(body), parse.Headings(body)
 	for i := range checkboxes {
 		checkboxes[i].Line += offset
@@ -277,6 +278,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		Headings:    heads,
 		wikilinks:   wikilinks,
 		abs:         abs,
+		root:        root,
 		fm:          fm,
 	}, nil
 }
@@ -880,7 +882,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n, FrontmatterRefs: fields})
 		if !dryRun {
-			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return res, err
 			}
 		}
@@ -1195,12 +1197,12 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	if err != nil {
 		return nil, err
 	}
-	updated, err := setFrontmatterValue(string(raw), "okf_version", want)
+	updated, err := setFrontmatterValue(string(raw), "okf_version", want, false)
 	if err != nil {
 		return nil, err
 	}
 	if apply {
-		if err := os.WriteFile(root.abs, []byte(updated), 0o644); err != nil {
+		if err := writeFile(root.abs, []byte(updated)); err != nil {
 			return nil, err
 		}
 	}
@@ -1327,7 +1329,7 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 			changed = true
 		}
 		if apply && changed {
-			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return nil, err
 			}
 		}
@@ -1372,49 +1374,11 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 		})
 	}
 	if apply {
-		if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 			return nil, err
 		}
 	}
 	return changes, nil
-}
-
-// setFrontmatterValue returns content with the frontmatter `key` set to a quoted
-// value, updating an existing key in place or inserting it as the last
-// frontmatter line. It errors if there is no frontmatter block, and preserves
-// the file's existing line endings.
-func setFrontmatterValue(content, key, value string) (string, error) {
-	lines := strings.Split(content, "\n")
-	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		// No frontmatter block yet: create one carrying just this key.
-		return fmt.Sprintf("---\n%s: \"%s\"\n---\n%s", key, value, content), nil
-	}
-	closeIdx := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			closeIdx = i
-			break
-		}
-	}
-	if closeIdx == -1 {
-		return "", fmt.Errorf("unterminated frontmatter")
-	}
-	cr := ""
-	if strings.HasSuffix(lines[0], "\r") {
-		cr = "\r"
-	}
-	newLine := fmt.Sprintf(`%s: "%s"`, key, value) + cr
-	for i := 1; i < closeIdx; i++ {
-		if k, _, ok := strings.Cut(strings.TrimRight(lines[i], "\r"), ":"); ok && strings.TrimSpace(k) == key {
-			lines[i] = newLine
-			return strings.Join(lines, "\n"), nil
-		}
-	}
-	out := make([]string, 0, len(lines)+1)
-	out = append(out, lines[:closeIdx]...)
-	out = append(out, newLine)
-	out = append(out, lines[closeIdx:]...)
-	return strings.Join(out, "\n"), nil
 }
 
 // parseTimestamp parses an ISO 8601 timestamp in the two forms the spec allows:
@@ -1457,4 +1421,66 @@ func looksLikeNonISODate(heading string) bool {
 
 func hasPathPrefix(path, prefix string) bool {
 	return strings.HasPrefix(strings.TrimPrefix(path, "/"), strings.TrimPrefix(prefix, "/"))
+}
+
+// Field returns a frontmatter value as a scalar ("" when absent or list-valued).
+func (e *Entry) Field(key string) string { return parse.String(e.fm, key) }
+
+// FieldList returns a frontmatter value as a list, treating a lone scalar as a
+// one-element list.
+//
+// That normalization is the same one MatchProperty applies, so a consumer
+// filtering entries by hand reaches the same answer as `--where` rather than a
+// subtly different one.
+func (e *Entry) FieldList(key string) []string { return parse.Strings(e.fm, key) }
+
+// Frontmatter returns the entry's frontmatter verbatim, exactly as written, with
+// no per-field coercion.
+//
+// The map is a copy, lists included: the index holds the original, and a caller
+// that could mutate it would be editing the engine's state rather than reading it.
+func (e *Entry) Frontmatter() map[string]any {
+	out := make(map[string]any, len(e.fm))
+	for k, v := range e.fm {
+		if list, ok := v.([]string); ok {
+			out[k] = slices.Clone(list)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// ResolveLink resolves a link target as written in the entry at fromPath to its
+// canonical root-absolute bundle path, the same key the graph is built on.
+//
+// outside reports that the target lands above the bundle root, which is neither
+// an edge nor broken: it points out of a self-contained bundle, so callers skip
+// it rather than resolving it on disk.
+//
+// Exported because anything rendering a body has to turn its links into
+// something it can navigate, and doing that by hand is how the rule ends up with
+// more than one home.
+func (idx *Index) ResolveLink(fromPath, target string) (path string, outside bool) {
+	return normalizeLink(idx.Bundle.Dir, fromPath, target)
+}
+
+// RelativeLink spells a resolved root-absolute target as it should be written on
+// disk from fromPath: the canonical on-disk form, relative so it navigates in any
+// renderer. The inverse of ResolveLink, and what anything writing a link needs.
+func RelativeLink(fromPath, target string) string { return relativeLink(fromPath, target) }
+
+// BacklinkMap returns every entry's incoming links, keyed by the linked-to path.
+//
+// Backlinks answers one target by scanning every entry, so asking it for a whole
+// bundle is quadratic. This walks the graph once instead, which is what a reader
+// rendering backlinks per page actually needs.
+func (idx *Index) BacklinkMap() map[string][]LinkRef {
+	out := make(map[string][]LinkRef, len(idx.Entries))
+	for _, e := range idx.Entries {
+		for _, l := range e.Links {
+			out[l.Target] = append(out[l.Target], LinkRef{From: e.Path, To: l.Target, Text: l.Text, Line: l.Line})
+		}
+	}
+	return out
 }

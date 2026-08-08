@@ -22,7 +22,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [backlinks/links per-page granularity](./3-graph-and-mutation/014-backlinks-granularity.md)
 
 ## 4 — Release & docs
-- [ ] [promote the core packages to an importable API](./4-release-and-docs/005-public-packages.md) — **prerequisite for [wikiview](./5-serve/001-absorb-server.md)**
+- [x] [promote the core packages to an importable API](./4-release-and-docs/005-public-packages.md): `bundle`, `index`, `parse` at the module root (`output` and `wikilink` stayed internal), plus the four rules a consumer would otherwise reimplement — frontmatter reads (`Field`/`FieldList`/`Frontmatter`), link resolution (`ResolveLink`/`RelativeLink`), surgical frontmatter writes (`SetField`/`SetFields`/`UnsetField`), and checkbox toggling (`SetCheckbox`, which did not exist at all). `--where` parsing moved into `index.ParseFilter`. Writes refresh the in-memory entry and are now **atomic** (temp + rename). Verified no-behaviour-change by diffing the pre-move binary: 759 read captures and 59 mutating cases compared by entire file tree. Incremental rebuild deferred to [.wiki cache](./3-graph-and-mutation/004-incremental-cache.md).
 - [ ] [reserve a per-tool config namespace in wiki.toml](./conformance/010-tool-config-namespace.md)
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](./4-release-and-docs/004-skills-sync.md)

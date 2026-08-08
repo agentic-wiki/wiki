@@ -1,7 +1,7 @@
 ---
 type: task
 title: "promote the core packages to an importable API"
-status: in-progress
+status: done
 priority: high
 tags: [feature, api, architecture]
 ---
@@ -36,17 +36,23 @@ Top-level `bundle/`, `index/`, `parse/` rather than a `pkg/` directory, which mo
 - **`Build` cost and reuse.** A long-lived consumer wants to rebuild incrementally, or at least cheaply. Worth pairing with [.wiki cache](../3-graph-and-mutation/004-incremental-cache.md).
 - **The CLI must keep using the same packages**, or the library becomes a second implementation of the thing it was extracted from.
 
-## Progress
+## Done
 
-**Done: the move and the first deduplication.** `bundle`, `index`, and `parse` are at the module root and an external module has been verified building an index, filtering, and walking the graph against a real bundle. `output` and `wikilink` stayed internal. `--where` parsing moved from `cmd/wiki` into `index.ParseFilter`, which was a defect independent of consumers: the query syntax is part of the query contract, not of the CLI's flag handling.
+**The move.** `bundle`, `index`, and `parse` are at the module root; `output` and `wikilink` stayed internal. An external module has been verified building an index, filtering, and walking the graph against a real bundle. `--where` parsing moved from `cmd/wiki` into `index.ParseFilter`, which was a defect independent of consumers: the query syntax is part of the query contract, not of the CLI's flag handling. The CLI keeps its own error wording, since the library cannot know it was reached from a flag.
 
-**Still to decide, deliberately, before any consumer needs it.** The surface below is what a consumer must otherwise reimplement, which is the exact failure the retro records:
+**The four rules a consumer would otherwise reimplement**, which is the exact failure the retro records:
 
-- **Generic frontmatter access.** `Entry.fm` is unexported and only `MarshalJSON` reveals it, so reading an arbitrary field means round-tripping through JSON. Needs an accessor pair mirroring `parse.String`/`parse.Strings`.
-- **Link resolution.** `normalizeLink` is unexported, so anything rendering a body reimplements how a target becomes a bundle path. This is the rule that had three homes.
-- **Frontmatter writes.** `setFrontmatterValue` is unexported, so a consumer writes its own. This is the rule that had two.
-- **Checkbox toggling.** Does not exist at all; the format's inline task mechanism has no write primitive.
+- **Generic frontmatter access** — `Entry.Field` / `Entry.FieldList` mirroring `parse.String`/`parse.Strings`, plus `Frontmatter()` for the whole map. Reading a field no longer means round-tripping through JSON.
+- **Link resolution** — `Index.ResolveLink` (target → bundle path, reporting out-of-bundle) and `RelativeLink` (the inverse). This is the rule that had three homes.
+- **Frontmatter writes** — `SetField`, `SetFields`, `UnsetField`. The edit is surgical: it replaces exactly the lines belonging to a key and leaves every other byte alone, never parsing to a struct and re-serializing, which would silently drop what the YAML subset does not model. This is the rule that had two.
+- **Checkbox toggling** — `SetCheckbox`, keyed by line because a checkbox's text may repeat within an entry. The format's inline task mechanism had no write primitive at all.
 
-Each is a *mutation of the engine's public contract*, so each should be designed for consumers in general rather than for the first one that asks.
+Writes refresh the in-memory entry, so a caller holding an index never reads back what it just overwrote. `BacklinkMap` was added alongside: one pass for the whole graph, where a consumer rendering every entry would otherwise call `Backlinks` per entry.
 
-**Acceptance:** an external Go module can `import "github.com/agentic-wiki/wiki/index"`, build a bundle index, and answer the same questions the CLI does; the CLI is refactored onto the public packages with no behaviour change; the existing test suite passes unchanged.
+**Writes became atomic** as part of this, since a library consumer holds the index while other processes read the same files. See the CHANGELOG for the behaviour that changed with it (symlinks, hardlinks, read-only directories).
+
+**Deliberately deferred:** incremental rebuild, which a long-lived consumer will want and which belongs with [.wiki cache](../3-graph-and-mutation/004-incremental-cache.md). `Build` is still whole-bundle.
+
+**Stability:** pre-1.0, so the surface may break; the module version is the only promise. Stated here rather than discovered through a breaking change.
+
+**Acceptance, met:** an external Go module imports `github.com/agentic-wiki/wiki/index`, builds a bundle index, and answers the same questions the CLI does; the CLI runs on the same packages; the test suite passes. Verified as no-behaviour-change by diffing the pre-move binary against the current one — 759 read captures (7 bundles × 23 commands × 4 formats, plus error paths and every `-h`) and 59 mutating cases compared by entire resulting file tree, on both clean and deliberately dirty fixtures.

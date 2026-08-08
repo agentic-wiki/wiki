@@ -1052,7 +1052,7 @@ func TestSetFrontmatterValue(t *testing.T) {
 		{"create", "no frontmatter here\n", "---\nokf_version: \"0.1\"\n---\nno frontmatter here\n"},
 	}
 	for _, c := range cases {
-		got, err := setFrontmatterValue(c.in, "okf_version", "0.1")
+		got, err := setFrontmatterValue(c.in, "okf_version", "0.1", false)
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q err=%v, want %q", c.name, got, err, c.want)
 		}
