@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentic-wiki/wiki/internal/bundle"
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/bundle"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func build(t *testing.T, files map[string]string) *Index {

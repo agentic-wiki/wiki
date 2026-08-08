@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/agentic-wiki/wiki/internal/bundle"
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/internal/wikilink"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
@@ -476,6 +476,30 @@ type PropFilter struct {
 	Key    string
 	Value  string
 	Negate bool
+}
+
+// ParseFilter reads one `key=value` / `key!=value` expression.
+//
+// The spelling is part of the query contract, not of the CLI's argument
+// handling, so it lives here: a consumer that accepted the same syntax and
+// parsed it itself would be a second implementation of a rule with one correct
+// home, and the two would drift on exactly the details that are easy to miss.
+// `!=` is matched before `=` so a value may itself contain `=`, and the value is
+// unquoted the way frontmatter is, so a quote surviving the shell
+// (`k="v"`) still compares equal to `k: "v"`.
+func ParseFilter(s string) (PropFilter, error) {
+	neg := false
+	kRaw, vRaw, ok := strings.Cut(s, "!=")
+	if ok {
+		neg = true
+	} else {
+		kRaw, vRaw, ok = strings.Cut(s, "=")
+	}
+	key := parse.Unquote(kRaw)
+	if !ok || key == "" {
+		return PropFilter{}, fmt.Errorf("%q is not a filter: expected key=value or key!=value", s)
+	}
+	return PropFilter{Key: key, Value: parse.Unquote(vRaw), Negate: neg}, nil
 }
 
 // Filter returns entries under pathPrefix (empty = the whole bundle) that satisfy

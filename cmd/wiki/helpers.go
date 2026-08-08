@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/agentic-wiki/wiki/internal/bundle"
-	"github.com/agentic-wiki/wiki/internal/index"
+	"github.com/agentic-wiki/wiki/bundle"
+	"github.com/agentic-wiki/wiki/index"
 )
 
 // loadIndex discovers the bundle (from --root if given, else the current

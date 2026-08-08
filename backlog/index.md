@@ -22,6 +22,8 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [backlinks/links per-page granularity](./3-graph-and-mutation/014-backlinks-granularity.md)
 
 ## 4 — Release & docs
+- [ ] [promote the core packages to an importable API](./4-release-and-docs/005-public-packages.md) — **prerequisite for [wikiview](./5-serve/001-absorb-server.md)**
+- [ ] [reserve a per-tool config namespace in wiki.toml](./conformance/010-tool-config-namespace.md)
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](./4-release-and-docs/004-skills-sync.md)
 
@@ -29,6 +31,10 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## Debt
 - [ ] [table parser: rare `|` edge cases](./debt/002-table-pipe-edge-cases.md)
 - [ ] [move: no rollback on a partial write](./debt/004-move-no-rollback.md)
+
+## 5 — Serve
+- [x] [absorb the server into the CLI](./5-serve/001-absorb-server.md): **cancelled**. The UI lives in its own repo (`wikiview`); keeping `wiki` a zero-dependency neutral engine won. The consequence is that [005](./4-release-and-docs/005-public-packages.md) becomes a prerequisite rather than a nicety, and the bar it has to clear is that no consumer should ever need to reimplement a rule.
+- [x] [what the first attempt got wrong](./5-serve/005-lessons.md): a working board UI was ported in and reverted. Three link resolvers, two frontmatter writers in one module, two config files with two parsers, a false README, deleted tests, and public API exported to unblock the port. Every one a migration artifact.
 
 ## Done
 - [x] [move --include-frontmatter: find relative frontmatter refs](./3-graph-and-mutation/015-frontmatter-relative-refs.md): frontmatter refs are matched by **resolved target** (so a relative `blockers: [./task-1.md]` is found, not just an exact root-absolute string) and **normalized to root-absolute** on write; the moved file's own relative refs are normalized too, closing the cross-folder dangle body links already handled. Frontmatter deliberately does *not* follow bodies to relative: a root-absolute value is a **stable key** (`--where epic=/epics/x.md` finds every referrer, where relative spellings differ per directory and no single query matches them all), and the rendering argument behind 012 does not apply since frontmatter is never rendered as a link. **Body links are relative because they must navigate; frontmatter refs are root-absolute because they must be stable keys.** Anchors preserved, out-of-bundle values untouched, `.md` suffix gates the pass. Resolve-on-`--where` was considered and rejected (it would put a path heuristic in the hottest query path and break match-what-you-see).

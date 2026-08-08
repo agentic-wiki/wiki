@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentic-wiki/wiki/internal/index"
+	"github.com/agentic-wiki/wiki/index"
 	"github.com/agentic-wiki/wiki/internal/output"
-	"github.com/agentic-wiki/wiki/internal/parse"
 	"github.com/agentic-wiki/wiki/internal/scaffold"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func cmdInit(args []string) int {
@@ -98,21 +98,13 @@ type whereFilters []index.PropFilter
 func (w *whereFilters) String() string { return "" }
 
 func (w *whereFilters) Set(s string) error {
-	// `!=` (inequality) takes precedence over `=`, so it is matched first.
-	neg := false
-	kRaw, vRaw, ok := strings.Cut(s, "!=")
-	if ok {
-		neg = true
-	} else {
-		kRaw, vRaw, ok = strings.Cut(s, "=")
-	}
-	k := parse.Unquote(kRaw)
-	if !ok || k == "" {
+	f, err := index.ParseFilter(s)
+	if err != nil {
+		// The CLI keeps its own wording, which names the flag the user typed;
+		// the library cannot, since it does not know it was reached from a flag.
 		return fmt.Errorf("--where must be key=value or key!=value, got %q", s)
 	}
-	// Unquote the value the same way frontmatter is parsed, so a quote that
-	// survives the shell (--where 'k="v"') still compares equal to `k: "v"`.
-	*w = append(*w, index.PropFilter{Key: k, Value: parse.Unquote(vRaw), Negate: neg})
+	*w = append(*w, f)
 	return nil
 }
 

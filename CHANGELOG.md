@@ -4,6 +4,14 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 ## Unreleased
 
+### Changed
+
+- **The core packages are importable.** `bundle`, `index`, and `parse` moved out of `internal/` to the module root, so a Go program can build a bundle index and query it directly instead of spawning the CLI and parsing its output. `output` (CLI presentation) and `wikilink` (a compat shim `index` uses without exposing) stay internal. The CLI is unchanged and still runs on the same packages, so there is no second implementation of anything.
+
+  Shelling out is a fine contract for occasional whole-bundle questions and a poor one for a consumer asking many small ones, since every invocation re-reads and re-parses the whole tree: cost scales with interaction rather than with change. It also forced consumers to reimplement rules that have one correct home here, which is how a separate UI ended up carrying its own frontmatter writer and its own link resolver.
+
+- **`index.ParseFilter` reads a `key=value` / `key!=value` expression.** The spelling is part of the query contract rather than of the CLI's argument handling, so it moved out of `cmd/wiki`; the flag now calls it. Any consumer accepting the same syntax gets the same parse, including the details that are easy to miss (`!=` matched before `=`, so a value may contain `=`; the value unquoted the way frontmatter is).
+
 ### Fixed
 
 - **`move --include-frontmatter` finds relative frontmatter refs.** The flag shipped when root-absolute was still the canonical link form, so it matched frontmatter values by exact string equality against the moved entry's root-absolute path. Once relative links became canonical for bodies (v0.7.0), the natural spelling was the broken one: `blockers: [./task-1.md]` never equalled `/active/task-1.md`, so the flag silently did nothing and the ref dangled. Frontmatter refs are now **resolved** and matched the way body links are, so relative and root-absolute are both found, and they are **normalized to root-absolute** on write. The moved file's own relative refs are normalized too, closing the cross-folder dangle that body links already handled. Anchors are preserved and out-of-bundle values are left as authored. Only values ending in `.md` are treated as references, which is what keeps the pass from rewriting ordinary metadata like `title: Some Note` (an arbitrary string resolves to a valid in-bundle path). The opt-in caveat is unchanged: the flag rewrites every matching value, snapshot fields included.

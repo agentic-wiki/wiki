@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentic-wiki/wiki/internal/index"
+	"github.com/agentic-wiki/wiki/index"
 	"github.com/agentic-wiki/wiki/internal/scaffold"
 )
 
@@ -893,5 +893,19 @@ func TestCmdTable(t *testing.T) {
 	}
 	if _, code := capture(t, func() int { return cmdTable([]string{"nope.md"}) }); code != 2 {
 		t.Errorf("missing file should exit 2, got %d", code)
+	}
+}
+
+// The message a bad --where produces is part of the CLI's surface, and it names
+// the flag the user typed. Extracting the parser into index.ParseFilter silently
+// changed it once; this pins it so that cannot recur.
+func TestWhereFlagErrorMessage(t *testing.T) {
+	var w whereFilters
+	err := w.Set("garbage")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if want := `--where must be key=value or key!=value, got "garbage"`; err.Error() != want {
+		t.Errorf("got %q, want %q", err.Error(), want)
 	}
 }

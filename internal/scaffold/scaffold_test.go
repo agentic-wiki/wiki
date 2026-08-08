@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func TestWrite(t *testing.T) {

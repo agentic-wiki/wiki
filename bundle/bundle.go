@@ -11,7 +11,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // Bundle is a located agentic-wiki bundle: a directory containing wiki.toml,
