@@ -9,7 +9,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## 2 — Query surface
 - [ ] [list --limit and --skip](./2-query-surface/015-list-limit-skip.md)
 - [ ] [list --body: bodies in the same json call](./2-query-surface/016-list-body.md) (low)
-- [ ] [--where on the vocabulary commands](./2-query-surface/017-where-on-vocabulary-commands.md)
+- [x] [--where on the vocabulary commands](./2-query-surface/017-where-on-vocabulary-commands.md): `tags`, `properties`, `property`, and `checkboxes` take `--where` with `list`'s semantics, composing with `--prefix` — **two filters, `--prefix` for where and `--where` for what**, available wherever a set of entries is narrowed. `checkboxes` also dropped a duplicate prefix matcher and now routes through `Index.Filter`.
 - [ ] [status: count of ignored files](./2-query-surface/011-status-ignored-count.md)
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](./2-query-surface/013-fuzzy-search.md) (low)
 - [ ] [wiki table --links raw|text|path](./2-query-surface/014-table-link-transform.md)

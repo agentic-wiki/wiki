@@ -1,7 +1,7 @@
 ---
 type: task
 title: "--where on the vocabulary commands (tags, properties, property)"
-status: todo
+status: done
 priority: medium
 tags: [feature, query, consistency]
 ---
@@ -26,3 +26,11 @@ Surfaced by `wikanban`, which used `property status --prefix` to discover a boar
 - Keeps the story simple to explain: **two filters, `--prefix` for where and `--where` for what, both available wherever a set of entries is being narrowed.**
 
 **Acceptance:** `wiki property status --where type=task` reports only tasks' statuses; the same for `tags` and `properties`; `--where` composes with `--prefix`; docs and `AGENTS.md` updated so the two filters are described as the pair they are.
+
+**Done.** `--where` accepted on `tags`, `properties`, `property`, and `checkboxes`, with `list`'s exact semantics and composing with `--prefix`.
+
+`checkboxes` was included: its unit is a `- [ ]` line, but its *scope* is a set of entries, so the filter is meaningful there and excluding it would have made the story "two filters everywhere, except one place" — which is the asymmetry this task existed to remove. A named `[file]` stays explicit and ignores both filters.
+
+Mostly threading, as expected: the counters already routed through `Index.Filter(prefix, nil)`, so they took a `props []PropFilter` parameter and passed it on. `checkboxes` was the exception — it carried its own inline copy of prefix matching rather than calling `Filter`, behaviourally identical but a second implementation of the same rule; it now routes through `Filter` like everything else.
+
+Help, README, and CHANGELOG describe the pair rather than two separate flags: **`--prefix` for where, `--where` for what.**

@@ -1,6 +1,7 @@
 package index
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1480,16 +1481,16 @@ func TestCounts(t *testing.T) {
 	})
 
 	// TagCounts: y is in a and b (twice in b, but an entry counts once).
-	tags := idx.TagCounts("")
+	tags := idx.TagCounts("", nil)
 	if len(tags) != 3 || tags["x"] != 1 || tags["y"] != 2 || tags["z"] != 1 {
 		t.Errorf("TagCounts = %v, want {x:1, y:2, z:1}", tags)
 	}
-	if sub := idx.TagCounts("sub/"); len(sub) != 1 || sub["z"] != 1 {
+	if sub := idx.TagCounts("sub/", nil); len(sub) != 1 || sub["z"] != 1 {
 		t.Errorf("TagCounts(sub/) = %v, want {z:1}", sub)
 	}
 
 	// PropertyKeyCounts: index.md contributes only okf_version (reserved, no type).
-	keys := idx.PropertyKeyCounts("")
+	keys := idx.PropertyKeyCounts("", nil)
 	for key, want := range map[string]int{"okf_version": 1, "type": 3, "status": 3, "tags": 3} {
 		if keys[key] != want {
 			t.Errorf("PropertyKeyCounts[%q] = %d, want %d (all: %v)", key, keys[key], want, keys)
@@ -1497,19 +1498,58 @@ func TestCounts(t *testing.T) {
 	}
 
 	// PropertyValueCounts: scalar key (status, type) and list key (tags), with prefix.
-	if st := idx.PropertyValueCounts("status", ""); st["open"] != 2 || st["done"] != 1 {
+	if st := idx.PropertyValueCounts("status", "", nil); st["open"] != 2 || st["done"] != 1 {
 		t.Errorf("PropertyValueCounts(status) = %v, want {open:2, done:1}", st)
 	}
-	if ty := idx.PropertyValueCounts("type", ""); ty["note"] != 2 || ty["concept"] != 1 {
+	if ty := idx.PropertyValueCounts("type", "", nil); ty["note"] != 2 || ty["concept"] != 1 {
 		t.Errorf("PropertyValueCounts(type) = %v, want {note:2, concept:1}", ty)
 	}
-	if tg := idx.PropertyValueCounts("tags", ""); tg["x"] != 1 || tg["y"] != 2 || tg["z"] != 1 {
+	if tg := idx.PropertyValueCounts("tags", "", nil); tg["x"] != 1 || tg["y"] != 2 || tg["z"] != 1 {
 		t.Errorf("PropertyValueCounts(tags) = %v, want {x:1, y:2, z:1}", tg)
 	}
-	if st := idx.PropertyValueCounts("status", "sub/"); len(st) != 1 || st["open"] != 1 {
+	if st := idx.PropertyValueCounts("status", "sub/", nil); len(st) != 1 || st["open"] != 1 {
 		t.Errorf("PropertyValueCounts(status, sub/) = %v, want {open:1}", st)
 	}
-	if got := idx.PropertyValueCounts("nope", ""); len(got) != 0 {
+	if got := idx.PropertyValueCounts("nope", "", nil); len(got) != 0 {
 		t.Errorf("PropertyValueCounts(nope) = %v, want empty", got)
+	}
+}
+
+// The asymmetry this closes: a folder holding more than one kind of entry could
+// be narrowed by path but not by field, so a board's status vocabulary came back
+// polluted with the statuses of the notes filed beside it.
+func TestVocabularyCommandsTakeWhere(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":           "---\nokf_version: \"0.1\"\n---\n",
+		"backlog/a.md":       "---\ntype: task\nstatus: todo\ntags: [ui]\n---\n",
+		"backlog/b.md":       "---\ntype: task\nstatus: done\ntags: [ui, api]\n---\n",
+		"backlog/note.md":    "---\ntype: note\nstatus: published\ntags: [prose]\n---\n",
+		"elsewhere/other.md": "---\ntype: task\nstatus: blocked\ntags: [infra]\n---\n",
+	})
+	task := []PropFilter{{Key: "type", Value: "task"}}
+
+	got := idx.PropertyValueCounts("status", "/backlog", task)
+	want := map[string]int{"todo": 1, "done": 1}
+	if !maps.Equal(got, want) {
+		t.Errorf("status under /backlog for tasks = %v, want %v (a note's status leaked in)", got, want)
+	}
+	// --prefix and --where each still narrow on their own.
+	if got := idx.PropertyValueCounts("status", "/backlog", nil); len(got) != 3 {
+		t.Errorf("prefix alone = %v, want all three statuses", got)
+	}
+	if got := idx.PropertyValueCounts("status", "", task); len(got) != 3 {
+		t.Errorf("where alone = %v, want the three tasks' statuses", got)
+	}
+
+	if got, want := idx.TagCounts("/backlog", task), map[string]int{"ui": 2, "api": 1}; !maps.Equal(got, want) {
+		t.Errorf("TagCounts = %v, want %v", got, want)
+	}
+	if got := idx.PropertyKeyCounts("/backlog", task); got["type"] != 2 || got["status"] != 2 {
+		t.Errorf("PropertyKeyCounts = %v, want 2 tasks' keys only", got)
+	}
+	// Negation and AND compose as they do on list.
+	notDone := []PropFilter{{Key: "type", Value: "task"}, {Key: "status", Value: "done", Negate: true}}
+	if got, want := idx.TagCounts("/backlog", notDone), map[string]int{"ui": 1}; !maps.Equal(got, want) {
+		t.Errorf("negated filter = %v, want %v", got, want)
 	}
 }

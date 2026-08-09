@@ -14,7 +14,13 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 - **A write API on `Entry`.** `SetField`, `SetFields`, `UnsetField`, and `SetCheckbox` change frontmatter and checkboxes surgically: the matching lines are replaced and every other byte is left alone, never parsing the frontmatter into a map and re-serializing it, which would silently drop nested maps, anchors, comments, and quoting style. `SetFields` applies several keys in one pass, since two writes can leave an entry half-updated. Each refreshes the entry in place, because inserting or removing a line shifts the line numbers that links, checkboxes, and headings all carry. `SetCheckbox` is keyed by line, the only stable identity a checkbox has.
 
-- **Reading and resolving, for consumers.** `Entry.Field`, `Entry.FieldList`, and `Entry.Frontmatter` reach arbitrary frontmatter; `FieldList` applies the same scalar-as-one-element-list rule matching uses, so filtering by hand agrees with `--where` rather than being subtly different. `Index.ResolveLink` and `RelativeLink` expose both directions of link spelling. `Index.BacklinkMap` walks the graph once, where asking `Backlinks` per target rescans every entry each time.
+- **Reading and resolving, for consumers.** `Entry.Field`, `Entry.FieldList`, and `Entry.Frontmatter` reach arbitrary frontmatter; `FieldList` applies the same scalar-as-one-element-list rule matching uses, so filtering by hand agrees with `--where` rather than being subtly different. `Index.ResolveLink` and `RelativeLink` expose both directions of link spelling.
+
+- **`--where` works on the vocabulary commands.** `tags`, `properties`, `property`, and `checkboxes` now take `--where key=value` / `key!=value` with the same semantics `list` has (repeatable, ANDed, list-match-any), composing with `--prefix`.
+
+  `--prefix` scoped every one of these and `--where` scoped none, so a subtree could be narrowed anywhere and a field could not. The gap showed the moment a folder held more than one kind of entry: a backlog that also holds notes reported *their* statuses (`published`, `retired`) beside the tasks', with no way to ask the narrower question short of post-processing `list --format json` through `jq`. Now there are two filters, available wherever a set of entries is narrowed: **`--prefix` for where, `--where` for what.** `checkboxes` is included because its unit is a `- [ ]` line but its *scope* is still a set of entries; a named `[file]` stays explicit and ignores both filters.
+
+  Library signatures gained the parameter: `TagCounts`, `PropertyKeyCounts`, and `PropertyValueCounts` each take `props []PropFilter` alongside the path prefix. `checkboxes` also dropped a second copy of prefix matching and now routes through `Index.Filter` like everything else.
 
 ### Fixed
 

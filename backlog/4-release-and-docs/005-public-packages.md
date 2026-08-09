@@ -47,7 +47,9 @@ Top-level `bundle/`, `index/`, `parse/` rather than a `pkg/` directory, which mo
 - **Frontmatter writes** — `SetField`, `SetFields`, `UnsetField`. The edit is surgical: it replaces exactly the lines belonging to a key and leaves every other byte alone, never parsing to a struct and re-serializing, which would silently drop what the YAML subset does not model. This is the rule that had two.
 - **Checkbox toggling** — `SetCheckbox`, keyed by line because a checkbox's text may repeat within an entry. The format's inline task mechanism had no write primitive at all.
 
-Writes refresh the in-memory entry, so a caller holding an index never reads back what it just overwrote. `BacklinkMap` was added alongside: one pass for the whole graph, where a consumer rendering every entry would otherwise call `Backlinks` per entry.
+Writes refresh the in-memory entry, so a caller holding an index never reads back what it just overwrote.
+
+A `BacklinkMap` was added alongside and then removed. It was justified as "what a consumer rendering every entry needs", and measuring showed that consumer does not exist: a reader renders *one* entry per request, which `Backlinks` answers in ~0.4ms on a 5k-entry bundle. The whole-graph workload it served had no caller, and the function was a seven-line inversion of data consumers already hold, not a rule they could get wrong. Precomputing it in `Build` was considered and rejected on the same evidence: it would charge every consumer ~40% of the index's footprint to save 0.4ms on a path nobody is blocked by. Recorded because the API surface is easier to add to than to take back.
 
 **Writes became atomic** as part of this, since a library consumer holds the index while other processes read the same files. See the CHANGELOG for the behaviour that changed with it (symlinks, hardlinks, read-only directories).
 

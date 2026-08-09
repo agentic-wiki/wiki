@@ -535,11 +535,12 @@ func (e *Entry) matchesAll(props []PropFilter) bool {
 	return true
 }
 
-// TagCounts returns every tag in the bundle (optionally within a path prefix)
+// TagCounts returns every tag in the bundle (optionally narrowed by path prefix
+// and property filters, the same pair Filter takes)
 // with the number of entries carrying it.
-func (idx *Index) TagCounts(pathPrefix string) map[string]int {
+func (idx *Index) TagCounts(pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for _, t := range dedupe(parse.Strings(e.fm, "tags")) {
 			counts[t]++
 		}
@@ -547,11 +548,11 @@ func (idx *Index) TagCounts(pathPrefix string) map[string]int {
 	return counts
 }
 
-// PropertyKeyCounts returns every frontmatter key in use (optionally within a
-// path prefix) with the number of entries that set it.
-func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
+// PropertyKeyCounts returns every frontmatter key in use (optionally narrowed by
+// path prefix and property filters) with the number of entries that set it.
+func (idx *Index) PropertyKeyCounts(pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for k := range e.fm {
 			counts[k]++
 		}
@@ -560,11 +561,11 @@ func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
 }
 
 // PropertyValueCounts returns the distinct values of frontmatter key (optionally
-// within a path prefix) with the number of entries holding each. A list-valued
-// key (e.g. tags) contributes each element.
-func (idx *Index) PropertyValueCounts(key, pathPrefix string) map[string]int {
+// narrowed by path prefix and property filters) with the number of entries
+// holding each. A list-valued key (e.g. tags) contributes each element.
+func (idx *Index) PropertyValueCounts(key, pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for _, v := range dedupe(parse.Strings(e.fm, key)) {
 			counts[v]++
 		}
@@ -744,6 +745,12 @@ func (idx *Index) OutLinks(e *Entry) []LinkRef {
 // Backlinks returns every internal link that points to target, one LinkRef per
 // occurrence (a source that links several times appears once per link), sorted
 // by source path then line. Relative links count, they resolve to the same target.
+//
+// This scans every edge in the bundle, which is the right shape for one target
+// (sub-millisecond on a 5k-entry bundle) and the wrong one for all of them: a
+// loop over every entry rescans the whole graph each time, ~2s where one pass
+// would be ~10ms. Nothing needs all of them yet; when something does, it wants
+// a single pass over Entries building a map keyed by Link.Target, not this.
 func (idx *Index) Backlinks(target string) []LinkRef {
 	var refs []LinkRef
 	for _, e := range idx.Entries {
@@ -1469,18 +1476,3 @@ func (idx *Index) ResolveLink(fromPath, target string) (path string, outside boo
 // disk from fromPath: the canonical on-disk form, relative so it navigates in any
 // renderer. The inverse of ResolveLink, and what anything writing a link needs.
 func RelativeLink(fromPath, target string) string { return relativeLink(fromPath, target) }
-
-// BacklinkMap returns every entry's incoming links, keyed by the linked-to path.
-//
-// Backlinks answers one target by scanning every entry, so asking it for a whole
-// bundle is quadratic. This walks the graph once instead, which is what a reader
-// rendering backlinks per page actually needs.
-func (idx *Index) BacklinkMap() map[string][]LinkRef {
-	out := make(map[string][]LinkRef, len(idx.Entries))
-	for _, e := range idx.Entries {
-		for _, l := range e.Links {
-			out[l.Target] = append(out[l.Target], LinkRef{From: e.Path, To: l.Target, Text: l.Text, Line: l.Line})
-		}
-	}
-	return out
-}

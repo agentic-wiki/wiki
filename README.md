@@ -79,6 +79,8 @@ wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
 ```
 
+Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
+
 **Follow the graph** (the part `grep` cannot do)
 
 ```sh
@@ -97,6 +99,7 @@ wiki checkboxes                    # every open - [ ] checkbox, across the whole
 wiki list --where type=task        # list task entries (detailed entries)
 wiki tags --counts --sort=count    # what you write about most
 wiki property status --counts      # how many open vs done, draft vs final
+wiki property status --counts --where type=task   # …only the tasks', if the folder mixes kinds
 ```
 
 **Reshape it safely**

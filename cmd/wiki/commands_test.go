@@ -909,3 +909,62 @@ func TestWhereFlagErrorMessage(t *testing.T) {
 		t.Errorf("got %q, want %q", err.Error(), want)
 	}
 }
+
+// The vocabulary commands report what a set of entries uses, so they must narrow
+// that set the same two ways list does. Before this they took --prefix only, and
+// a folder mixing kinds reported every kind's vocabulary.
+func TestVocabularyCommandsAcceptWhere(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec = \"0.1\"\n")
+	write("index.md", "---\nokf_version: \"0.1\"\n---\n")
+	write("b/task.md", "---\ntype: task\nstatus: todo\ntags: [ui]\n---\n- [ ] a task subtask\n")
+	write("b/note.md", "---\ntype: note\nstatus: published\ntags: [prose]\n---\n- [ ] a note subtask\n")
+	t.Chdir(dir)
+
+	onlyTasks := []string{"--where", "type=task"}
+	cases := []struct {
+		name       string
+		run        func() int
+		want, leak string
+	}{
+		{"property", func() int { return cmdProperty(append([]string{"status"}, onlyTasks...)) }, "todo", "published"},
+		{"tags", func() int { return cmdTags(onlyTasks) }, "ui", "prose"},
+		{"properties", func() int { return cmdProperties(onlyTasks) }, "status", ""},
+		{"checkboxes", func() int { return cmdCheckboxes(onlyTasks) }, "a task subtask", "a note subtask"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, code := capture(t, tc.run)
+			if code != 0 {
+				t.Fatalf("exit=%d", code)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("output %q missing %q", out, tc.want)
+			}
+			if tc.leak != "" && strings.Contains(out, tc.leak) {
+				t.Errorf("output %q leaked %q from an entry the filter excludes", out, tc.leak)
+			}
+		})
+	}
+
+	// --where composes with --prefix rather than replacing it.
+	out, _ := capture(t, func() int { return cmdTags([]string{"--prefix", "/b", "--where", "type=note"}) })
+	if !strings.Contains(out, "prose") || strings.Contains(out, "ui") {
+		t.Errorf("--prefix and --where should AND, got %q", out)
+	}
+
+	// A named [file] is explicit, so the filters must not also apply to it.
+	out, _ = capture(t, func() int { return cmdCheckboxes([]string{"/b/note.md", "--where", "type=task"}) })
+	if !strings.Contains(out, "a note subtask") {
+		t.Errorf("a named file should ignore --where, got %q", out)
+	}
+}
