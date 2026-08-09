@@ -42,7 +42,8 @@ Commands:
 Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 
-Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
+Every command that reports results accepts --format text|json|csv|tsv (default text; csv/tsv suit
+  list-shaped results); version prints a bare string
 Two filters, available wherever a set of entries is narrowed (list, search, checkboxes, tags,
   properties, property): --prefix <path> for where, --where key=value or key!=value for what
   (repeatable = AND). type and tags are ordinary fields, e.g. --where type=note, --where status!=done

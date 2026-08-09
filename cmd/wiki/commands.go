@@ -285,11 +285,14 @@ func cmdCheckboxes(args []string) int {
 		entries = []*index.Entry{e}
 	}
 
+	// `entry`, matching check's rows: both describe an entry rather than merging
+	// its frontmatter, so neither needs the reserved `_path`, and they should not
+	// disagree on what to call the same thing.
 	type row struct {
-		File string `json:"file"`
-		Line int    `json:"line"`
-		Done bool   `json:"done"`
-		Text string `json:"text"`
+		Entry string `json:"entry"`
+		Line  int    `json:"line"`
+		Done  bool   `json:"done"`
+		Text  string `json:"text"`
 	}
 	var rows []row
 	var lines []string

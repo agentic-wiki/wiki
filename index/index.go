@@ -669,9 +669,12 @@ func matchLine(line, q string, words []string, mode SearchMode) bool {
 }
 
 // BrokenLink is an internal link with no target file.
+//
+// The json keys match LinkRef's: a broken link is a link row like any other, and
+// naming its ends differently only made them harder to join.
 type BrokenLink struct {
 	From   string `json:"from"`
-	Target string `json:"target"`
+	Target string `json:"to"`
 	Line   int    `json:"line"`
 }
 
