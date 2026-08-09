@@ -119,6 +119,31 @@ func (e *Entry) SetFields(fields map[string]string) error {
 	return e.commit(raw, out)
 }
 
+// SetFieldList writes a list-valued frontmatter field: `tags`, `blockers`, and
+// anything else the bundle spells as a list.
+//
+// Separate from SetField because a list is not a string that happens to contain
+// brackets. Passing "[a, b]" to SetField writes `key: "[a, b]"` — correctly
+// quoted for a scalar, and a one-element list when read back.
+//
+// The existing shape is kept: a key already written as a block list stays one,
+// so the API does not reformat frontmatter it was only asked to change. A new
+// key is written flow-style, which is what the scaffolds use.
+func (e *Entry) SetFieldList(key string, values []string) error {
+	if err := validFieldKey(key); err != nil {
+		return err
+	}
+	raw, err := e.Raw()
+	if err != nil {
+		return err
+	}
+	out, err := setFrontmatterList(raw, key, values, e.reserved())
+	if err != nil {
+		return err
+	}
+	return e.commit(raw, out)
+}
+
 // UnsetField removes a key from the entry's frontmatter, including a block list
 // belonging to it.
 func (e *Entry) UnsetField(key string) error {
@@ -297,6 +322,73 @@ func setFrontmatterValue(content, key, value string, reserved bool) (string, err
 	out := append([]string{}, lines[:closed]...)
 	out = append(out, formatField(key, value, "")+carriage(lines[closed]))
 	return strings.Join(append(out, lines[closed:]...), "\n"), nil
+}
+
+// setFrontmatterList is setFrontmatterValue for a list value, emitting one or
+// more lines in place of the key's existing ones.
+func setFrontmatterList(content, key string, values []string, reserved bool) (string, error) {
+	lines := strings.Split(content, "\n")
+	open, closed := frontmatterFence(lines)
+	if open < 0 {
+		if reserved {
+			return "", ErrNoFrontmatter
+		}
+		return fmt.Sprintf("---\n%s\n---\n%s", flowList(key, values), content), nil
+	}
+	if closed < 0 {
+		return "", errors.New("unterminated frontmatter")
+	}
+
+	if i, end, _, ok := findKey(lines, open, closed, key); ok {
+		// end > i means the key owned `- item` lines, so it was written as a
+		// block. Keep it that way.
+		var repl []string
+		if end > i && len(values) > 0 {
+			repl = blockList(key, values)
+		} else {
+			repl = []string{flowList(key, values)}
+		}
+		cr := carriage(lines[i])
+		for j := range repl {
+			repl[j] += cr
+		}
+		out := append([]string{}, lines[:i]...)
+		out = append(out, repl...)
+		return strings.Join(append(out, lines[end+1:]...), "\n"), nil
+	}
+	out := append([]string{}, lines[:closed]...)
+	out = append(out, flowList(key, values)+carriage(lines[closed]))
+	return strings.Join(append(out, lines[closed:]...), "\n"), nil
+}
+
+// flowList renders `key: [a, b]`. An empty list is written `key: []`, which is
+// a declared-but-empty field, not the same thing as an absent one.
+func flowList(key string, values []string) string {
+	items := make([]string, len(values))
+	for i, v := range values {
+		items[i] = quoteItem(v)
+	}
+	return key + ": [" + strings.Join(items, ", ") + "]"
+}
+
+// blockList renders a key over several lines, one `- item` each.
+func blockList(key string, values []string) []string {
+	out := make([]string, 0, len(values)+1)
+	out = append(out, key+":")
+	for _, v := range values {
+		out = append(out, "  - "+quoteItem(v))
+	}
+	return out
+}
+
+// quoteItem quotes a list item that would not survive bare. A comma or a
+// bracket ends the item in flow style, so the rule is stricter than for a
+// scalar, where those characters are harmless.
+func quoteItem(v string) string {
+	if needsQuote(v) || strings.ContainsAny(v, ",[]") {
+		return fmt.Sprintf("%q", v)
+	}
+	return v
 }
 
 // unsetFrontmatterValue removes a key and any block list belonging to it,

@@ -6,12 +6,13 @@ package bundle
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/agentic-wiki/wiki/parse"
+	"github.com/BurntSushi/toml"
 )
 
 // Bundle is a located agentic-wiki bundle: a directory containing wiki.toml,
@@ -24,10 +25,34 @@ type Bundle struct {
 	// IgnoreOrphans lists paths (relative to Dir) whose entries stay indexed but are
 	// not reported by `wiki orphans`: a directory subtree or an exact path.
 	IgnoreOrphans []string
+	// Tool holds the [tool.<name>] tables, keyed by tool name. wiki never reads
+	// inside them: they are space granted to other tools over the same bundle, so
+	// one file describes the directory instead of a satellite config per tool.
+	// Handed over raw so no consumer writes a second wiki.toml parser.
+	Tool map[string]toml.Primitive
 	// Unknown holds wiki.toml keys the tool does not recognize (a typo, or a
-	// renamed field). They are inert; `check` surfaces them so they aren't
-	// silently ignored.
+	// renamed field), as dotted paths. They are inert; `check` surfaces them so
+	// they aren't silently ignored.
 	Unknown []string
+
+	md toml.MetaData // retained so Tool tables can be decoded on demand
+}
+
+// DecodeTool unmarshals the [tool.<name>] table into v, which is any struct or
+// map the caller defines. Reports whether the table was present.
+//
+// The decoding happens here rather than in the consumer because the alternative
+// is every tool parsing wiki.toml again: the same rule with two homes, which is
+// the drift this repo keeps refusing.
+func (b *Bundle) DecodeTool(name string, v any) (bool, error) {
+	p, ok := b.Tool[name]
+	if !ok {
+		return false, nil
+	}
+	if err := b.md.PrimitiveDecode(p, v); err != nil {
+		return true, fmt.Errorf("wiki.toml [tool.%s]: %w", name, err)
+	}
+	return true, nil
 }
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
@@ -52,19 +77,51 @@ func Discover(start string) (*Bundle, error) {
 	}
 }
 
+// config is the whole of wiki.toml the tool interprets. Anything else is either
+// a [tool.*] table, which is deliberately opaque, or an unrecognized key.
+type config struct {
+	Spec          string                    `toml:"spec"`
+	Types         []string                  `toml:"types"`
+	Ignore        []string                  `toml:"ignore"`
+	IgnoreOrphans []string                  `toml:"ignore_orphans"`
+	Tool          map[string]toml.Primitive `toml:"tool"`
+}
+
 func load(root, cfg string) (*Bundle, error) {
-	data, err := os.ReadFile(cfg)
+	var c config
+	// A malformed wiki.toml is an error rather than a shrug. The config decides
+	// what is an entry and which types are valid, so reading half of it and
+	// carrying on produces confidently wrong answers.
+	md, err := toml.DecodeFile(cfg, &c)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("wiki.toml: %w", err)
 	}
-	spec, types, ignore, ignoreOrphans, unknown := parseConfig(string(data))
+	// Undecoded keys are the ones no field claimed. The [tool.*] subtree is
+	// skipped rather than reported: reserving the namespace means wiki never has
+	// an opinion about what is inside it. (Its keys show as undecoded because
+	// toml.Primitive defers decoding, so the filter is explicit.)
+	var unknown []string
+	for _, k := range md.Undecoded() {
+		if len(k) > 0 && k[0] == "tool" {
+			continue
+		}
+		// Report the shallowest unrecognized key only: once [nested] is flagged,
+		// listing every key inside it adds noise, not information.
+		s := k.String()
+		if slices.ContainsFunc(unknown, func(u string) bool { return strings.HasPrefix(s, u+".") }) {
+			continue
+		}
+		unknown = append(unknown, s)
+	}
 	return &Bundle{
 		Dir:           root,
-		Spec:          spec,
-		Types:         types,
-		Ignore:        ignore,
-		IgnoreOrphans: ignoreOrphans,
+		Spec:          c.Spec,
+		Types:         c.Types,
+		Ignore:        c.Ignore,
+		IgnoreOrphans: c.IgnoreOrphans,
+		Tool:          c.Tool,
 		Unknown:       unknown,
+		md:            md,
 	}, nil
 }
 
@@ -86,34 +143,4 @@ var okfVersionMap = map[string]string{"0.1": "0.1"}
 func (b *Bundle) OKFVersion() (string, bool) {
 	v, ok := okfVersionMap[b.Spec]
 	return v, ok
-}
-
-// parseConfig reads the tiny wiki.toml we define: a `spec` string, and `types`,
-// `ignore`, and `ignore_orphans` arrays, each on one line. Deliberately minimal
-// (no TOML dependency). Any other key is collected in unknown so `check` can flag
-// it rather than let a typo or a renamed field pass unnoticed.
-func parseConfig(s string) (spec string, types, ignore, ignoreOrphans, unknown []string) {
-	for line := range strings.SplitSeq(s, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, val, ok := strings.Cut(line, "=")
-		if !ok {
-			continue
-		}
-		switch k := strings.TrimSpace(key); k {
-		case "spec":
-			spec = parse.Unquote(val)
-		case "types":
-			types = parse.List(val)
-		case "ignore":
-			ignore = parse.List(val)
-		case "ignore_orphans":
-			ignoreOrphans = parse.List(val)
-		default:
-			unknown = append(unknown, k)
-		}
-	}
-	return spec, types, ignore, ignoreOrphans, unknown
 }

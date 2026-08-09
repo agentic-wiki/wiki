@@ -81,7 +81,7 @@ func parseYAMLSubset(block string, fm map[string]any) {
 		val = stripComment(strings.TrimSpace(val))
 		switch {
 		case strings.HasPrefix(val, "["):
-			fm[key] = List(val)
+			fm[key] = list(val)
 		case strings.HasPrefix(val, "|") || strings.HasPrefix(val, ">"):
 			// block scalar: gather the following more-indented lines
 			var blk []string
@@ -140,18 +140,45 @@ func stripComment(s string) string {
 	return s
 }
 
-// List parses a bracketed, comma-separated list of quoted or bare tokens,
-// e.g. `[a, "b c", d]` into ["a", "b c", "d"]. Empties are dropped.
-func List(val string) []string {
+// list parses a frontmatter flow list of quoted or bare tokens, e.g.
+// `[a, "b c", d]` into ["a", "b c", "d"]. Empties are dropped.
+//
+// Unexported: this is how the frontmatter subset spells a list, not a general
+// parser. It was exported for wiki.toml, which now goes through a real TOML
+// reader.
+// The split honours quoting: a comma inside "a,b" separates nothing, and
+// splitting on every comma would turn one item into two broken halves.
+func list(val string) []string {
 	val = strings.TrimSpace(val)
 	val = strings.TrimPrefix(val, "[")
 	val = strings.TrimSuffix(val, "]")
+
 	var out []string
-	for p := range strings.SplitSeq(val, ",") {
-		if p = Unquote(p); p != "" {
+	var item strings.Builder
+	var quote byte // the open quote character, or 0 outside one
+	flush := func() {
+		if p := Unquote(item.String()); p != "" {
 			out = append(out, p)
 		}
+		item.Reset()
 	}
+	for i := range len(val) {
+		switch c := val[i]; {
+		case quote != 0:
+			if c == quote {
+				quote = 0
+			}
+			item.WriteByte(c)
+		case c == '"' || c == '\'':
+			quote = c
+			item.WriteByte(c)
+		case c == ',':
+			flush()
+		default:
+			item.WriteByte(c)
+		}
+	}
+	flush()
 	return out
 }
 

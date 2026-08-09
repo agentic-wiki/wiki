@@ -214,7 +214,7 @@ wiki check                           # the backlog stays conformant
 ## Design
 
 - **Standalone first:** agents call `wiki` directly, no server in the way.
-- **Minimal on purpose:** zero external dependencies, a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
+- **Minimal on purpose:** one dependency (a TOML parser, for `wiki.toml`), a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
 - **Files are truth:** the index is derived from disk and fully disposable.
 
 ## Develop

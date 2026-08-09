@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -399,5 +400,97 @@ func TestNoDirectWritesOutsideWriteFile(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no source files scanned, so this proved nothing")
+	}
+}
+
+// A list is not a string that happens to contain brackets: SetField would quote
+// it into a scalar, so a consumer had no way to write `tags` or `blockers` — the
+// two list fields the format uses most.
+func TestSetFieldList(t *testing.T) {
+	tests := []struct{ name, doc, key, want string }{
+		{
+			"flow stays flow",
+			"---\ntags: [ui, api]\ntype: task\n---\nb\n", "tags",
+			"---\ntags: [ui, api, new]\ntype: task\n---\nb\n",
+		},
+		{
+			// The API was asked to change a value, not to reformat the file.
+			"block stays block",
+			"---\nblockers:\n  - /x.md\n  - /y.md\ntype: task\n---\nb\n", "blockers",
+			"---\nblockers:\n  - ui\n  - api\n  - new\ntype: task\n---\nb\n",
+		},
+		{
+			"absent key is inserted flow-style",
+			"---\ntype: task\n---\nb\n", "tags",
+			"---\ntype: task\ntags: [ui, api, new]\n---\nb\n",
+		},
+		{
+			// Replacing a scalar with a list must not leave the old quoting.
+			"scalar becomes a list",
+			"---\ntags: \"just one\"\ntype: task\n---\nb\n", "tags",
+			"---\ntags: [ui, api, new]\ntype: task\n---\nb\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := setFrontmatterList(tc.doc, tc.key, []string{"ui", "api", "new"}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("got:\n%q\nwant:\n%q", got, tc.want)
+			}
+		})
+	}
+}
+
+// Items are quoted more strictly than scalars: a comma or a bracket would end
+// the item in flow style, where in a scalar they are harmless.
+func TestSetFieldListQuoting(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{"plain items bare", []string{"ui", "api"}, "---\nk: [ui, api]\n---\n"},
+		{"comma forces quotes", []string{"a,b", "c"}, "---\nk: [\"a,b\", c]\n---\n"},
+		{"brackets force quotes", []string{"[x]"}, "---\nk: [\"[x]\"]\n---\n"},
+		{"colon forces quotes", []string{"a: b"}, "---\nk: [\"a: b\"]\n---\n"},
+		{"number forces quotes", []string{"0.1"}, "---\nk: [\"0.1\"]\n---\n"},
+		{"empty list is explicit", nil, "---\nk: []\n---\n"},
+		{"paths stay bare", []string{"/a/b.md"}, "---\nk: [/a/b.md]\n---\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := setFrontmatterList("---\nk: old\n---\n", "k", tc.in, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The written form must survive a round trip, or the API produces frontmatter
+// its own parser misreads.
+func TestSetFieldListRoundTrips(t *testing.T) {
+	for _, values := range [][]string{
+		{"ui", "api"},
+		{"a,b", "c: d", "0.1", "[x]"},
+		{"/epics/x.md", "/epics/y.md"},
+	} {
+		idx := build(t, map[string]string{
+			"index.md": "---\nokf_version: \"0.1\"\n---\n",
+			"a.md":     "---\ntype: task\ntags: [old]\n---\nbody\n",
+		})
+		e, _ := idx.Resolve("/a.md")
+		if err := e.SetFieldList("tags", values); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.FieldList("tags"); !slices.Equal(got, values) {
+			raw, _ := e.Raw()
+			t.Errorf("wrote %q, read back %#v, want %#v", raw, got, values)
+		}
 	}
 }

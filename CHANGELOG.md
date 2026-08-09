@@ -14,6 +14,8 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 - **A write API on `Entry`.** `SetField`, `SetFields`, `UnsetField`, and `SetCheckbox` change frontmatter and checkboxes surgically: the matching lines are replaced and every other byte is left alone, never parsing the frontmatter into a map and re-serializing it, which would silently drop nested maps, anchors, comments, and quoting style. `SetFields` applies several keys in one pass, since two writes can leave an entry half-updated. Each refreshes the entry in place, because inserting or removing a line shifts the line numbers that links, checkboxes, and headings all carry. `SetCheckbox` is keyed by line, the only stable identity a checkbox has.
 
+  `SetFieldList` writes list-valued fields (`tags`, `blockers`, and anything else the bundle spells as a list). Separate from `SetField` because a list is not a string that happens to contain brackets: passing `"[a, b]"` to `SetField` writes `key: "[a, b]"`, correctly quoted for a scalar and a one-element list when read back. A key already written as a block list stays one, so the API does not reformat frontmatter it was only asked to change.
+
 - **Reading and resolving, for consumers.** `Entry.Field`, `Entry.FieldList`, and `Entry.Frontmatter` reach arbitrary frontmatter; `FieldList` applies the same scalar-as-one-element-list rule matching uses, so filtering by hand agrees with `--where` rather than being subtly different. `Index.ResolveLink` and `RelativeLink` expose both directions of link spelling.
 
 - **`--where` works on the vocabulary commands.** `tags`, `properties`, `property`, and `checkboxes` now take `--where key=value` / `key!=value` with the same semantics `list` has (repeatable, ANDed, list-match-any), composing with `--prefix`.
@@ -22,7 +24,21 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
   Library signatures gained the parameter: `TagCounts`, `PropertyKeyCounts`, and `PropertyValueCounts` each take `props []PropFilter` alongside the path prefix. `checkboxes` also dropped a second copy of prefix matching and now routes through `Index.Filter` like everything else.
 
+- **`wiki.toml` is parsed as TOML, and `[tool.*]` is reserved.** `bundle` now uses `BurntSushi/toml` (one dependency, no transitive ones) instead of a hand-rolled line scanner, and `[tool.<name>]` tables are space granted to other tools over the same bundle: never parsed by `wiki`, never validated, never warned about. `bundle.Bundle.Tool` carries them and `DecodeTool` unmarshals one into a caller's own struct, so no tool writes a second `wiki.toml` parser.
+
+  Without the namespace, a tool with an opinion about a bundle had to put it in a satellite config beside `wiki.toml`, and a second tool meant a third file. `pyproject.toml` is the precedent: one file describes the directory, tools namespace their own settings inside it. Reserving space adds no opinion to the format — `wiki` gains no field it interprets and no behaviour.
+
+  **Behaviour change:** a malformed `wiki.toml` is now an error instead of being silently half-read. The config decides what counts as an entry and which types are valid, so carrying on with a partial parse produced confidently wrong answers. This also means input that was never valid TOML but happened to work — most likely unquoted array items, `types = [note, concept]` — now fails with a line number instead of being accepted.
+
 ### Fixed
+
+- **A quoted list item containing a comma was read as two broken items.** `parse` split a frontmatter flow list on every comma without honouring quotes, so `tags: ["a,b", "c"]` came back as `["\"a", "b\"", "c"]` — valid YAML, silently mis-parsed, in any bundle that spelled a list that way. The split now tracks the open quote.
+
+- **A key inside any `wiki.toml` table silently overrode bundle config.** The line-based reader ignored table headers, so every key was treated as top-level: `[tool.wikiview] types = [...]` replaced the bundle's `types` vocabulary, last-one-wins, and entries with undeclared types then passed `check` clean. Any table containing a key named `spec`, `types`, `ignore`, or `ignore_orphans` reconfigured the bundle from inside a namespace that was supposed to be inert.
+
+- **A multi-line array in `wiki.toml` silently disabled the setting.** `types = [` parsed to an empty list, which means "no vocabulary declared", which allows every type — the exact opposite of what the author wrote, with nothing reported. The one-line spelling of the same vocabulary errored on an undeclared type as intended. Valid TOML that any other tool would read correctly, so nothing suggested it was being misread.
+
+- **Unknown-key warnings name the full path.** They reported the leaf key with its table stripped, so a nested `path` or `columns` was unfindable in a file with several tables. Now `nested.key`, and only the shallowest unrecognized key is reported, since flagging every key inside an unknown table is noise rather than information.
 
 - **Writes are atomic.** Every file the engine rewrites now goes through a temp file and a rename instead of `os.WriteFile`, which opens with `O_TRUNC` and so empties the file before the new content lands. Anything reading in that window — an editor, an agent, a watcher, another `wiki` run — could see an empty or partial entry, and a process killed mid-write left it truncated on disk. Measured against a concurrent reader, roughly 9% of reads saw a torn file before; none do now. Permissions are preserved across the rename, and a symlinked entry is written through rather than replaced. Atomicity is per file: a command rewriting several can still be interrupted between them, which is a separate concern. A hardlinked entry now diverges instead of sharing an inode, which is the point: two names are two entries at two paths, so each needs its own relative links, and the shared inode meant one of them ended up pointing nowhere. Writing into a read-only directory now fails where a plain write succeeded.
 

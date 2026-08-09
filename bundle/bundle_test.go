@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -16,46 +17,175 @@ func TestOKFVersion(t *testing.T) {
 	}
 }
 
-func TestParseConfig(t *testing.T) {
-	spec, types, _, _, _ := parseConfig("spec = \"0.1\"\ntypes = [\"note\", \"concept\"]\n# a comment\n")
-	if spec != "0.1" {
-		t.Errorf("spec=%q", spec)
+// loadConfig writes a wiki.toml and loads it, returning the bundle or the error.
+func loadConfig(t *testing.T, toml string) (*Bundle, error) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "wiki.toml"), []byte(toml), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(types, []string{"note", "concept"}) {
-		t.Errorf("types=%#v", types)
+	return Discover(dir)
+}
+
+func mustLoad(t *testing.T, toml string) *Bundle {
+	t.Helper()
+	b, err := loadConfig(t, toml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestLoadConfig(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+types = ["note", "concept"]   # a trailing comment
+ignore = ["AGENTS.md", "../PRD.md"]
+ignore_orphans = ["backlog/**"]
+`)
+	if b.Spec != "0.1" {
+		t.Errorf("spec=%q", b.Spec)
+	}
+	if !reflect.DeepEqual(b.Types, []string{"note", "concept"}) {
+		t.Errorf("types=%#v", b.Types)
+	}
+	if !reflect.DeepEqual(b.Ignore, []string{"AGENTS.md", "../PRD.md"}) {
+		t.Errorf("ignore=%#v", b.Ignore)
+	}
+	if !reflect.DeepEqual(b.IgnoreOrphans, []string{"backlog/**"}) {
+		t.Errorf("ignore_orphans=%#v", b.IgnoreOrphans)
+	}
+	if b.Unknown != nil {
+		t.Errorf("a clean config should have no unknown keys, got %#v", b.Unknown)
 	}
 }
 
-func TestParseConfigMessy(t *testing.T) {
-	// Spaces, bare + quoted tokens; internal space preserved; no spec line.
-	if _, types, _, _, _ := parseConfig("types = [ \"a\" , b ,  \"c d\" ]\n"); !reflect.DeepEqual(types, []string{"a", "b", "c d"}) {
-		t.Errorf("types=%#v", types)
+// A line-based reader saw `types = [` and produced an empty list, which reads as
+// "no vocabulary declared" and so allowed every type — the opposite of what the
+// author wrote, with nothing reported.
+func TestMultilineArray(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+types = [
+  "task",
+  "note",
+]
+`)
+	if !reflect.DeepEqual(b.Types, []string{"task", "note"}) {
+		t.Errorf("types=%#v, want the two declared types", b.Types)
 	}
-	if spec, empty, _, _, _ := parseConfig("types = []\n"); spec != "" || empty != nil {
-		t.Errorf("spec=%q types=%#v, want empty", spec, empty)
+	if b.KnownType("bogus") {
+		t.Error("a declared vocabulary must reject an undeclared type")
 	}
 }
 
-func TestParseConfigIgnore(t *testing.T) {
-	_, _, ignore, orphans, _ := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"AGENTS.md\", \"../PRD.md\"]\nignore_orphans=[\"backlog/**\"]\n")
-	if !reflect.DeepEqual(ignore, []string{"AGENTS.md", "../PRD.md"}) {
-		t.Errorf("ignore=%#v", ignore)
+// The namespace is space granted to other tools: never validated, never warned
+// about, and never mistaken for bundle config.
+func TestToolNamespaceIsOpaque(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+types = ["task", "note"]
+
+[tool.wikiview]
+default_board = "/backlog"
+
+[[tool.wikiview.board]]
+path = "/backlog"
+columns = ["todo", "done"]
+
+[tool.other]
+types = ["this", "must", "not", "leak"]
+`)
+	if len(b.Unknown) != 0 {
+		t.Errorf("[tool.*] must not warn, got %#v", b.Unknown)
 	}
-	if !reflect.DeepEqual(orphans, []string{"backlog/**"}) {
-		t.Errorf("ignore_orphans=%#v", orphans)
+	// A line reader treated every key as top-level, so a tool's `types` silently
+	// replaced the bundle's vocabulary.
+	if !reflect.DeepEqual(b.Types, []string{"task", "note"}) {
+		t.Errorf("a tool table leaked into bundle config: types=%#v", b.Types)
+	}
+	if _, ok := b.Tool["wikiview"]; !ok {
+		t.Errorf("Tool should carry the wikiview table, got keys %v", b.Tool)
 	}
 }
 
-func TestParseConfigUnknownKeys(t *testing.T) {
-	// A renamed field (the old `skip`) or a typo is inert; parseConfig collects it
-	// so `check` can flag it rather than let it pass silently.
-	_, _, _, _, unknown := parseConfig("spec=\"0.1\"\nskip=[\"AGENTS.md\"]\ntpyes=[\"note\"]\n")
-	if !reflect.DeepEqual(unknown, []string{"skip", "tpyes"}) {
-		t.Errorf("unknown=%#v, want [skip tpyes]", unknown)
+func TestDecodeTool(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+
+[tool.wikiview]
+default_board = "/backlog"
+
+[[tool.wikiview.board]]
+path = "/backlog"
+where = ["type=task"]
+columns = ["todo", "done"]
+`)
+	var cfg struct {
+		DefaultBoard string `toml:"default_board"`
+		Board        []struct {
+			Path    string   `toml:"path"`
+			Where   []string `toml:"where"`
+			Columns []string `toml:"columns"`
+		} `toml:"board"`
 	}
-	// A clean config yields no unknown keys.
-	if _, _, _, _, u := parseConfig("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[]\nignore_orphans=[]\n"); u != nil {
-		t.Errorf("unknown=%#v, want nil", u)
+	found, err := b.DecodeTool("wikiview", &cfg)
+	if err != nil || !found {
+		t.Fatalf("DecodeTool: found=%v err=%v", found, err)
+	}
+	if cfg.DefaultBoard != "/backlog" || len(cfg.Board) != 1 {
+		t.Fatalf("decoded %+v", cfg)
+	}
+	if got := cfg.Board[0]; got.Path != "/backlog" ||
+		!reflect.DeepEqual(got.Where, []string{"type=task"}) ||
+		!reflect.DeepEqual(got.Columns, []string{"todo", "done"}) {
+		t.Errorf("board = %+v", got)
+	}
+	// An absent table is not an error; it is a bundle that does not use the tool.
+	if found, err := b.DecodeTool("absent", &cfg); found || err != nil {
+		t.Errorf("absent tool: found=%v err=%v", found, err)
+	}
+}
+
+func TestUnknownKeysReportFullPath(t *testing.T) {
+	// A renamed field (the old `skip`) or a typo is inert, so surface it rather
+	// than let the author assume it took effect.
+	b := mustLoad(t, `
+spec = "0.1"
+skip = ["AGENTS.md"]
+tpyes = ["note"]
+
+[nested]
+key = "value"
+`)
+	// The shallowest unrecognized key only: [nested] is flagged, its contents are
+	// implied.
+	if want := []string{"skip", "tpyes", "nested"}; !reflect.DeepEqual(b.Unknown, want) {
+		t.Errorf("unknown=%#v, want %#v", b.Unknown, want)
+	}
+
+	// A key nested under a *recognized* table still reports its full path, since
+	// a bare "key" cannot be found in a file with several tables.
+	b = mustLoad(t, "spec = \"0.1\"\n\n[tool.x]\nfine = 1\n\n[nested]\na = 1\nb = 2\n")
+	if !slices.Contains(b.Unknown, "nested") || slices.Contains(b.Unknown, "nested.a") {
+		t.Errorf("unknown=%#v", b.Unknown)
+	}
+}
+
+// Reading half a config and carrying on produces confidently wrong answers: the
+// config decides what is an entry and which types are valid.
+func TestMalformedConfigIsAnError(t *testing.T) {
+	for _, tc := range []struct{ name, toml string }{
+		{"unterminated array", "spec = \"0.1\"\ntypes = [\"a\", \n"},
+		{"bare token", "spec = \"0.1\"\ntypes = [note, concept]\n"},
+		{"missing value", "spec =\n"},
+		{"junk line", "spec = \"0.1\"\nthis is not toml\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := loadConfig(t, tc.toml); err == nil {
+				t.Error("malformed wiki.toml should not load silently")
+			}
+		})
 	}
 }
 
