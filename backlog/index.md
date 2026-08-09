@@ -26,6 +26,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [x] [reserve a per-tool config namespace in wiki.toml](./conformance/010-tool-config-namespace.md): `[tool.<name>]` tables are never parsed, validated, or warned about; `bundle.DecodeTool` unmarshals one into a consumer's own struct so no tool writes a second `wiki.toml` parser. Required switching to a real TOML parser (`BurntSushi/toml`), which surfaced two live bugs: a key inside any table silently overrode bundle config, and a multi-line array silently emptied its setting. **`wiki` is no longer zero-dependency.**
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](./4-release-and-docs/004-skills-sync.md)
+- [ ] [workflow](./4-release-and-docs/006-backlog-board-conformance.md) — 63 checkboxes mirroring `status`, which the `project-backlog` workflow rules out and which has already drifted once
 
 
 ## Debt
