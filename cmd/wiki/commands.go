@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agentic-wiki/wiki/internal/index"
+	"github.com/agentic-wiki/wiki/index"
 	"github.com/agentic-wiki/wiki/internal/output"
-	"github.com/agentic-wiki/wiki/internal/parse"
 	"github.com/agentic-wiki/wiki/internal/scaffold"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func cmdInit(args []string) int {
@@ -72,7 +72,7 @@ func cmdStatus(args []string) int {
 		Orphans    int    `json:"orphans"`
 	}{
 		idx.Bundle.Dir, idx.Bundle.Spec,
-		len(idx.Entries), links, len(idx.TagCounts("")), checkboxes,
+		len(idx.Entries), links, len(idx.TagCounts("", nil)), checkboxes,
 		len(idx.Broken()), len(idx.Orphans()),
 	}
 	lines := []string{
@@ -98,21 +98,13 @@ type whereFilters []index.PropFilter
 func (w *whereFilters) String() string { return "" }
 
 func (w *whereFilters) Set(s string) error {
-	// `!=` (inequality) takes precedence over `=`, so it is matched first.
-	neg := false
-	kRaw, vRaw, ok := strings.Cut(s, "!=")
-	if ok {
-		neg = true
-	} else {
-		kRaw, vRaw, ok = strings.Cut(s, "=")
-	}
-	k := parse.Unquote(kRaw)
-	if !ok || k == "" {
+	f, err := index.ParseFilter(s)
+	if err != nil {
+		// The CLI keeps its own wording, which names the flag the user typed;
+		// the library cannot, since it does not know it was reached from a flag.
 		return fmt.Errorf("--where must be key=value or key!=value, got %q", s)
 	}
-	// Unquote the value the same way frontmatter is parsed, so a quote that
-	// survives the shell (--where 'k="v"') still compares equal to `k: "v"`.
-	*w = append(*w, index.PropFilter{Key: k, Value: parse.Unquote(vRaw), Negate: neg})
+	*w = append(*w, f)
 	return nil
 }
 
@@ -207,39 +199,44 @@ func emitCounts(format string, rows []countRow, withCounts bool) int {
 }
 
 // countFlags registers the flags shared by tags/properties/property.
-func countFlags(fs *flag.FlagSet, unit string) (format, sortBy, prefix *string, counts *bool) {
+func countFlags(fs *flag.FlagSet, unit string) (format, sortBy, prefix *string, counts *bool, where *whereFilters) {
 	format = fs.String("format", "text", "output format: text|json|csv|tsv")
 	counts = fs.Bool("counts", false, "show entry count per "+unit)
 	sortBy = fs.String("sort", "name", "sort order: name|count")
 	prefix = fs.String("prefix", "", "filter to a path prefix")
+	// The vocabulary commands report what a set of entries uses, so they narrow
+	// that set the same two ways everything else does: --prefix for where,
+	// --where for what.
+	where = &whereFilters{}
+	fs.Var(where, "where", "filter entries by frontmatter: key=value or key!=value (repeatable)")
 	return
 }
 
 func cmdTags(args []string) int {
 	fs := flag.NewFlagSet("tags", flag.ExitOnError)
-	format, sortBy, prefix, counts := countFlags(fs, "tag")
+	format, sortBy, prefix, counts, where := countFlags(fs, "tag")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
-	return emitCounts(*format, sortedCounts(idx.TagCounts(*prefix), *sortBy), *counts)
+	return emitCounts(*format, sortedCounts(idx.TagCounts(*prefix, *where), *sortBy), *counts)
 }
 
 func cmdProperties(args []string) int {
 	fs := flag.NewFlagSet("properties", flag.ExitOnError)
-	format, sortBy, prefix, counts := countFlags(fs, "property")
+	format, sortBy, prefix, counts, where := countFlags(fs, "property")
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
 	}
-	return emitCounts(*format, sortedCounts(idx.PropertyKeyCounts(*prefix), *sortBy), *counts)
+	return emitCounts(*format, sortedCounts(idx.PropertyKeyCounts(*prefix, *where), *sortBy), *counts)
 }
 
 func cmdProperty(args []string) int {
 	fs := flag.NewFlagSet("property", flag.ExitOnError)
-	format, sortBy, prefix, counts := countFlags(fs, "value")
+	format, sortBy, prefix, counts, where := countFlags(fs, "value")
 	name, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki property <name> [--counts --sort=name|count --prefix]")
@@ -249,7 +246,7 @@ func cmdProperty(args []string) int {
 	if code != 0 {
 		return code
 	}
-	return emitCounts(*format, sortedCounts(idx.PropertyValueCounts(name, *prefix), *sortBy), *counts)
+	return emitCounts(*format, sortedCounts(idx.PropertyValueCounts(name, *prefix, *where), *sortBy), *counts)
 }
 
 func cmdCheckboxes(args []string) int {
@@ -258,6 +255,8 @@ func cmdCheckboxes(args []string) int {
 	all := fs.Bool("all", false, "include done tasks")
 	done := fs.Bool("done", false, "only done tasks")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
+	where := &whereFilters{}
+	fs.Var(where, "where", "filter entries by frontmatter: key=value or key!=value (repeatable)")
 	fs.Parse(args)
 	// Optional [file]: scope to a single entry's own checklist (its subtasks),
 	// with flags allowed on either side of the positional (like read/outline).
@@ -266,7 +265,7 @@ func cmdCheckboxes(args []string) int {
 		target = fs.Arg(0)
 		fs.Parse(fs.Args()[1:])
 		if fs.NArg() != 0 {
-			fmt.Fprintln(os.Stderr, "usage: wiki checkboxes [file] [--all --done --prefix]")
+			fmt.Fprintln(os.Stderr, "usage: wiki checkboxes [file] [--all --done --prefix --where key=value]")
 			return 2
 		}
 	}
@@ -275,7 +274,8 @@ func cmdCheckboxes(args []string) int {
 		return code
 	}
 
-	entries := idx.Entries
+	// A named [file] is explicit, so the filters do not also apply to it.
+	entries := idx.Filter(*prefix, *where)
 	if target != "" {
 		e, err := idx.Resolve(target)
 		if err != nil {
@@ -285,18 +285,18 @@ func cmdCheckboxes(args []string) int {
 		entries = []*index.Entry{e}
 	}
 
+	// `entry`, matching check's rows: both describe an entry rather than merging
+	// its frontmatter, so neither needs the reserved `_path`, and they should not
+	// disagree on what to call the same thing.
 	type row struct {
-		File string `json:"file"`
-		Line int    `json:"line"`
-		Done bool   `json:"done"`
-		Text string `json:"text"`
+		Entry string `json:"entry"`
+		Line  int    `json:"line"`
+		Done  bool   `json:"done"`
+		Text  string `json:"text"`
 	}
 	var rows []row
 	var lines []string
 	for _, e := range entries {
-		if target == "" && *prefix != "" && !strings.HasPrefix(strings.TrimPrefix(e.Path, "/"), strings.TrimPrefix(*prefix, "/")) {
-			continue
-		}
 		for _, t := range e.Checkboxes {
 			switch {
 			case *done && !t.Done:
@@ -699,7 +699,7 @@ func parseWith2Args(fs *flag.FlagSet, args []string) (string, string, bool) {
 func cmdMove(args []string) int {
 	fs := flag.NewFlagSet("move", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
-	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter values equal to the moved path (opt-in)")
+	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter *.md values referencing the moved path (opt-in)")
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	src, dest, ok := parseWith2Args(fs, args)
 	if !ok {
@@ -752,9 +752,20 @@ func cmdLinks(args []string) int {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}
-	refs := idx.OutLinks(e)
+	// Unique targets: this view answers "what does this page point to", and it
+	// prints a bare path, so the same target twice would read as a bug rather
+	// than as two mentions. The engine returns every occurrence; deciding to
+	// collapse them is presentation, which is this layer's job.
+	// (`backlinks` prints file:line, so it shows every occurrence.)
+	seen := map[string]bool{}
+	var refs []index.LinkRef
 	var lines []string
-	for _, r := range refs {
+	for _, r := range idx.Links(e.Path) {
+		if seen[r.To] {
+			continue
+		}
+		seen[r.To] = true
+		refs = append(refs, r)
 		lines = append(lines, r.To)
 	}
 	output.Emit(os.Stdout, *format, lines, refs)

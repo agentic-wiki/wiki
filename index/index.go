@@ -14,9 +14,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/agentic-wiki/wiki/internal/bundle"
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/internal/wikilink"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
@@ -56,6 +56,7 @@ type Entry struct {
 	Headings    []parse.Heading  `json:"-"`
 	wikilinks   []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
 	abs         string
+	root        string // the bundle dir, so an entry can re-parse itself after a write
 	fm          map[string]any
 }
 
@@ -167,7 +168,7 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
 		}
-		e, err := parseEntry(b, path)
+		e, err := parseEntry(b.Dir, path)
 		if err != nil {
 			return err
 		}
@@ -240,12 +241,12 @@ func (idx *Index) resolveIgnore() {
 	}
 }
 
-func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
+func parseEntry(root, abs string) (*Entry, error) {
 	data, err := os.ReadFile(abs)
 	if err != nil {
 		return nil, err
 	}
-	rel, _ := filepath.Rel(b.Dir, abs)
+	rel, _ := filepath.Rel(root, abs)
 	content := string(data)
 	fm, body := parse.Frontmatter(content)
 	// Links/checkboxes/headings are parsed from the frontmatter-stripped body, so
@@ -255,7 +256,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 	// rel is the file's path under the bundle root ("finance/income.md");
 	// entryPath is its root-absolute bundle id ("/finance/income.md").
 	entryPath := "/" + filepath.ToSlash(rel)
-	links, selfAnchors, outside := resolveLinks(b.Dir, parse.Links(body), entryPath, offset)
+	links, selfAnchors, outside := resolveLinks(root, parse.Links(body), entryPath, offset)
 	checkboxes, heads := parse.Checkboxes(body), parse.Headings(body)
 	for i := range checkboxes {
 		checkboxes[i].Line += offset
@@ -277,6 +278,7 @@ func parseEntry(b *bundle.Bundle, abs string) (*Entry, error) {
 		Headings:    heads,
 		wikilinks:   wikilinks,
 		abs:         abs,
+		root:        root,
 		fm:          fm,
 	}, nil
 }
@@ -478,6 +480,30 @@ type PropFilter struct {
 	Negate bool
 }
 
+// ParseFilter reads one `key=value` / `key!=value` expression.
+//
+// The spelling is part of the query contract, not of the CLI's argument
+// handling, so it lives here: a consumer that accepted the same syntax and
+// parsed it itself would be a second implementation of a rule with one correct
+// home, and the two would drift on exactly the details that are easy to miss.
+// `!=` is matched before `=` so a value may itself contain `=`, and the value is
+// unquoted the way frontmatter is, so a quote surviving the shell
+// (`k="v"`) still compares equal to `k: "v"`.
+func ParseFilter(s string) (PropFilter, error) {
+	neg := false
+	kRaw, vRaw, ok := strings.Cut(s, "!=")
+	if ok {
+		neg = true
+	} else {
+		kRaw, vRaw, ok = strings.Cut(s, "=")
+	}
+	key := parse.Unquote(kRaw)
+	if !ok || key == "" {
+		return PropFilter{}, fmt.Errorf("%q is not a filter: expected key=value or key!=value", s)
+	}
+	return PropFilter{Key: key, Value: parse.Unquote(vRaw), Negate: neg}, nil
+}
+
 // Filter returns entries under pathPrefix (empty = the whole bundle) that satisfy
 // every property filter (nil = no property constraint). props are ANDed; a
 // list-valued field matches when it includes the value, a scalar when it equals
@@ -509,11 +535,12 @@ func (e *Entry) matchesAll(props []PropFilter) bool {
 	return true
 }
 
-// TagCounts returns every tag in the bundle (optionally within a path prefix)
+// TagCounts returns every tag in the bundle (optionally narrowed by path prefix
+// and property filters, the same pair Filter takes)
 // with the number of entries carrying it.
-func (idx *Index) TagCounts(pathPrefix string) map[string]int {
+func (idx *Index) TagCounts(pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for _, t := range dedupe(parse.Strings(e.fm, "tags")) {
 			counts[t]++
 		}
@@ -521,11 +548,11 @@ func (idx *Index) TagCounts(pathPrefix string) map[string]int {
 	return counts
 }
 
-// PropertyKeyCounts returns every frontmatter key in use (optionally within a
-// path prefix) with the number of entries that set it.
-func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
+// PropertyKeyCounts returns every frontmatter key in use (optionally narrowed by
+// path prefix and property filters) with the number of entries that set it.
+func (idx *Index) PropertyKeyCounts(pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for k := range e.fm {
 			counts[k]++
 		}
@@ -534,11 +561,11 @@ func (idx *Index) PropertyKeyCounts(pathPrefix string) map[string]int {
 }
 
 // PropertyValueCounts returns the distinct values of frontmatter key (optionally
-// within a path prefix) with the number of entries holding each. A list-valued
-// key (e.g. tags) contributes each element.
-func (idx *Index) PropertyValueCounts(key, pathPrefix string) map[string]int {
+// narrowed by path prefix and property filters) with the number of entries
+// holding each. A list-valued key (e.g. tags) contributes each element.
+func (idx *Index) PropertyValueCounts(key, pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
-	for _, e := range idx.Filter(pathPrefix, nil) {
+	for _, e := range idx.Filter(pathPrefix, props) {
 		for _, v := range dedupe(parse.Strings(e.fm, key)) {
 			counts[v]++
 		}
@@ -642,9 +669,12 @@ func matchLine(line, q string, words []string, mode SearchMode) bool {
 }
 
 // BrokenLink is an internal link with no target file.
+//
+// The json keys match LinkRef's: a broken link is a link row like any other, and
+// naming its ends differently only made them harder to join.
 type BrokenLink struct {
 	From   string `json:"from"`
-	Target string `json:"target"`
+	Target string `json:"to"`
 	Line   int    `json:"line"`
 }
 
@@ -699,17 +729,25 @@ type LinkRef struct {
 	Line int    `json:"line"`
 }
 
-// OutLinks returns the entry's outgoing internal links as unique targets, in
-// first-seen order. (Whether a target resolves is a health question for `check`
-// / `unresolved`, not this navigational view.)
-func (idx *Index) OutLinks(e *Entry) []LinkRef {
-	seen := map[string]bool{}
-	var refs []LinkRef
+// Links returns the internal links written in the entry at path, one LinkRef per
+// occurrence, in document order. The mirror of Backlinks, which answers the same
+// question from the other end.
+//
+// Occurrences, not unique targets: an entry may link the same target from two
+// places, and each has its own line. Collapsing them here would make Line the
+// first of several, silently, which is a presentation choice the engine has no
+// business making — `wiki links` shows bare targets and so dedupes, `wiki
+// backlinks` shows file:line and so does not.
+//
+// An unknown path yields nil. Whether a target resolves is a health question for
+// `check` / `unresolved`, not this navigational view.
+func (idx *Index) Links(path string) []LinkRef {
+	e, ok := idx.byPath[path]
+	if !ok {
+		return nil
+	}
+	refs := make([]LinkRef, 0, len(e.Links))
 	for _, l := range e.Links {
-		if seen[l.Target] {
-			continue
-		}
-		seen[l.Target] = true
 		refs = append(refs, LinkRef{From: e.Path, To: l.Target, Text: l.Text, Line: l.Line})
 	}
 	return refs
@@ -718,6 +756,12 @@ func (idx *Index) OutLinks(e *Entry) []LinkRef {
 // Backlinks returns every internal link that points to target, one LinkRef per
 // occurrence (a source that links several times appears once per link), sorted
 // by source path then line. Relative links count, they resolve to the same target.
+//
+// This scans every edge in the bundle, which is the right shape for one target
+// (sub-millisecond on a 5k-entry bundle) and the wrong one for all of them: a
+// loop over every entry rescans the whole graph each time, ~2s where one pass
+// would be ~10ms. Nothing needs all of them yet; when something does, it wants
+// a single pass over Entries building a map keyed by Link.Target, not this.
 func (idx *Index) Backlinks(target string) []LinkRef {
 	var refs []LinkRef
 	for _, e := range idx.Entries {
@@ -737,7 +781,7 @@ func (idx *Index) Backlinks(target string) []LinkRef {
 }
 
 // FileRewrite records what a move rewrote in one entry: body links, and, when
-// --include-frontmatter is set, frontmatter values equal to the moved path.
+// --include-frontmatter is set, frontmatter values referencing the moved path.
 type FileRewrite struct {
 	Path            string `json:"_path"`
 	Links           int    `json:"links"`
@@ -758,11 +802,12 @@ type MoveResult struct {
 // src (relative or root-absolute alike, matched by resolved target) is respelled
 // relative from the linking file to dest, and the moved file's own outgoing links
 // are respelled relative from its new directory (its dir changed, so its relative
-// links would otherwise dangle). With includeFrontmatter it also rewrites
-// frontmatter values equal to src's path (an opt-in: frontmatter is otherwise
-// opaque, since the tool cannot know a path-shaped value is a reference rather than
-// a snapshot; these stay root-absolute, as frontmatter is metadata, not a rendered
-// link). With dryRun it computes the plan without writing. There is no rollback: on
+// links would otherwise dangle). With includeFrontmatter it treats `*.md`-suffixed
+// frontmatter values as references and keeps them valid too, resolving them the same
+// way but writing them root-absolute, the stable-key form a metadata field needs
+// (an opt-in: frontmatter is otherwise opaque, since the tool cannot know a
+// path-shaped value is a reference rather than a snapshot).
+// With dryRun it computes the plan without writing. There is no rollback: on
 // a mid-way write error it returns what was already done so `unresolved` can surface
 // any leftovers.
 func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
@@ -815,18 +860,11 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
 		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
-		var fmKeys map[string]bool
+		var fmRWs map[string][]fmRewrite
 		if includeFrontmatter {
-			for k := range e.fm {
-				if slices.Contains(parse.Strings(e.fm, k), src.Path) {
-					if fmKeys == nil {
-						fmKeys = map[string]bool{}
-					}
-					fmKeys[k] = true
-				}
-			}
+			fmRWs = idx.frontmatterRewrites(e, src.Path, dest)
 		}
-		if len(rws) == 0 && len(fmKeys) == 0 {
+		if len(rws) == 0 && len(fmRWs) == 0 {
 			continue
 		}
 		raw, err := e.Raw()
@@ -852,17 +890,17 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 			})
 		}
 		fields := 0
-		if len(fmKeys) > 0 {
+		if len(fmRWs) > 0 {
 			_, body := parse.Frontmatter(raw)
 			fmEnd := strings.Count(raw[:len(raw)-len(body)], "\n")
-			fields = rewriteFrontmatterRefs(lines, fmEnd, fmKeys, src.Path, dest)
+			fields = rewriteFrontmatterRefs(lines, fmEnd, fmRWs)
 		}
 		if n == 0 && fields == 0 {
 			continue
 		}
 		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n, FrontmatterRefs: fields})
 		if !dryRun {
-			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return res, err
 			}
 		}
@@ -872,21 +910,100 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
 			return res, err
 		}
-		if err := os.Rename(src.abs, destAbs); err != nil {
+		// Through rename, not os.Rename: a move needs delete access to the
+		// source, so it meets the same contention a replace does even though the
+		// destination is known not to exist.
+		if err := rename(src.abs, destAbs); err != nil {
 			return res, err
 		}
 	}
 	return res, nil
 }
 
-// rewriteFrontmatterRefs rewrites, within the first fmEnd lines (an entry's
-// frontmatter block), any value under a key in hitKeys that equals oldPath,
-// changing it to newPath. hitKeys (derived from the parsed frontmatter) gates the
-// rewrite, so a path that appears only as prose inside some other value is never
-// touched; the token boundaries keep it to whole values (scalar, flow, or block
-// list). Returns the number of values rewritten.
-func rewriteFrontmatterRefs(lines []string, fmEnd int, hitKeys map[string]bool, oldPath, newPath string) int {
-	tok := regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(oldPath) + `([\],\s"']|$)`)
+// fmRewrite is one frontmatter value respelling: the value exactly as written on
+// disk, what it becomes, and the token-boundary pattern that finds it in a line.
+type fmRewrite struct {
+	oldRaw, newRaw string
+	tok            *regexp.Regexp
+}
+
+// frontmatterRewrites plans the frontmatter respellings a move entails for entry
+// e, keyed by frontmatter key. It is the frontmatter twin of the body-link pass in
+// Move: a value referencing src is repointed at dest, and (only for the moved file
+// itself, whose directory changes, so its relative refs would otherwise dangle) a
+// relative value referencing anything else is normalized in place.
+//
+// Matching is by resolved target, not by spelling, so a relative ref is found as
+// readily as a root-absolute one. The rewrite always emits the **root-absolute**
+// form, which is where frontmatter deliberately parts company with body links:
+// a body link is relative because it must navigate in a renderer, while a
+// frontmatter ref is never rendered as a link and instead must be a *stable key*.
+// Only one spelling per target keeps `--where blockers=/active/x.md` finding every
+// referrer; relative values spell the same target differently from each directory,
+// so no single query can match them all.
+//
+// A frontmatter value is considered a reference only when it ends in `.md` (after
+// any `#anchor`). That suffix is the whole heuristic, and it is what keeps the
+// pass from mangling ordinary metadata: an arbitrary value like `title: Some Note`
+// would otherwise resolve to a perfectly valid in-bundle path and be rewritten as
+// one. Values resolving outside the bundle are left alone, as body links are.
+func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest string) map[string][]fmRewrite {
+	var out map[string][]fmRewrite
+	for k := range e.fm {
+		var seen map[string]bool
+		for _, v := range parse.Strings(e.fm, k) {
+			if p, _, _ := strings.Cut(v, "#"); !strings.HasSuffix(p, ".md") {
+				continue
+			}
+			abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, v)
+			if escapes {
+				continue
+			}
+			newRaw := abs // already root-absolute: the canonical frontmatter form
+			switch {
+			case stripAnchor(abs) == srcPath:
+				newRaw = dest + anchorOf(abs)
+			case e.Path != srcPath:
+				continue // only the moved file normalizes its refs to unmoved targets
+			}
+			if newRaw == v || seen[v] {
+				continue
+			}
+			if seen == nil {
+				seen = map[string]bool{}
+			}
+			seen[v] = true
+			if out == nil {
+				out = map[string][]fmRewrite{}
+			}
+			out[k] = append(out[k], fmRewrite{
+				oldRaw: v,
+				newRaw: newRaw,
+				tok:    regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(v) + `([\],\s"']|$)`),
+			})
+		}
+		// Longest first, so a value that is a suffix-substring of another is never
+		// matched inside it.
+		slices.SortFunc(out[k], func(a, b fmRewrite) int { return len(b.oldRaw) - len(a.oldRaw) })
+	}
+	return out
+}
+
+func stripAnchor(p string) string { p, _, _ = strings.Cut(p, "#"); return p }
+
+func anchorOf(p string) string {
+	if _, a, ok := strings.Cut(p, "#"); ok {
+		return "#" + a
+	}
+	return ""
+}
+
+// rewriteFrontmatterRefs applies planned respellings within the first fmEnd lines
+// (an entry's frontmatter block). Keying by frontmatter key gates the rewrite, so a
+// path that appears only as prose inside some other value is never touched; the
+// token boundaries keep it to whole values (scalar, flow, or block list). Returns
+// the number of values rewritten.
+func rewriteFrontmatterRefs(lines []string, fmEnd int, rewrites map[string][]fmRewrite) int {
 	n, lastKey := 0, ""
 	for i := 0; i < fmEnd && i < len(lines); i++ {
 		t := strings.TrimRight(lines[i], "\r")
@@ -903,17 +1020,16 @@ func rewriteFrontmatterRefs(lines []string, fmEnd int, hitKeys map[string]bool, 
 			owner = strings.TrimSpace(key)
 			lastKey = owner
 		}
-		if !hitKeys[owner] {
-			continue
-		}
 		c := 0
-		nt := tok.ReplaceAllStringFunc(t, func(m string) string {
-			c++
-			sub := tok.FindStringSubmatch(m)
-			return sub[1] + newPath + sub[2]
-		})
+		for _, rw := range rewrites[owner] {
+			t = rw.tok.ReplaceAllStringFunc(t, func(m string) string {
+				c++
+				sub := rw.tok.FindStringSubmatch(m)
+				return sub[1] + rw.newRaw + sub[2]
+			})
+		}
 		if c > 0 {
-			lines[i] = nt + cr
+			lines[i] = t + cr
 			n += c
 		}
 	}
@@ -1102,12 +1218,12 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	if err != nil {
 		return nil, err
 	}
-	updated, err := setFrontmatterValue(string(raw), "okf_version", want)
+	updated, err := setFrontmatterValue(string(raw), "okf_version", want, false)
 	if err != nil {
 		return nil, err
 	}
 	if apply {
-		if err := os.WriteFile(root.abs, []byte(updated), 0o644); err != nil {
+		if err := writeFile(root.abs, []byte(updated)); err != nil {
 			return nil, err
 		}
 	}
@@ -1234,7 +1350,7 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 			changed = true
 		}
 		if apply && changed {
-			if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return nil, err
 			}
 		}
@@ -1279,49 +1395,11 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 		})
 	}
 	if apply {
-		if err := os.WriteFile(e.abs, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 			return nil, err
 		}
 	}
 	return changes, nil
-}
-
-// setFrontmatterValue returns content with the frontmatter `key` set to a quoted
-// value, updating an existing key in place or inserting it as the last
-// frontmatter line. It errors if there is no frontmatter block, and preserves
-// the file's existing line endings.
-func setFrontmatterValue(content, key, value string) (string, error) {
-	lines := strings.Split(content, "\n")
-	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		// No frontmatter block yet: create one carrying just this key.
-		return fmt.Sprintf("---\n%s: \"%s\"\n---\n%s", key, value, content), nil
-	}
-	closeIdx := -1
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			closeIdx = i
-			break
-		}
-	}
-	if closeIdx == -1 {
-		return "", fmt.Errorf("unterminated frontmatter")
-	}
-	cr := ""
-	if strings.HasSuffix(lines[0], "\r") {
-		cr = "\r"
-	}
-	newLine := fmt.Sprintf(`%s: "%s"`, key, value) + cr
-	for i := 1; i < closeIdx; i++ {
-		if k, _, ok := strings.Cut(strings.TrimRight(lines[i], "\r"), ":"); ok && strings.TrimSpace(k) == key {
-			lines[i] = newLine
-			return strings.Join(lines, "\n"), nil
-		}
-	}
-	out := make([]string, 0, len(lines)+1)
-	out = append(out, lines[:closeIdx]...)
-	out = append(out, newLine)
-	out = append(out, lines[closeIdx:]...)
-	return strings.Join(out, "\n"), nil
 }
 
 // parseTimestamp parses an ISO 8601 timestamp in the two forms the spec allows:
@@ -1365,3 +1443,50 @@ func looksLikeNonISODate(heading string) bool {
 func hasPathPrefix(path, prefix string) bool {
 	return strings.HasPrefix(strings.TrimPrefix(path, "/"), strings.TrimPrefix(prefix, "/"))
 }
+
+// Field returns a frontmatter value as a scalar ("" when absent or list-valued).
+func (e *Entry) Field(key string) string { return parse.String(e.fm, key) }
+
+// FieldList returns a frontmatter value as a list, treating a lone scalar as a
+// one-element list.
+//
+// That normalization is the same one MatchProperty applies, so a consumer
+// filtering entries by hand reaches the same answer as `--where` rather than a
+// subtly different one.
+func (e *Entry) FieldList(key string) []string { return parse.Strings(e.fm, key) }
+
+// Frontmatter returns the entry's frontmatter verbatim, exactly as written, with
+// no per-field coercion.
+//
+// The map is a copy, lists included: the index holds the original, and a caller
+// that could mutate it would be editing the engine's state rather than reading it.
+func (e *Entry) Frontmatter() map[string]any {
+	out := make(map[string]any, len(e.fm))
+	for k, v := range e.fm {
+		if list, ok := v.([]string); ok {
+			out[k] = slices.Clone(list)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// ResolveLink resolves a link target as written in the entry at fromPath to its
+// canonical root-absolute bundle path, the same key the graph is built on.
+//
+// outside reports that the target lands above the bundle root, which is neither
+// an edge nor broken: it points out of a self-contained bundle, so callers skip
+// it rather than resolving it on disk.
+//
+// Exported because anything rendering a body has to turn its links into
+// something it can navigate, and doing that by hand is how the rule ends up with
+// more than one home.
+func (idx *Index) ResolveLink(fromPath, target string) (path string, outside bool) {
+	return normalizeLink(idx.Bundle.Dir, fromPath, target)
+}
+
+// RelativeLink spells a resolved root-absolute target as it should be written on
+// disk from fromPath: the canonical on-disk form, relative so it navigates in any
+// renderer. The inverse of ResolveLink, and what anything writing a link needs.
+func RelativeLink(fromPath, target string) string { return relativeLink(fromPath, target) }

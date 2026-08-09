@@ -73,7 +73,7 @@ func TestResolve(t *testing.T) {
 		"/sub/note-a.md", // same basename as /note-a.md, deeper
 		"/sub/child.md",
 		"/sub/deep/other.md",
-		"/sub/dup.md",  // equal-depth pair with /team/dup.md, for the same-folder tiebreak
+		"/sub/dup.md", // equal-depth pair with /team/dup.md, for the same-folder tiebreak
 		"/team/dup.md",
 	}
 	none := map[string]string{}

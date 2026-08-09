@@ -102,7 +102,7 @@ Knowledge often arrives rough and matures in place. You write the file; `wiki` o
 ```sh
 wiki move --dry-run /a.md /archive/a.md   # preview the link rewrites
 wiki move /a.md /archive/a.md             # relocate + rewrite every inbound link in one pass
-wiki tidy                                 # preview canonicalization; `tidy --all` applies (links→absolute, names→slugs)
+wiki tidy                                 # preview canonicalization; `tidy --all` applies (links→relative, names→slugs)
 ```
 
 Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every backlink.
@@ -143,6 +143,7 @@ Git is optional but highly recommended: it is the undo for a base an agent edits
 
 - Every entry has a `type` (reserved `index.md`/`log.md`); slug filenames (lowercase, hyphenated, no spaces); shallow folders (2–3 levels).
 - Root-absolute links, no wikilinks: `wiki check` flags any `[[wikilink]]` (they're resolved into the graph for compatibility, but aren't part of the format), so rewrite them as standard Markdown links (or run `wiki tidy --wikilinks` to convert them).
-- Every command takes `--format text|json|csv|tsv` (`json`/`csv`/`tsv` for structured output you can pipe). `list --format json` carries each entry's full frontmatter (every field, not just the shown columns), so `wiki list --where type=task --format json | jq …` is the reporting surface for rollups the CLI does not compute itself. text and csv/tsv show only the canonical columns, the entry's path and `type` (the two fields every entry is guaranteed to have); everything else (title, tags, status, …) is json-only. In json the entry's own file path is under the reserved key `_path` (leading underscore; the basename is just `basename(_path)`), so a frontmatter field named `name:` or `path:` round-trips untouched; every other key is your frontmatter verbatim.
+- Every command that reports results takes `--format text|json|csv|tsv` (`json`/`csv`/`tsv` for structured output you can pipe; `version` prints a bare string). `list --format json` carries each entry's full frontmatter (every field, not just the shown columns), so `wiki list --where type=task --format json | jq …` is the reporting surface for rollups the CLI does not compute itself. text and csv/tsv show only the canonical columns, the entry's path and `type` (the two fields every entry is guaranteed to have); everything else (title, tags, status, …) is json-only.
+- json keys follow the shape of what is being reported. `list` and `orphans` merge your frontmatter into each row, so the entry's own path is under the **reserved key `_path`** (leading underscore; the basename is just `basename(_path)`) and a frontmatter field named `name:` or `path:` round-trips untouched — every other key is your frontmatter verbatim. Rows *about* an entry (`check`, `checkboxes`) name it `entry`. Link rows (`links`, `backlinks`, `unresolved`) name their two ends `from` and `to`.
 - Exit codes: `0` ok (enumerations return `0` even when empty), `1` no match (`search`/`table`) or `check` errors, `2` a real error.
 - `wiki` not installed? `brew install agentic-wiki/tap/wiki`, or see the [wiki repo](https://github.com/agentic-wiki/wiki).

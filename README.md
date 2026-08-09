@@ -61,7 +61,7 @@ wiki list                     # every entry
 That's the whole thing: a folder of plain Markdown. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
 > [!NOTE]
-> If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Absolute path in vault*, turn on **Automatically update internal links**. (`wiki` recognizes `[[wikilinks]]` for compatibility but flags them in `wiki check`, and `wiki tidy --wikilinks` converts them to standard links). See the [format spec](https://github.com/agentic-wiki/spec#links).
+> If you use Obsidian, set it to write standard markdown links: Files and links → turn off **Use [[Wikilinks]]**, set **New link format** to *Relative path to file* (the canonical on-disk form, so links navigate in any renderer), turn on **Automatically update internal links**. (`wiki` recognizes `[[wikilinks]]` for compatibility but flags them in `wiki check`, and `wiki tidy --wikilinks` converts them to standard links). See the [format spec](https://github.com/agentic-wiki/spec#links).
 
 ## What you can ask it
 
@@ -78,6 +78,8 @@ wiki read /tech/infra/hetzner.md                        # an entry's body, front
 wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
 ```
+
+Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
 
 **Follow the graph** (the part `grep` cannot do)
 
@@ -97,6 +99,7 @@ wiki checkboxes                    # every open - [ ] checkbox, across the whole
 wiki list --where type=task        # list task entries (detailed entries)
 wiki tags --counts --sort=count    # what you write about most
 wiki property status --counts      # how many open vs done, draft vs final
+wiki property status --counts --where type=task   # …only the tasks', if the folder mixes kinds
 ```
 
 **Reshape it safely**
@@ -211,7 +214,7 @@ wiki check                           # the backlog stays conformant
 ## Design
 
 - **Standalone first:** agents call `wiki` directly, no server in the way.
-- **Minimal on purpose:** zero external dependencies, a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
+- **Minimal on purpose:** one dependency (a TOML parser, for `wiki.toml`), a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
 - **Files are truth:** the index is derived from disk and fully disposable.
 
 ## Develop

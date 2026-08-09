@@ -1,13 +1,14 @@
 package index
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/agentic-wiki/wiki/internal/bundle"
-	"github.com/agentic-wiki/wiki/internal/parse"
+	"github.com/agentic-wiki/wiki/bundle"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func build(t *testing.T, files map[string]string) *Index {
@@ -437,7 +438,8 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 		t.Errorf("default move must NOT touch the epic: field: %q", read(base, "login.md"))
 	}
 
-	// --include-frontmatter: frontmatter values equal to the path move too...
+	// --include-frontmatter: frontmatter refs move too, staying root-absolute (the
+	// stable-key form; body links go relative, frontmatter does not).
 	idx := build(t, files)
 	res, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true)
 	if err != nil {
@@ -466,6 +468,56 @@ func TestMoveIncludeFrontmatter(t *testing.T) {
 	}
 	if fm != 4 {
 		t.Errorf("expected 4 frontmatter rewrites (scalar + flow elem + origin + block elem), got %d (%+v)", fm, res.Rewrites)
+	}
+}
+
+// Frontmatter refs are matched by resolved target, like body links, so a relative
+// ref is found as readily as a root-absolute one. Unlike body links they are
+// *written* root-absolute: one spelling per target is what keeps `--where` able to
+// find every referrer. The moved file's own relative refs are normalized too, since
+// its directory changed and they would otherwise dangle.
+func TestMoveIncludeFrontmatterRelative(t *testing.T) {
+	files := map[string]string{
+		"index.md":   "---\nokf_version: \"0.1\"\n---\n[t](/tasks/a.md)\n",
+		"tasks/a.md": "---\ntype: task\ntitle: Some Note\nstatus: todo\nblockers: [./b.md, ../lib/c.md]\nspec: ../lib/c.md#usage\nexternal: ../../outside.md\n---\na\n",
+		"tasks/b.md": "---\ntype: task\nblockers: [./a.md]\n---\nb\n",
+		"lib/c.md":   "---\ntype: note\n---\nc\n",
+	}
+	read := func(idx *Index, rel string) string {
+		b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel)))
+		return string(b)
+	}
+	idx := build(t, files)
+	if _, err := idx.Move("/tasks/a.md", "/archive/2026/a.md", false, true); err != nil {
+		t.Fatal(err)
+	}
+
+	// An inbound relative ref is found and repointed, and normalized to the
+	// canonical root-absolute form so every referrer spells it identically.
+	if got := read(idx, "tasks/b.md"); !strings.Contains(got, "blockers: [/archive/2026/a.md]") {
+		t.Errorf("inbound relative ref should be repointed: %q", got)
+	}
+
+	moved := read(idx, "archive/2026/a.md")
+	// The moved file's own relative refs would dangle from the new directory, so
+	// they are normalized in place.
+	if !strings.Contains(moved, "blockers: [/tasks/b.md, /lib/c.md]") {
+		t.Errorf("moved file's own refs should be normalized: %q", moved)
+	}
+	// An anchor survives the normalization.
+	if !strings.Contains(moved, "spec: /lib/c.md#usage") {
+		t.Errorf("anchor should be preserved: %q", moved)
+	}
+	// Values that are not `.md` paths are metadata, not refs, even though they
+	// would resolve to a valid in-bundle path. This is the guard that keeps the
+	// pass from rewriting `title` to `./Some Note`.
+	if !strings.Contains(moved, "title: Some Note") || !strings.Contains(moved, "status: todo") {
+		t.Errorf("non-path values must be left alone: %q", moved)
+	}
+	// A value resolving outside the bundle is left exactly as authored, as
+	// out-of-bundle body links are.
+	if !strings.Contains(moved, "external: ../../outside.md") {
+		t.Errorf("out-of-bundle value must be left alone: %q", moved)
 	}
 }
 
@@ -1001,7 +1053,7 @@ func TestSetFrontmatterValue(t *testing.T) {
 		{"create", "no frontmatter here\n", "---\nokf_version: \"0.1\"\n---\nno frontmatter here\n"},
 	}
 	for _, c := range cases {
-		got, err := setFrontmatterValue(c.in, "okf_version", "0.1")
+		got, err := setFrontmatterValue(c.in, "okf_version", "0.1", false)
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q err=%v, want %q", c.name, got, err, c.want)
 		}
@@ -1136,9 +1188,19 @@ func TestLinkGraph(t *testing.T) {
 	})
 	a, _ := idx.Resolve("a.md")
 
-	// outgoing links deduped by target (a links to /b.md twice)
-	if out := idx.OutLinks(a); len(out) != 2 || out[0].To != "/b.md" || out[1].To != "/nope.md" {
-		t.Fatalf("a out-links = %+v want [/b.md /nope.md] (deduped)", out)
+	// Every occurrence, in document order: a links to /b.md twice, and each has
+	// its own line. Collapsing them is the CLI's presentation choice, not the
+	// engine's, so the engine reports what is written.
+	out := idx.Links(a.Path)
+	if len(out) != 3 || out[0].To != "/b.md" || out[1].To != "/b.md" || out[2].To != "/nope.md" {
+		t.Fatalf("a links = %+v, want [/b.md /b.md /nope.md] in document order", out)
+	}
+	if out[0].Line == out[1].Line {
+		t.Errorf("the two /b.md occurrences should carry distinct lines, got %d and %d", out[0].Line, out[1].Line)
+	}
+	// The mirror of Backlinks: both keyed by path, both one ref per occurrence.
+	if idx.Links("/does-not-exist.md") != nil {
+		t.Error("an unknown path should yield nil")
 	}
 
 	// backlinks: every occurrence (a links to /b.md twice -> both rows), sorted by
@@ -1429,16 +1491,16 @@ func TestCounts(t *testing.T) {
 	})
 
 	// TagCounts: y is in a and b (twice in b, but an entry counts once).
-	tags := idx.TagCounts("")
+	tags := idx.TagCounts("", nil)
 	if len(tags) != 3 || tags["x"] != 1 || tags["y"] != 2 || tags["z"] != 1 {
 		t.Errorf("TagCounts = %v, want {x:1, y:2, z:1}", tags)
 	}
-	if sub := idx.TagCounts("sub/"); len(sub) != 1 || sub["z"] != 1 {
+	if sub := idx.TagCounts("sub/", nil); len(sub) != 1 || sub["z"] != 1 {
 		t.Errorf("TagCounts(sub/) = %v, want {z:1}", sub)
 	}
 
 	// PropertyKeyCounts: index.md contributes only okf_version (reserved, no type).
-	keys := idx.PropertyKeyCounts("")
+	keys := idx.PropertyKeyCounts("", nil)
 	for key, want := range map[string]int{"okf_version": 1, "type": 3, "status": 3, "tags": 3} {
 		if keys[key] != want {
 			t.Errorf("PropertyKeyCounts[%q] = %d, want %d (all: %v)", key, keys[key], want, keys)
@@ -1446,19 +1508,58 @@ func TestCounts(t *testing.T) {
 	}
 
 	// PropertyValueCounts: scalar key (status, type) and list key (tags), with prefix.
-	if st := idx.PropertyValueCounts("status", ""); st["open"] != 2 || st["done"] != 1 {
+	if st := idx.PropertyValueCounts("status", "", nil); st["open"] != 2 || st["done"] != 1 {
 		t.Errorf("PropertyValueCounts(status) = %v, want {open:2, done:1}", st)
 	}
-	if ty := idx.PropertyValueCounts("type", ""); ty["note"] != 2 || ty["concept"] != 1 {
+	if ty := idx.PropertyValueCounts("type", "", nil); ty["note"] != 2 || ty["concept"] != 1 {
 		t.Errorf("PropertyValueCounts(type) = %v, want {note:2, concept:1}", ty)
 	}
-	if tg := idx.PropertyValueCounts("tags", ""); tg["x"] != 1 || tg["y"] != 2 || tg["z"] != 1 {
+	if tg := idx.PropertyValueCounts("tags", "", nil); tg["x"] != 1 || tg["y"] != 2 || tg["z"] != 1 {
 		t.Errorf("PropertyValueCounts(tags) = %v, want {x:1, y:2, z:1}", tg)
 	}
-	if st := idx.PropertyValueCounts("status", "sub/"); len(st) != 1 || st["open"] != 1 {
+	if st := idx.PropertyValueCounts("status", "sub/", nil); len(st) != 1 || st["open"] != 1 {
 		t.Errorf("PropertyValueCounts(status, sub/) = %v, want {open:1}", st)
 	}
-	if got := idx.PropertyValueCounts("nope", ""); len(got) != 0 {
+	if got := idx.PropertyValueCounts("nope", "", nil); len(got) != 0 {
 		t.Errorf("PropertyValueCounts(nope) = %v, want empty", got)
+	}
+}
+
+// The asymmetry this closes: a folder holding more than one kind of entry could
+// be narrowed by path but not by field, so a board's status vocabulary came back
+// polluted with the statuses of the notes filed beside it.
+func TestVocabularyCommandsTakeWhere(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":           "---\nokf_version: \"0.1\"\n---\n",
+		"backlog/a.md":       "---\ntype: task\nstatus: todo\ntags: [ui]\n---\n",
+		"backlog/b.md":       "---\ntype: task\nstatus: done\ntags: [ui, api]\n---\n",
+		"backlog/note.md":    "---\ntype: note\nstatus: published\ntags: [prose]\n---\n",
+		"elsewhere/other.md": "---\ntype: task\nstatus: blocked\ntags: [infra]\n---\n",
+	})
+	task := []PropFilter{{Key: "type", Value: "task"}}
+
+	got := idx.PropertyValueCounts("status", "/backlog", task)
+	want := map[string]int{"todo": 1, "done": 1}
+	if !maps.Equal(got, want) {
+		t.Errorf("status under /backlog for tasks = %v, want %v (a note's status leaked in)", got, want)
+	}
+	// --prefix and --where each still narrow on their own.
+	if got := idx.PropertyValueCounts("status", "/backlog", nil); len(got) != 3 {
+		t.Errorf("prefix alone = %v, want all three statuses", got)
+	}
+	if got := idx.PropertyValueCounts("status", "", task); len(got) != 3 {
+		t.Errorf("where alone = %v, want the three tasks' statuses", got)
+	}
+
+	if got, want := idx.TagCounts("/backlog", task), map[string]int{"ui": 2, "api": 1}; !maps.Equal(got, want) {
+		t.Errorf("TagCounts = %v, want %v", got, want)
+	}
+	if got := idx.PropertyKeyCounts("/backlog", task); got["type"] != 2 || got["status"] != 2 {
+		t.Errorf("PropertyKeyCounts = %v, want 2 tasks' keys only", got)
+	}
+	// Negation and AND compose as they do on list.
+	notDone := []PropFilter{{Key: "type", Value: "task"}, {Key: "status", Value: "done", Negate: true}}
+	if got, want := idx.TagCounts("/backlog", notDone), map[string]int{"ui": 1}; !maps.Equal(got, want) {
+		t.Errorf("negated filter = %v, want %v", got, want)
 	}
 }

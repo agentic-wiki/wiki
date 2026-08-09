@@ -26,10 +26,10 @@ Commands:
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (every word; --any --exact --where --prefix --lines)
-  checkboxes    list open checklist items; optional [file] scopes to one entry (--all --done --prefix)
-  tags          list tags in use (--counts --sort=name|count --prefix)
-  properties    list frontmatter keys in use (--counts --sort --prefix)
-  property      list values of a frontmatter key (--counts --sort --prefix)
+  checkboxes    list open checklist items; optional [file] scopes to one entry (--all --done --prefix --where)
+  tags          list tags in use (--counts --sort=name|count --prefix --where)
+  properties    list frontmatter keys in use (--counts --sort --prefix --where)
+  property      list values of a frontmatter key (--counts --sort --prefix --where)
   unresolved    broken internal links
   orphans       entries with no incoming links
   links         an entry's outgoing links
@@ -42,9 +42,11 @@ Commands:
 Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
 
-Every command accepts --format text|json|csv|tsv (default text; csv/tsv suit list-shaped results)
-Filter frontmatter with --where key=value or key!=value (repeatable = AND) on list/search; type and
-  tags are ordinary fields, e.g. --where type=note, --where status!=done
+Every command that reports results accepts --format text|json|csv|tsv (default text; csv/tsv suit
+  list-shaped results); version prints a bare string
+Two filters, available wherever a set of entries is narrowed (list, search, checkboxes, tags,
+  properties, property): --prefix <path> for where, --where key=value or key!=value for what
+  (repeatable = AND). type and tags are ordinary fields, e.g. --where type=note, --where status!=done
 list --format json carries each entry's full frontmatter; csv/tsv carry the canonical columns
 Exit codes: 0 ok, 1 no match or check errors, 2 error
 `

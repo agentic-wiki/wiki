@@ -3,8 +3,8 @@
 // package only recognizes them so the graph stays correct and `tidy` can
 // convert them to canonical markdown, resolving the way Obsidian would, with
 // zero promises. It is deliberately quarantined here so the standard markdown
-// link parsing (internal/parse) and the graph (internal/index) stay clean and
-// only call in. Ported from the obsy predecessor; pure and dependency-free.
+// link parsing (parse) and the graph (index) stay clean and only call in.
+// Ported from the obsy predecessor; pure and dependency-free.
 //
 // All paths are wiki bundle paths: root-absolute and slash-separated (e.g.
 // /finance/income.md), so this package uses the slash-only `path` package, never

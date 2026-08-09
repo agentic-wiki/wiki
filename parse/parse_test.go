@@ -136,11 +136,26 @@ func TestUnquote(t *testing.T) {
 }
 
 func TestList(t *testing.T) {
-	if got := List(`[a, "b c" ,  , d]`); !reflect.DeepEqual(got, []string{"a", "b c", "d"}) {
-		t.Errorf("List = %#v", got)
+	if got := list(`[a, "b c" ,  , d]`); !reflect.DeepEqual(got, []string{"a", "b c", "d"}) {
+		t.Errorf("list = %#v", got)
 	}
-	if got := List("[]"); got != nil {
+	if got := list("[]"); got != nil {
 		t.Errorf("empty list = %#v, want nil", got)
+	}
+	// A comma inside quotes separates nothing. Splitting on every comma turned
+	// one item into two broken halves ("a and b").
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{`["a,b", c]`, []string{"a,b", "c"}},
+		{`['x,y', 'z']`, []string{"x,y", "z"}},
+		{`["a: b", "0.1", "[x]"]`, []string{"a: b", "0.1", "[x]"}},
+		{`["only one"]`, []string{"only one"}},
+	} {
+		if got := list(tc.in); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("list(%s) = %#v, want %#v", tc.in, got, tc.want)
+		}
 	}
 }
 
