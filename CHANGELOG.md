@@ -2,7 +2,19 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
-## Unreleased
+## v0.9.0 — 2026-08-09
+
+The release that makes `wiki` importable. Everything that makes the tool useful now lives in public packages, so a Go program can build a bundle index and query it directly instead of spawning the CLI and parsing its output. The CLI runs on those same packages, so there is no second implementation of anything.
+
+### Breaking
+
+1. **Package paths.** `bundle`, `index`, and `parse` moved out of `internal/` to the module root. Nothing could import them before, so this breaks no existing code — it is listed because the paths are now a commitment.
+2. **A malformed `wiki.toml` is an error** rather than being silently half-read. Input that was never valid TOML but happened to scan — most likely unquoted array items, `types = [note, concept]` — now fails with a line number.
+3. **Two json keys renamed**, for consistency across commands: `checkboxes` reports the entry as `entry` (was `file`), and `unresolved` reports a link's far end as `to` (was `target`). csv/tsv headers follow; text output is unchanged.
+4. **`Index.OutLinks(*Entry)` is now `Index.Links(path string)`**, and returns one ref per occurrence rather than unique targets.
+5. **`Entry.SetFields` takes `map[string]any`** (was `map[string]string`), accepting a `string` or a `[]string` per key.
+
+Two behaviour changes worth knowing that are not API breaks: writing into a read-only directory now fails where a plain write succeeded, and a hardlinked entry now diverges instead of sharing an inode. Both are consequences of atomic writes and both are argued below.
 
 ### Changed
 
@@ -49,6 +61,8 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 - **Unknown-key warnings name the full path.** They reported the leaf key with its table stripped, so a nested `path` or `columns` was unfindable in a file with several tables. Now `nested.key`, and only the shallowest unrecognized key is reported, since flagging every key inside an unknown table is noise rather than information.
 
 - **Writes are atomic.** Every file the engine rewrites now goes through a temp file and a rename instead of `os.WriteFile`, which opens with `O_TRUNC` and so empties the file before the new content lands. Anything reading in that window — an editor, an agent, a watcher, another `wiki` run — could see an empty or partial entry, and a process killed mid-write left it truncated on disk. Measured against a concurrent reader, roughly 9% of reads saw a torn file before; none do now. Permissions are preserved across the rename, and a symlinked entry is written through rather than replaced. Atomicity is per file: a command rewriting several can still be interrupted between them, which is a separate concern. A hardlinked entry now diverges instead of sharing an inode, which is the point: two names are two entries at two paths, so each needs its own relative links, and the shared inode meant one of them ended up pointing nowhere. Writing into a read-only directory now fails where a plain write succeeded.
+
+  **Not every system allows a replace while a file is open**, and on those the write now fails where the plain write it replaced succeeded. The replace retries briefly, but only while the error is contention, so a genuine permission error still fails at once; that covers the common cause, which is transient and not the user's doing (a scanner or indexer opening a file it just saw change). Contention held longer still fails, and the durable fix is filed as debt rather than rushed. Where a replace does not care who is reading, there is no retry and no cost.
 
 - **`move --include-frontmatter` finds relative frontmatter refs.** The flag shipped when root-absolute was still the canonical link form, so it matched frontmatter values by exact string equality against the moved entry's root-absolute path. Once relative links became canonical for bodies (v0.7.0), the natural spelling was the broken one: `blockers: [./task-1.md]` never equalled `/active/task-1.md`, so the flag silently did nothing and the ref dangled. Frontmatter refs are now **resolved** and matched the way body links are, so relative and root-absolute are both found, and they are **normalized to root-absolute** on write. The moved file's own relative refs are normalized too, closing the cross-folder dangle that body links already handled. Anchors are preserved and out-of-bundle values are left as authored. Only values ending in `.md` are treated as references, which is what keeps the pass from rewriting ordinary metadata like `title: Some Note` (an arbitrary string resolves to a valid in-bundle path). The opt-in caveat is unchanged: the flag rewrites every matching value, snapshot fields included.
 

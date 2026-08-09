@@ -910,7 +910,10 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
 			return res, err
 		}
-		if err := os.Rename(src.abs, destAbs); err != nil {
+		// Through rename, not os.Rename: a move needs delete access to the
+		// source, so it meets the same contention a replace does even though the
+		// destination is known not to exist.
+		if err := rename(src.abs, destAbs); err != nil {
 			return res, err
 		}
 	}

@@ -31,6 +31,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 ## Debt
 - [ ] [table parser: rare `|` edge cases](./debt/002-table-pipe-edge-cases.md)
 - [ ] [move: no rollback on a partial write](./debt/004-move-no-rollback.md)
+- [ ] [replacing an open file: a retry, not proper semantics](./debt/006-replace-while-open.md)
 
 ## 5 — Serve
 - [x] [absorb the server into the CLI](./5-serve/001-absorb-server.md): **cancelled**. The UI lives in its own repo (`wikiview`); keeping `wiki` a zero-dependency neutral engine won. The consequence is that [005](./4-release-and-docs/005-public-packages.md) becomes a prerequisite rather than a nicety, and the bar it has to clear is that no consumer should ever need to reimplement a rule.

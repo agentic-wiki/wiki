@@ -71,7 +71,7 @@ func writeFile(abs string, content []byte) error {
 	if err := os.Chmod(name, perm); err != nil {
 		return err
 	}
-	return os.Rename(name, abs)
+	return rename(name, abs)
 }
 
 // SetField writes key: value into the entry's frontmatter, preserving every

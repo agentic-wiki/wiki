@@ -4,10 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/agentic-wiki/wiki/bundle"
 )
@@ -252,9 +254,14 @@ func TestWriteIsAtomicAndKeepsMode(t *testing.T) {
 	if got, _ := os.ReadFile(abs); string(got) != "new\n" {
 		t.Errorf("content=%q", got)
 	}
-	fi, _ := os.Stat(abs)
-	if fi.Mode().Perm() != 0o600 {
-		t.Errorf("mode=%v, want 0600: a rename must not reset the user's permissions", fi.Mode().Perm())
+	// Not every system models POSIX permission bits; where it does not, Chmod
+	// only toggles read-only and Perm() reports a fixed value, so asserting 0600
+	// would be testing the platform rather than the code.
+	if runtime.GOOS != "windows" {
+		fi, _ := os.Stat(abs)
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("mode=%v, want 0600: a rename must not reset the user's permissions", fi.Mode().Perm())
+		}
 	}
 	ents, _ := os.ReadDir(dir)
 	for _, en := range ents {
@@ -269,6 +276,14 @@ func TestWriteIsAtomicAndKeepsMode(t *testing.T) {
 // the before nor the after state. With os.WriteFile in place of writeFile it
 // reports hundreds of torn reads; it is the regression guard for that swap.
 func TestCommandRewritesAreAtomic(t *testing.T) {
+	// The risk measured here is a torn read, which only exists where a replace
+	// can happen while a file is open. Where it cannot, the write fails instead —
+	// that is what rename's retry is for — and a reader looping this tightly
+	// would hold the target open throughout, measuring contention rather than
+	// atomicity.
+	if runtime.GOOS == "windows" {
+		t.Skip("replace-while-open is refused here rather than tearing; see rename()")
+	}
 	filler := strings.Repeat("a line of the entry body\n", 3000)
 	before := "---\ntype: note\n---\n[x](/index.md)\n" + filler // absolute: tidy rewrites it
 	after := "---\ntype: note\n---\n[x](./index.md)\n" + filler // relative: the canonical form
@@ -371,15 +386,39 @@ func TestWriteFollowsSymlinks(t *testing.T) {
 // reader may hold open. internal/scaffold creates a bundle that does not exist
 // yet, so it has no such reader.
 func TestNoDirectWritesOutsideWriteFile(t *testing.T) {
-	// os.CreateTemp and os.Rename are writeFile's own tools, so the patterns
-	// below match the bare calls only.
-	banned := regexp.MustCompile(`os\.(WriteFile|Create|OpenFile|Truncate)\(`)
+	// Each rule names the one function that owns it and the file that function
+	// lives in. os.CreateTemp is writeFile's own tool, so the pattern matches
+	// the bare os.Create( only.
+	rules := []struct {
+		banned  *regexp.Regexp
+		homeIn  string // the one file allowed to use it; empty means nowhere
+		use     string
+		because string
+	}{
+		{
+			// No home: writeFile builds on os.CreateTemp, which these patterns
+			// deliberately do not match, so nothing in the package needs these.
+			regexp.MustCompile(`os\.(WriteFile|Create|OpenFile|Truncate)\(`),
+			"", "writeFile",
+			"it renames a temp file into place, so a reader never sees a partial entry " +
+				"and a process killed mid-write cannot truncate one",
+		},
+		{
+			// The reason this needs enforcing: os.Rename works on every developer
+			// machine that does not refuse to touch open files, so a raw call
+			// passes review and CI, and only fails for users elsewhere.
+			regexp.MustCompile(`os\.Rename\(`),
+			"rename.go", "rename",
+			"it retries while the failure is contention, which a raw os.Rename " +
+				"silently drops on systems that refuse to move an open file",
+		},
+	}
 
 	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
-	checked := 0
+	checked, enforced := 0, map[string]bool{}
 	for _, f := range entries {
 		name := f.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -391,15 +430,29 @@ func TestNoDirectWritesOutsideWriteFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		for i, line := range strings.Split(string(src), "\n") {
-			if m := banned.FindString(line); m != "" {
-				t.Errorf("%s:%d uses %s — entry rewrites must go through writeFile, "+
-					"which renames a temp file into place so a concurrent reader "+
-					"never sees a partial entry", name, i+1, m)
+			for _, r := range rules {
+				m := r.banned.FindString(line)
+				if m == "" {
+					continue
+				}
+				if r.homeIn != "" && name == r.homeIn {
+					enforced[r.homeIn] = true // the sanctioned use
+					continue
+				}
+				t.Errorf("%s:%d uses %s — go through %s instead, because %s",
+					name, i+1, m, r.use, r.because)
 			}
 		}
 	}
 	if checked == 0 {
 		t.Fatal("no source files scanned, so this proved nothing")
+	}
+	// A rule with a sanctioned home must find the call there. If it moves or goes
+	// away, the rule is guarding nothing and would pass silently forever.
+	for _, r := range rules {
+		if r.homeIn != "" && !enforced[r.homeIn] {
+			t.Errorf("%s no longer contains the call %s guards; the rule is dead", r.homeIn, r.use)
+		}
 	}
 }
 
@@ -561,5 +614,30 @@ func TestSetFieldsRejectsUnsupportedTypes(t *testing.T) {
 	}
 	if e.Field("status") != "in-progress" {
 		t.Errorf("status=%q", e.Field("status"))
+	}
+}
+
+// The retry exists for systems that refuse to replace a file another handle has
+// open. It cannot be provoked where a replace does not care, so what is pinned
+// here is the contract: it succeeds normally, and a non-contention error is
+// returned at once rather than retried.
+func TestRenameRetriesThenGivesUp(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "src")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := rename(src, filepath.Join(dir, "dst")); err != nil {
+		t.Fatalf("a plain rename should succeed on the first attempt: %v", err)
+	}
+
+	// An impossible destination: the error is returned, and bounded.
+	start := time.Now()
+	err := rename(filepath.Join(dir, "dst"), filepath.Join(dir, "no-such-dir", "x"))
+	if err == nil {
+		t.Fatal("renaming into a missing directory should fail")
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Errorf("gave up after %v; the retry must stay bounded", elapsed)
 	}
 }
