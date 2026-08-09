@@ -7,6 +7,7 @@ package bundle
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -25,27 +26,36 @@ type Bundle struct {
 	// IgnoreOrphans lists paths (relative to Dir) whose entries stay indexed but are
 	// not reported by `wiki orphans`: a directory subtree or an exact path.
 	IgnoreOrphans []string
-	// Tool holds the [tool.<name>] tables, keyed by tool name. wiki never reads
-	// inside them: they are space granted to other tools over the same bundle, so
-	// one file describes the directory instead of a satellite config per tool.
-	// Handed over raw so no consumer writes a second wiki.toml parser.
-	Tool map[string]toml.Primitive
 	// Unknown holds wiki.toml keys the tool does not recognize (a typo, or a
 	// renamed field), as dotted paths. They are inert; `check` surfaces them so
 	// they aren't silently ignored.
 	Unknown []string
 
-	md toml.MetaData // retained so Tool tables can be decoded on demand
+	// The [tool.<name>] tables, left undecoded. Unexported deliberately: making
+	// them public would put toml.Primitive in this package's signature and force
+	// every consumer to import the TOML library to name the type, turning an
+	// implementation choice into part of the contract. DecodeTool is the way in.
+	tool map[string]toml.Primitive
+	md   toml.MetaData
+}
+
+// Tools lists the names of the [tool.<name>] tables present, sorted.
+func (b *Bundle) Tools() []string {
+	return slices.Sorted(maps.Keys(b.tool))
 }
 
 // DecodeTool unmarshals the [tool.<name>] table into v, which is any struct or
 // map the caller defines. Reports whether the table was present.
 //
-// The decoding happens here rather than in the consumer because the alternative
-// is every tool parsing wiki.toml again: the same rule with two homes, which is
-// the drift this repo keeps refusing.
+// The namespace is space granted to other tools over the same bundle, so one
+// file describes the directory instead of a satellite config per tool. wiki
+// never reads inside it: no validation, no warning, no opinion.
+//
+// The decode happens here rather than in the consumer because the alternative is
+// every tool parsing wiki.toml again: the same rule with two homes, which is the
+// drift this repo keeps refusing.
 func (b *Bundle) DecodeTool(name string, v any) (bool, error) {
-	p, ok := b.Tool[name]
+	p, ok := b.tool[name]
 	if !ok {
 		return false, nil
 	}
@@ -119,7 +129,7 @@ func load(root, cfg string) (*Bundle, error) {
 		Types:         c.Types,
 		Ignore:        c.Ignore,
 		IgnoreOrphans: c.IgnoreOrphans,
-		Tool:          c.Tool,
+		tool:          c.Tool,
 		Unknown:       unknown,
 		md:            md,
 	}, nil

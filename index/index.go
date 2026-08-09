@@ -726,17 +726,25 @@ type LinkRef struct {
 	Line int    `json:"line"`
 }
 
-// OutLinks returns the entry's outgoing internal links as unique targets, in
-// first-seen order. (Whether a target resolves is a health question for `check`
-// / `unresolved`, not this navigational view.)
-func (idx *Index) OutLinks(e *Entry) []LinkRef {
-	seen := map[string]bool{}
-	var refs []LinkRef
+// Links returns the internal links written in the entry at path, one LinkRef per
+// occurrence, in document order. The mirror of Backlinks, which answers the same
+// question from the other end.
+//
+// Occurrences, not unique targets: an entry may link the same target from two
+// places, and each has its own line. Collapsing them here would make Line the
+// first of several, silently, which is a presentation choice the engine has no
+// business making — `wiki links` shows bare targets and so dedupes, `wiki
+// backlinks` shows file:line and so does not.
+//
+// An unknown path yields nil. Whether a target resolves is a health question for
+// `check` / `unresolved`, not this navigational view.
+func (idx *Index) Links(path string) []LinkRef {
+	e, ok := idx.byPath[path]
+	if !ok {
+		return nil
+	}
+	refs := make([]LinkRef, 0, len(e.Links))
 	for _, l := range e.Links {
-		if seen[l.Target] {
-			continue
-		}
-		seen[l.Target] = true
 		refs = append(refs, LinkRef{From: e.Path, To: l.Target, Text: l.Text, Line: l.Line})
 	}
 	return refs

@@ -3,6 +3,7 @@ package index
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -76,10 +77,18 @@ func writeFile(abs string, content []byte) error {
 // SetField writes key: value into the entry's frontmatter, preserving every
 // other byte of the file, and refreshes the entry in the index.
 func (e *Entry) SetField(key, value string) error {
-	return e.SetFields(map[string]string{key: value})
+	return e.SetFields(map[string]any{key: value})
 }
 
-// SetFields writes several frontmatter fields in one pass.
+// SetFields writes several frontmatter fields in one pass. Values may be a
+// string or a []string; anything else is an error naming the key and its type.
+//
+// map[string]any rather than map[string]string so this mirrors Frontmatter,
+// which returns the same shape: a consumer can read the frontmatter, edit it,
+// and write it back. With separate scalar and list calls, setting a status and a
+// tag list together took two writes, which is exactly the half-updated entry one
+// pass exists to prevent. Frontmatter is genuinely heterogeneous, so a
+// map[string]string was never the honest type for it.
 //
 // One pass rather than a loop of SetField: two writes can leave an entry
 // half-updated if the second fails, and a consumer changing two related fields
@@ -90,13 +99,20 @@ func (e *Entry) SetField(key, value string) error {
 // parsing the frontmatter into a map and re-serializing it, which would silently
 // drop everything the YAML subset does not model (nested maps, anchors,
 // comments, quoting style).
-func (e *Entry) SetFields(fields map[string]string) error {
+func (e *Entry) SetFields(fields map[string]any) error {
 	if len(fields) == 0 {
 		return errors.New("no fields to set")
 	}
-	for key := range fields {
+	// Validate every key and value before writing anything, so a rejected batch
+	// applies nothing rather than the prefix that happened to be valid.
+	for key, v := range fields {
 		if err := validFieldKey(key); err != nil {
 			return err
+		}
+		switch v.(type) {
+		case string, []string:
+		default:
+			return fmt.Errorf("field %q: value must be a string or []string, got %T", key, v)
 		}
 	}
 	raw, err := e.Raw()
@@ -106,13 +122,14 @@ func (e *Entry) SetFields(fields map[string]string) error {
 	out := raw
 	// Sorted, so the same set of fields always produces the same file rather
 	// than one whose new-key order depends on map iteration.
-	keys := make([]string, 0, len(fields))
-	for k := range fields {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		if out, err = setFrontmatterValue(out, key, fields[key], e.reserved()); err != nil {
+	for _, key := range slices.Sorted(maps.Keys(fields)) {
+		switch v := fields[key].(type) {
+		case string:
+			out, err = setFrontmatterValue(out, key, v, e.reserved())
+		case []string:
+			out, err = setFrontmatterList(out, key, v, e.reserved())
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -130,18 +147,7 @@ func (e *Entry) SetFields(fields map[string]string) error {
 // so the API does not reformat frontmatter it was only asked to change. A new
 // key is written flow-style, which is what the scaffolds use.
 func (e *Entry) SetFieldList(key string, values []string) error {
-	if err := validFieldKey(key); err != nil {
-		return err
-	}
-	raw, err := e.Raw()
-	if err != nil {
-		return err
-	}
-	out, err := setFrontmatterList(raw, key, values, e.reserved())
-	if err != nil {
-		return err
-	}
-	return e.commit(raw, out)
+	return e.SetFields(map[string]any{key: values})
 }
 
 // UnsetField removes a key from the entry's frontmatter, including a block list

@@ -104,8 +104,8 @@ types = ["this", "must", "not", "leak"]
 	if !reflect.DeepEqual(b.Types, []string{"task", "note"}) {
 		t.Errorf("a tool table leaked into bundle config: types=%#v", b.Types)
 	}
-	if _, ok := b.Tool["wikiview"]; !ok {
-		t.Errorf("Tool should carry the wikiview table, got keys %v", b.Tool)
+	if got := b.Tools(); !reflect.DeepEqual(got, []string{"other", "wikiview"}) {
+		t.Errorf("Tools() = %v", got)
 	}
 }
 

@@ -1188,9 +1188,19 @@ func TestLinkGraph(t *testing.T) {
 	})
 	a, _ := idx.Resolve("a.md")
 
-	// outgoing links deduped by target (a links to /b.md twice)
-	if out := idx.OutLinks(a); len(out) != 2 || out[0].To != "/b.md" || out[1].To != "/nope.md" {
-		t.Fatalf("a out-links = %+v want [/b.md /nope.md] (deduped)", out)
+	// Every occurrence, in document order: a links to /b.md twice, and each has
+	// its own line. Collapsing them is the CLI's presentation choice, not the
+	// engine's, so the engine reports what is written.
+	out := idx.Links(a.Path)
+	if len(out) != 3 || out[0].To != "/b.md" || out[1].To != "/b.md" || out[2].To != "/nope.md" {
+		t.Fatalf("a links = %+v, want [/b.md /b.md /nope.md] in document order", out)
+	}
+	if out[0].Line == out[1].Line {
+		t.Errorf("the two /b.md occurrences should carry distinct lines, got %d and %d", out[0].Line, out[1].Line)
+	}
+	// The mirror of Backlinks: both keyed by path, both one ref per occurrence.
+	if idx.Links("/does-not-exist.md") != nil {
+		t.Error("an unknown path should yield nil")
 	}
 
 	// backlinks: every occurrence (a links to /b.md twice -> both rows), sorted by

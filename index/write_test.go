@@ -116,7 +116,7 @@ func TestSetFieldsIsOnePassAndDeterministic(t *testing.T) {
 		"a.md":     "---\ntype: task\nstatus: todo\nassignee: john\npriority: high\n---\nbody\n",
 	})
 	e, _ := idx.Resolve("/a.md")
-	if err := e.SetFields(map[string]string{"status": "done", "assignee": "mary"}); err != nil {
+	if err := e.SetFields(map[string]any{"status": "done", "assignee": "mary"}); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
@@ -133,7 +133,7 @@ func TestSetFieldsIsOnePassAndDeterministic(t *testing.T) {
 			"b.md":     "---\ntype: task\n---\nbody\n",
 		})
 		e, _ := idx.Resolve("/b.md")
-		if err := e.SetFields(map[string]string{"zeta": "1", "alpha": "2", "mid": "3"}); err != nil {
+		if err := e.SetFields(map[string]any{"zeta": "1", "alpha": "2", "mid": "3"}); err != nil {
 			t.Fatal(err)
 		}
 		b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "b.md"))
@@ -154,7 +154,7 @@ func TestSetFieldsRejectsReservedKeys(t *testing.T) {
 		}
 	}
 	// A rejected batch applies nothing at all.
-	if err := e.SetFields(map[string]string{"status": "done", "_path": "/x.md"}); err == nil {
+	if err := e.SetFields(map[string]any{"status": "done", "_path": "/x.md"}); err == nil {
 		t.Error("a reserved key should fail the whole batch")
 	}
 	if raw, _ := e.Raw(); strings.Contains(raw, "done") {
@@ -492,5 +492,74 @@ func TestSetFieldListRoundTrips(t *testing.T) {
 			raw, _ := e.Raw()
 			t.Errorf("wrote %q, read back %#v, want %#v", raw, got, values)
 		}
+	}
+}
+
+// The reason SetFields takes map[string]any: a scalar and a list set together
+// are one write. With separate calls they were two, and a failure between them
+// left the entry half-updated — the exact thing one pass exists to prevent.
+func TestSetFieldsMixesScalarsAndLists(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: task\nstatus: todo\ntags: [old]\nblockers:\n  - /x.md\n---\nbody\n",
+	})
+	e, _ := idx.Resolve("/a.md")
+	if err := e.SetFields(map[string]any{
+		"status":   "done",
+		"tags":     []string{"ui", "api"},
+		"blockers": []string{"/y.md", "/z.md"},
+		"assignee": "mary",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md"))
+	want := "---\ntype: task\nstatus: done\ntags: [ui, api]\nblockers:\n  - /y.md\n  - /z.md\nassignee: mary\n---\nbody\n"
+	if string(got) != want {
+		t.Errorf("got:\n%q\nwant:\n%q", got, want)
+	}
+	// Everything reads back as the type it was written as.
+	if e.Field("status") != "done" || e.Field("assignee") != "mary" {
+		t.Errorf("scalars: status=%q assignee=%q", e.Field("status"), e.Field("assignee"))
+	}
+	if !slices.Equal(e.FieldList("tags"), []string{"ui", "api"}) {
+		t.Errorf("tags=%#v", e.FieldList("tags"))
+	}
+	if !slices.Equal(e.FieldList("blockers"), []string{"/y.md", "/z.md"}) {
+		t.Errorf("blockers=%#v", e.FieldList("blockers"))
+	}
+}
+
+// map[string]any moves the type check to runtime, so it has to be a real check
+// with a message that names what went wrong — and it must reject before writing.
+func TestSetFieldsRejectsUnsupportedTypes(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: task\nstatus: todo\n---\nbody\n",
+	})
+	e, _ := idx.Resolve("/a.md")
+	before, _ := e.Raw()
+
+	for _, v := range []any{42, true, 1.5, nil, []int{1}, map[string]string{"a": "b"}} {
+		err := e.SetFields(map[string]any{"status": "done", "bad": v})
+		if err == nil {
+			t.Errorf("value %#v (%T) should be rejected", v, v)
+			continue
+		}
+		if !strings.Contains(err.Error(), "bad") {
+			t.Errorf("error should name the offending key, got %v", err)
+		}
+	}
+	// A rejected batch writes nothing, including the valid keys beside it.
+	if after, _ := e.Raw(); after != before {
+		t.Errorf("a rejected batch modified the file:\n%q", after)
+	}
+	// Round-tripping Frontmatter through SetFields is the point of the shape.
+	fm := e.Frontmatter()
+	fm["status"] = "in-progress"
+	if err := e.SetFields(fm); err != nil {
+		t.Fatalf("Frontmatter() output should be accepted by SetFields: %v", err)
+	}
+	if e.Field("status") != "in-progress" {
+		t.Errorf("status=%q", e.Field("status"))
 	}
 }

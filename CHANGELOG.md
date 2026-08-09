@@ -16,6 +16,10 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
   `SetFieldList` writes list-valued fields (`tags`, `blockers`, and anything else the bundle spells as a list). Separate from `SetField` because a list is not a string that happens to contain brackets: passing `"[a, b]"` to `SetField` writes `key: "[a, b]"`, correctly quoted for a scalar and a one-element list when read back. A key already written as a block list stays one, so the API does not reformat frontmatter it was only asked to change.
 
+  `SetFields` takes `map[string]any`, accepting a `string` or a `[]string` per key and rejecting anything else by name and type. That mirrors `Frontmatter`, which returns the same shape, so a consumer can read the frontmatter, edit it, and write it back. With scalars and lists in separate calls, setting a status and a tag list together took two writes — precisely the half-updated entry one pass exists to prevent. Frontmatter is genuinely heterogeneous, so `map[string]string` was never the honest type for it.
+
+- **`Index.OutLinks(*Entry)` is now `Index.Links(path string)`**, the mirror of `Backlinks(path string)`: same shape, same return type, both yielding `nil` for an unknown path. It also stops de-duplicating by target and returns one `LinkRef` per occurrence, as `Backlinks` always has. De-duplicating while still reporting a `Line` made that line the first of several, silently. Which behaviour is right depends on how the result is shown — `wiki links` prints a bare target so it collapses repeats, `wiki backlinks` prints `file:line` so it shows each one — and that is a presentation choice, so it moved to `cmd/wiki`. CLI output is unchanged.
+
 - **Reading and resolving, for consumers.** `Entry.Field`, `Entry.FieldList`, and `Entry.Frontmatter` reach arbitrary frontmatter; `FieldList` applies the same scalar-as-one-element-list rule matching uses, so filtering by hand agrees with `--where` rather than being subtly different. `Index.ResolveLink` and `RelativeLink` expose both directions of link spelling.
 
 - **`--where` works on the vocabulary commands.** `tags`, `properties`, `property`, and `checkboxes` now take `--where key=value` / `key!=value` with the same semantics `list` has (repeatable, ANDed, list-match-any), composing with `--prefix`.
@@ -31,6 +35,8 @@ All notable changes to `wiki` are documented here. This project follows [semanti
   **Behaviour change:** a malformed `wiki.toml` is now an error instead of being silently half-read. The config decides what counts as an entry and which types are valid, so carrying on with a partial parse produced confidently wrong answers. This also means input that was never valid TOML but happened to work — most likely unquoted array items, `types = [note, concept]` — now fails with a line number instead of being accepted.
 
 ### Fixed
+
+- **Docs described the old canonical link form.** The format spec still called root-absolute links canonical and said `tidy --links` rewrote *to* root-absolute; since relative became the canonical on-disk form (v0.7.0) both are backwards. The scaffolded `AGENTS.md` contradicted itself, describing relative links in one section and `tidy --all` producing absolute ones in another, and both READMEs told Obsidian users to write *Absolute path in vault*. The spec also still documented `skip`, a field renamed to `ignore` long ago — so a config copied from the spec silently did nothing and warned as an unknown key — and never documented `ignore_orphans` at all.
 
 - **A quoted list item containing a comma was read as two broken items.** `parse` split a frontmatter flow list on every comma without honouring quotes, so `tags: ["a,b", "c"]` came back as `["\"a", "b\"", "c"]` — valid YAML, silently mis-parsed, in any bundle that spelled a list that way. The split now tracks the open quote.
 

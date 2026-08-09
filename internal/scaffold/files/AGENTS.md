@@ -102,7 +102,7 @@ Knowledge often arrives rough and matures in place. You write the file; `wiki` o
 ```sh
 wiki move --dry-run /a.md /archive/a.md   # preview the link rewrites
 wiki move /a.md /archive/a.md             # relocate + rewrite every inbound link in one pass
-wiki tidy                                 # preview canonicalization; `tidy --all` applies (links→absolute, names→slugs)
+wiki tidy                                 # preview canonicalization; `tidy --all` applies (links→relative, names→slugs)
 ```
 
 Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every backlink.

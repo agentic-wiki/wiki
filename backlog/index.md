@@ -23,7 +23,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 
 ## 4 — Release & docs
 - [x] [promote the core packages to an importable API](./4-release-and-docs/005-public-packages.md): `bundle`, `index`, `parse` at the module root (`output` and `wikilink` stayed internal), plus the four rules a consumer would otherwise reimplement — frontmatter reads (`Field`/`FieldList`/`Frontmatter`), link resolution (`ResolveLink`/`RelativeLink`), surgical frontmatter writes (`SetField`/`SetFields`/`UnsetField`), and checkbox toggling (`SetCheckbox`, which did not exist at all). `--where` parsing moved into `index.ParseFilter`. Writes refresh the in-memory entry and are now **atomic** (temp + rename). Verified no-behaviour-change by diffing the pre-move binary: 759 read captures and 59 mutating cases compared by entire file tree. Incremental rebuild deferred to [.wiki cache](./3-graph-and-mutation/004-incremental-cache.md).
-- [ ] [reserve a per-tool config namespace in wiki.toml](./conformance/010-tool-config-namespace.md)
+- [x] [reserve a per-tool config namespace in wiki.toml](./conformance/010-tool-config-namespace.md): `[tool.<name>]` tables are never parsed, validated, or warned about; `bundle.DecodeTool` unmarshals one into a consumer's own struct so no tool writes a second `wiki.toml` parser. Required switching to a real TOML parser (`BurntSushi/toml`), which surfaced two live bugs: a key inside any table silently overrode bundle config, and a multi-line array silently emptied its setting. **`wiki` is no longer zero-dependency.**
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](./4-release-and-docs/004-skills-sync.md)
 

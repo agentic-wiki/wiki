@@ -749,9 +749,20 @@ func cmdLinks(args []string) int {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}
-	refs := idx.OutLinks(e)
+	// Unique targets: this view answers "what does this page point to", and it
+	// prints a bare path, so the same target twice would read as a bug rather
+	// than as two mentions. The engine returns every occurrence; deciding to
+	// collapse them is presentation, which is this layer's job.
+	// (`backlinks` prints file:line, so it shows every occurrence.)
+	seen := map[string]bool{}
+	var refs []index.LinkRef
 	var lines []string
-	for _, r := range refs {
+	for _, r := range idx.Links(e.Path) {
+		if seen[r.To] {
+			continue
+		}
+		seen[r.To] = true
+		refs = append(refs, r)
 		lines = append(lines, r.To)
 	}
 	output.Emit(os.Stdout, *format, lines, refs)
