@@ -17,10 +17,15 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [spec upgrade / cross-version migration](./3-graph-and-mutation/008-spec-upgrade.md)
 - [ ] [wiki move on directories](./3-graph-and-mutation/013-move-directories.md)
 - [ ] [backlinks/links per-page granularity](./3-graph-and-mutation/014-backlinks-granularity.md)
+- [ ] [wiki.toml ref_fields: validate & rewrite frontmatter path refs](./3-graph-and-mutation/015-ref-fields.md) (from wikanban)
 
 ## 4 — Release & docs
 - [ ] [reframe stack: format + tool + workflow](./4-release-and-docs/003-stack-framing.md)
 - [ ] [align skills repo with AGENTS.md + workflow model](./4-release-and-docs/004-skills-sync.md)
+- [ ] [public Go library: import the engine, not just the binary](./4-release-and-docs/005-go-library-api.md) (from wikanban)
+
+## Conformance
+- [ ] [docs: frontmatter refs stay root-absolute (fix contradiction)](./conformance/011-frontmatter-ref-docs.md) (from wikanban)
 
 
 ## Debt
