@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -22,6 +23,11 @@ func loadIndex() (*index.Index, int) {
 		start = cwd
 	}
 	b, err := bundle.Discover(start)
+	if errors.Is(err, bundle.ErrNotFound) && rootDir == "" {
+		// The library cannot name a CLI flag, so the way out is added here.
+		fmt.Fprintf(os.Stderr, "wiki: %v\nrun it inside a bundle, or point at one with --root <dir>\n", err)
+		return nil, 2
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return nil, 2

@@ -21,6 +21,12 @@ func cmdInit(args []string) int {
 	workflow := fs.String("workflow", "", fmt.Sprintf("starter workflow: %s (default: %s)", strings.Join(scaffold.Workflows(), ", "), scaffold.DefaultWorkflow))
 	format := fs.String("format", "text", "output format: text|json|csv|tsv")
 	fs.Parse(args)
+	if rootDir != "" {
+		// --root finds an existing bundle; init makes one, so honoring it would
+		// mean guessing, and ignoring it would scaffold into the wrong directory.
+		fmt.Fprintln(os.Stderr, "wiki: init takes the directory as its argument: wiki init <dir>")
+		return 2
+	}
 	dir := "."
 	if fs.NArg() >= 1 {
 		dir = fs.Arg(0)
@@ -795,5 +801,48 @@ func cmdBacklinks(args []string) int {
 		lines = append(lines, fmt.Sprintf("%s:%d  %s", r.From, r.Line, r.Text))
 	}
 	output.Emit(os.Stdout, *format, lines, refs)
+	return 0
+}
+
+// cmdDump prints the entries as one markdown stream (see index.Dump), in reading
+// order (index.ReadingOrder). The filters decide inclusion only: the order comes
+// from the whole bundle, so an index.md filtered out of the dump still orders
+// its folder. Out-of-bundle links are left as written and listed on stderr once
+// the dump is out, since nothing at a published URL can resolve them.
+func cmdDump(args []string) int {
+	fs := flag.NewFlagSet("dump", flag.ExitOnError)
+	prefix := fs.String("prefix", "", "filter to a path prefix")
+	where := &whereFilters{}
+	fs.Var(where, "where", "filter entries by frontmatter: key=value or key!=value (repeatable)")
+	withFrontmatter := fs.Bool("frontmatter", false, "keep each entry's frontmatter")
+	fs.Parse(args)
+	if fs.NArg() > 0 {
+		fmt.Fprintln(os.Stderr, "usage: wiki dump [--prefix <path>] [--where key=value] [--frontmatter]")
+		return 2
+	}
+	idx, code := loadIndex()
+	if code != 0 {
+		return code
+	}
+
+	keep := map[*index.Entry]bool{}
+	for _, e := range idx.Filter(*prefix, *where) {
+		keep[e] = true
+	}
+	var entries []*index.Entry
+	for _, e := range idx.ReadingOrder() {
+		if keep[e] {
+			entries = append(entries, e)
+		}
+	}
+	if err := idx.Dump(os.Stdout, entries, *withFrontmatter); err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	for _, e := range entries {
+		for _, r := range idx.OutOfBundle(e.Path) {
+			fmt.Fprintf(os.Stderr, "wiki: warning: %s:%d out-of-bundle link -> %s\n", r.From, r.Line, r.To)
+		}
+	}
 	return 0
 }

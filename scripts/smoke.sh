@@ -157,6 +157,14 @@ READ="$($BIN read /finance/income.md)"
 contains "$READ" "Monthly income tracking"
 ! contains "$READ" "type: concept"
 
+echo "--- dump: one markdown stream in index order, links root-absolute ---"
+DUMP="$($BIN dump)"
+[ "$(echo "$DUMP" | grep '^<!-- ' | head -4 | tr '\n' ' ')" = "<!-- /index.md --> <!-- /finance/index.md --> <!-- /finance/income.md --> <!-- /finance/expenses.md --> " ]
+! contains "$DUMP" "type: concept"                                        # frontmatter stripped by default
+contains "$($BIN dump --frontmatter --prefix /finance/income.md)" "type: concept"
+[ "$($BIN dump --where type=task | head -1)" = "<!-- /tasks/reconcile.md -->" ]
+[ "$($BIN dump)" = "$DUMP" ]                                               # byte-stable
+
 echo "--- outline lists headings ---"
 contains "$($BIN outline /index.md)" "Home"
 

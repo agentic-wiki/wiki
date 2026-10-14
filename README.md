@@ -79,7 +79,7 @@ wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
 ```
 
-Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
+Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `dump`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
 
 **Follow the graph** (the part `grep` cannot do)
 
@@ -110,7 +110,16 @@ wiki tidy                       # canonicalize links and filenames (run it bare 
 wiki check --fix                # health report, and repair the safe issues
 ```
 
-Every command speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
+**Publish it whole**
+
+```sh
+wiki dump > llms-full.txt                   # every entry as one markdown file: the whole base at one URL, for agents
+wiki dump --prefix docs/ --frontmatter      # a subtree only, keeping each entry's frontmatter
+```
+
+Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
+
+Every command except `dump` (plain markdown) speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
 ```sh
 wiki search "needs review" >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
@@ -183,6 +192,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body; every word by default (`--any` any word, `--exact` verbatim phrase, `--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
+| `dump` | Every entry as one markdown stream in index order, links made root-absolute, e.g. `llms-full.txt` (`--frontmatter` keeps frontmatter; out-of-bundle links are warned about on stderr) |
 | `outline <path>` | An entry's heading hierarchy |
 | `table <path>` | Extract a dataset's markdown table as text/csv/json (`--n` to pick one) |
 | `checkboxes` | Open `- [ ]` items, not `type: task` entries (`--all`, `--done`; `[file]` scopes to one entry) |
@@ -194,7 +204,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `check` | Health lint (`--fix` repairs the safe issues, e.g. version drift) |
 | `version` | Print the version |
 
-File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at. `--prefix` takes the same form to scope a listing to a subtree.
+File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at (a global flag, accepted before or after the command: `wiki --root kb dump` and `wiki dump --root kb` are the same). `--prefix` takes the same form to scope a listing to a subtree.
 
 Two everyday commands have short aliases: `wiki ls` for `list`, and `wiki mv` for `move`.
 

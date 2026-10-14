@@ -189,19 +189,11 @@ func Build(b *bundle.Bundle) (*Index, error) {
 // orphans see them while Move/tidy/check can tell them from real markdown links.
 // An unresolvable wikilink is left off the graph and surfaced only by check.
 func (idx *Index) resolveWikilinks() {
-	paths := make([]string, len(idx.Entries))
-	aliasesPerEntry := map[string][]string{}
-	for i, e := range idx.Entries {
-		paths[i] = e.Path
-		if a := parse.Strings(e.fm, "aliases"); len(a) > 0 {
-			aliasesPerEntry[e.Path] = a
-		}
-	}
-	aliases := wikilink.AliasMap(aliasesPerEntry)
+	resolve := idx.wikilinkResolver()
 	for _, e := range idx.Entries {
 		for _, wl := range e.wikilinks {
 			target, anchor, display := wl.Split()
-			resolved := wikilink.Resolve(target, e.Path, paths, aliases)
+			resolved := resolve(target, e.Path)
 			if resolved == "" {
 				continue
 			}
@@ -211,6 +203,25 @@ func (idx *Index) resolveWikilinks() {
 			}
 			e.Links = append(e.Links, Link{Text: text, Raw: wl.Full(), Target: resolved, Anchor: anchor, Line: wl.Line, Wikilink: true})
 		}
+	}
+}
+
+// wikilinkResolver returns the Obsidian-style resolver over the bundle's entries
+// and their `aliases`: a wikilink target (already split from #anchor and
+// |display), as written in the entry at from, to its root-absolute path, or ""
+// when nothing matches. Build, tidy and dump all resolve through it.
+func (idx *Index) wikilinkResolver() func(target, from string) string {
+	paths := make([]string, len(idx.Entries))
+	aliasesPerEntry := map[string][]string{}
+	for i, e := range idx.Entries {
+		paths[i] = e.Path
+		if a := parse.Strings(e.fm, "aliases"); len(a) > 0 {
+			aliasesPerEntry[e.Path] = a
+		}
+	}
+	aliases := wikilink.AliasMap(aliasesPerEntry)
+	return func(target, from string) string {
+		return wikilink.Resolve(target, from, paths, aliases)
 	}
 }
 
@@ -753,6 +764,26 @@ func (idx *Index) Links(path string) []LinkRef {
 	return refs
 }
 
+// OutOfBundle returns the links written in the entry at path whose target
+// resolves outside the bundle, one LinkRef per occurrence with To as written
+// (`../PRD.md`), minus those acknowledged in wiki.toml `ignore`. They are not
+// graph edges and cannot be verified from inside the bundle, which is why check
+// and dump report them. An unknown path yields nil.
+func (idx *Index) OutOfBundle(path string) []LinkRef {
+	e, ok := idx.byPath[path]
+	if !ok {
+		return nil
+	}
+	var refs []LinkRef
+	for _, l := range e.Outside {
+		if idx.ignoreOut[l.Target] {
+			continue // acknowledged in wiki.toml `ignore`
+		}
+		refs = append(refs, LinkRef{From: e.Path, To: l.Raw, Text: l.Text, Line: l.Line})
+	}
+	return refs
+}
+
 // Backlinks returns every internal link that points to target, one LinkRef per
 // occurrence (a source that links several times appears once per link), sorted
 // by source path then line. Relative links count, they resolve to the same target.
@@ -1150,11 +1181,8 @@ func (idx *Index) Check() []Issue {
 	// self-contained bundle, so it is surfaced as its own advisory. To silence it,
 	// reference the out-of-bundle file as a code span or a full URL, not a link.
 	for _, e := range idx.Entries {
-		for _, l := range e.Outside {
-			if idx.ignoreOut[l.Target] {
-				continue // acknowledged in wiki.toml `ignore`
-			}
-			issues = append(issues, Issue{"warning", e.Path, "out-of-bundle link -> " + l.Raw})
+		for _, r := range idx.OutOfBundle(e.Path) {
+			issues = append(issues, Issue{"warning", e.Path, "out-of-bundle link -> " + r.To})
 		}
 	}
 	// The bundle-root index.md carries OKF's okf_version badge; wiki.toml `spec`
@@ -1230,10 +1258,10 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	return &Fix{root.Path, "okf_version", got, want}, nil
 }
 
-// NormalizeLinks rewrites relative links to their canonical root-absolute form
-// across the bundle. Relative links are valid per OKF, so this is an opt-in
+// NormalizeLinks rewrites root-absolute links to their canonical relative form
+// across the bundle. Root-absolute links are valid per OKF, so this is an opt-in
 // normalization, not a repair: it canonicalizes their on-disk spelling and never
-// changes the graph (the resolved edge is already absolute in memory). With
+// changes the graph (every edge is resolved to root-absolute in memory). With
 // apply=false it reports the changes without writing.
 func (idx *Index) NormalizeLinks(apply bool) ([]Fix, error) {
 	var changes []Fix
@@ -1278,23 +1306,24 @@ func slugifyName(name string) string {
 // (wiki has no transclusion, so an embed is just a reference). An unresolvable
 // wikilink is left as written and reported (Field "wikilink-skip"; check flags it
 // too). One Fix per unique link on a line (Field "wikilink" for conversions).
-//
-// Replacement is line-scoped by the parsed line number, but matches the [[…]] text
-// on that line, so the rare case of an identical wikilink token appearing in an
-// inline-code span on the same line as a real one would also be converted.
 func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
-	paths := make([]string, len(idx.Entries))
-	aliasesPerEntry := map[string][]string{}
-	for i, e := range idx.Entries {
-		paths[i] = e.Path
-		if a := parse.Strings(e.fm, "aliases"); len(a) > 0 {
-			aliasesPerEntry[e.Path] = a
-		}
-	}
-	aliases := wikilink.AliasMap(aliasesPerEntry)
+	resolve := idx.wikilinkResolver()
 	var changes []Fix
 	for _, e := range idx.Entries {
 		if len(e.wikilinks) == 0 {
+			continue
+		}
+		rws := e.wikilinkRewrites(resolve, func(abs string) string {
+			return relativeLink(e.Path, abs) // canonical relative on-disk form
+		})
+		for _, rw := range rws {
+			if rw.To == "" {
+				changes = append(changes, Fix{Entry: e.Path, Field: "wikilink-skip", From: rw.From})
+			} else {
+				changes = append(changes, Fix{Entry: e.Path, Field: "wikilink", From: rw.From, To: rw.To})
+			}
+		}
+		if !apply {
 			continue
 		}
 		raw, err := e.Raw()
@@ -1302,60 +1331,87 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 			return nil, err
 		}
 		lines := strings.Split(raw, "\n")
-		seen := map[string]bool{} // one Fix per (line, [[…]]) even if it repeats
-		changed := false
-		// Convert embeds first: `[[x]]` is a substring of `![[x]]`, so replacing the
-		// bare form first would mangle an embed with the same target on that line.
-		wls := slices.Clone(e.wikilinks)
-		slices.SortStableFunc(wls, func(a, b wikilink.Link) int {
-			if a.IsEmbed == b.IsEmbed {
-				return 0
-			}
-			if a.IsEmbed {
-				return -1
-			}
-			return 1
-		})
-		for _, wl := range wls {
-			key := fmt.Sprintf("%d:%s", wl.Line, wl.Full())
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			target, anchor, display := wl.Split()
-			resolved := wikilink.Resolve(target, e.Path, paths, aliases)
-			if resolved == "" {
-				changes = append(changes, Fix{Entry: e.Path, Field: "wikilink-skip", From: wl.Full()})
-				continue
-			}
-			abs := resolved
-			if anchor != "" {
-				abs += "#" + anchor
-			}
-			url := relativeLink(e.Path, abs) // canonical relative on-disk form
-			if strings.ContainsAny(url, " \t") {
-				url = "<" + url + ">"
-			}
-			text := display
-			if text == "" {
-				text = target
-			}
-			md := "[" + text + "](" + url + ")"
-			changes = append(changes, Fix{Entry: e.Path, Field: "wikilink", From: wl.Full(), To: md})
-			ln := wl.Line - 1
-			if !apply || ln < 0 || ln >= len(lines) {
-				continue
-			}
-			lines[ln] = strings.ReplaceAll(lines[ln], wl.Full(), md)
-			changed = true
-		}
-		if apply && changed {
+		if applyWikilinkRewrites(lines, rws) {
 			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return nil, err
 			}
 		}
 	}
 	return changes, nil
+}
+
+// wikilinkRewrite is one [[wikilink]] on a (file-relative) line and the markdown
+// link replacing it. To is "" when the wikilink does not resolve: it stays as
+// written.
+type wikilinkRewrite struct {
+	Line     int
+	From, To string
+}
+
+// wikilinkRewrites converts the entry's [[wikilinks]] to markdown links, the
+// target spelled by spell from its resolved root-absolute path (anchor kept), so
+// tidy can write the relative on-disk form and dump the root-absolute one from
+// the same conversion. One rewrite per unique [[…]] on a line, embeds first:
+// `[[x]]` is a substring of `![[x]]`, so replacing the bare form first would
+// mangle an embed with the same target on that line.
+func (e *Entry) wikilinkRewrites(resolve func(target, from string) string, spell func(abs string) string) []wikilinkRewrite {
+	wls := slices.Clone(e.wikilinks)
+	slices.SortStableFunc(wls, func(a, b wikilink.Link) int {
+		if a.IsEmbed == b.IsEmbed {
+			return 0
+		}
+		if a.IsEmbed {
+			return -1
+		}
+		return 1
+	})
+	seen := map[string]bool{}
+	var rws []wikilinkRewrite
+	for _, wl := range wls {
+		key := fmt.Sprintf("%d:%s", wl.Line, wl.Full())
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		target, anchor, display := wl.Split()
+		resolved := resolve(target, e.Path)
+		if resolved == "" {
+			rws = append(rws, wikilinkRewrite{Line: wl.Line, From: wl.Full()})
+			continue
+		}
+		if anchor != "" {
+			resolved += "#" + anchor
+		}
+		url := spell(resolved)
+		if strings.ContainsAny(url, " \t") {
+			url = "<" + url + ">"
+		}
+		text := display
+		if text == "" {
+			text = target
+		}
+		rws = append(rws, wikilinkRewrite{Line: wl.Line, From: wl.Full(), To: "[" + text + "](" + url + ")"})
+	}
+	return rws
+}
+
+// applyWikilinkRewrites replaces each resolved rewrite on its line of lines (the
+// entry's raw content split on "\n") and reports whether anything changed.
+//
+// Replacement is line-scoped by the parsed line number, but matches the [[…]] text
+// on that line, so the rare case of an identical wikilink token appearing in an
+// inline-code span on the same line as a real one would also be converted.
+func applyWikilinkRewrites(lines []string, rws []wikilinkRewrite) bool {
+	changed := false
+	for _, rw := range rws {
+		ln := rw.Line - 1
+		if rw.To == "" || ln < 0 || ln >= len(lines) {
+			continue
+		}
+		lines[ln] = strings.ReplaceAll(lines[ln], rw.From, rw.To)
+		changed = true
+	}
+	return changed
 }
 
 // normalizeEntryLinks rewrites each root-absolute link in one entry to its

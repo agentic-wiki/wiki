@@ -23,6 +23,7 @@ Commands:
   status        bundle counts: entries, links, tags, checkboxes, broken, orphans
   list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
+  dump          print every entry as one markdown stream, e.g. llms-full.txt (--frontmatter --prefix --where)
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (every word; --any --exact --where --prefix --lines)
@@ -40,12 +41,12 @@ Commands:
   version       print the version
 
 Run 'wiki <command> -h' to see a command's flags
-  --root <dir>      operate on the bundle at <dir> (default: discover from cwd)
+  --root <dir>      operate on the bundle at <dir>, before or after the command (default: discover from cwd)
 
 Every command that reports results accepts --format text|json|csv|tsv (default text; csv/tsv suit
-  list-shaped results); version prints a bare string
-Two filters, available wherever a set of entries is narrowed (list, search, checkboxes, tags,
-  properties, property): --prefix <path> for where, --where key=value or key!=value for what
+  list-shaped results); version prints a bare string, dump raw markdown
+Two filters, available wherever a set of entries is narrowed (list, search, dump, checkboxes,
+  tags, properties, property): --prefix <path> for where, --where key=value or key!=value for what
   (repeatable = AND). type and tags are ordinary fields, e.g. --where type=note, --where status!=done
 list --format json carries each entry's full frontmatter; csv/tsv carry the canonical columns
 Exit codes: 0 ok, 1 no match or check errors, 2 error
@@ -79,6 +80,8 @@ func run(args []string) int {
 		return cmdList(args[1:])
 	case "read":
 		return cmdRead(args[1:])
+	case "dump":
+		return cmdDump(args[1:])
 	case "outline":
 		return cmdOutline(args[1:])
 	case "search":
@@ -113,25 +116,32 @@ func run(args []string) int {
 	}
 }
 
-// applyRoot consumes a leading --root <dir> option, recording the bundle to
-// operate on (no chdir), and returns the remaining args. Unlike git's -C it
-// does not change the working directory: it only redirects bundle discovery,
-// so commands that don't open a bundle (notably init) are unaffected.
+// applyRoot consumes a --root <dir> option wherever it appears, before or after
+// the command, recording the bundle to operate on (no chdir), and returns the
+// remaining args. It is global, so no command declares it: it is taken out here,
+// before a command's own flags are parsed. Arguments after a "--" are left
+// alone. Unlike git's -C it does not change the working directory: it only
+// redirects bundle discovery, so commands that don't open a bundle (notably
+// init) are unaffected.
 func applyRoot(args []string) ([]string, int) {
 	rootDir = ""
-	for len(args) > 0 {
-		switch {
-		case args[0] == "--root":
-			if len(args) < 2 {
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--":
+			return append(rest, args[i:]...), 0
+		case a == "--root" || a == "-root":
+			if i+1 >= len(args) {
 				fmt.Fprintln(os.Stderr, "wiki: --root needs a directory")
 				return nil, 2
 			}
-			rootDir, args = args[1], args[2:]
-		case strings.HasPrefix(args[0], "--root="):
-			rootDir, args = args[0][len("--root="):], args[1:]
+			i++
+			rootDir = args[i]
+		case strings.HasPrefix(a, "--root=") || strings.HasPrefix(a, "-root="):
+			_, rootDir, _ = strings.Cut(a, "=")
 		default:
-			return args, 0
+			rest = append(rest, a)
 		}
 	}
-	return args, 0
+	return rest, 0
 }

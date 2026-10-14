@@ -222,32 +222,50 @@ var (
 	tableDelimRe = regexp.MustCompile(`^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$`)
 )
 
-// scanLinks returns every markdown link in body (outside fenced/inline code),
-// with the optional title stripped but the anchor kept.
-func scanLinks(body string) []Link {
-	var out []Link
+// linkMatch is one markdown link found by matchLinks: its text, its target as
+// written (title stripped, anchor kept, angle brackets removed), and where that
+// target sits on its line, so a rewrite can replace exactly those bytes.
+type linkMatch struct {
+	text, target string
+	line         int  // 0-based line index within the body
+	start, end   int  // byte span of target on the original line
+	angled       bool // the destination was written <…>, the markdown way to allow spaces
+}
+
+// matchLinks returns body's lines and every markdown link on them, outside fenced
+// and inline code. It is the one link scanner: Links reads it, MapInternalLinks
+// rewrites through it, so what counts as a link never differs between the two.
+func matchLinks(body string) (lines []string, ms []linkMatch) {
+	lines = strings.Split(body, "\n")
 	for i, line := range maskedLines(body) {
 		// A link written inside an inline code span is documentation, not an edge,
-		// so blank spans on this line before matching. (Tasks/Headings keep their
-		// inline code as text, so this strip lives here, not in maskedLines.)
-		line = inlineCodeRe.ReplaceAllString(line, "")
-		for _, m := range linkRe.FindAllStringSubmatch(line, -1) {
-			target := strings.TrimSpace(m[2])
-			if strings.HasPrefix(target, "<") {
-				// Angle-bracketed destination, the markdown way to allow spaces:
-				// take everything up to the closing '>', ignoring a title after it.
-				if gt := strings.IndexByte(target, '>'); gt >= 0 {
-					target = target[1:gt]
-				} else {
-					target = target[1:] // unterminated; drop the '<' rather than leak it
-				}
-			} else if sp := strings.IndexAny(target, " \t"); sp >= 0 {
-				target = target[:sp] // bare destination: a space begins the title
+		// so blank spans on this line before matching. They are blanked to spaces
+		// rather than removed so byte offsets still address the original line.
+		// (Tasks/Headings keep their inline code as text, so this lives here, not
+		// in maskedLines.)
+		line = inlineCodeRe.ReplaceAllStringFunc(line, func(s string) string { return strings.Repeat(" ", len(s)) })
+		for _, m := range linkRe.FindAllStringSubmatchIndex(line, -1) {
+			raw := line[m[4]:m[5]]
+			start := m[4] + len(raw) - len(strings.TrimLeft(raw, " \t"))
+			dest := strings.TrimSpace(raw)
+			lm := linkMatch{text: lines[i][m[2]:m[3]], line: i}
+			if strings.HasPrefix(dest, "<") {
+				// Angle-bracketed destination: take everything up to the closing '>',
+				// ignoring a title after it.
+				start++
+				dest = dest[1:]
+				if gt := strings.IndexByte(dest, '>'); gt >= 0 {
+					dest = dest[:gt]
+				} // unterminated: keep the rest, dropping the '<' rather than leaking it
+				lm.angled = true
+			} else if sp := strings.IndexAny(dest, " \t"); sp >= 0 {
+				dest = dest[:sp] // bare destination: a space begins the title
 			}
-			out = append(out, Link{Text: m[1], Target: target, Line: i + 1})
+			lm.target, lm.start, lm.end = dest, start, start+len(dest)
+			ms = append(ms, lm)
 		}
 	}
-	return out
+	return lines, ms
 }
 
 // LinkSet holds a body's internal markdown links, classified by target form.
@@ -260,27 +278,80 @@ type LinkSet struct {
 	SelfAnchors []Link // pure #anchor (intra-document): not a cross-entry edge, but check validates it against the entry's own headings
 }
 
+// linkKind classifies a link target into the LinkSet buckets.
+type linkKind int
+
+const (
+	kindNone linkKind = iota // empty target: not a link
+	kindSelfAnchor
+	kindExternal
+	kindAbsolute
+	kindRelative
+)
+
+func classify(t string) linkKind {
+	switch {
+	case t == "":
+		return kindNone
+	case strings.HasPrefix(t, "#"):
+		return kindSelfAnchor
+	case hasURLScheme(t):
+		return kindExternal
+	case strings.HasPrefix(t, "/"):
+		return kindAbsolute
+	default:
+		return kindRelative
+	}
+}
+
 // Links classifies every markdown link in body (outside code) by target form.
 // Empty targets are omitted; a pure #anchor lands in SelfAnchors (an intra-document
 // reference, not a cross-entry edge). Both Absolute and Relative are valid internal
 // links per OKF; External is the leftover bucket, returned for completeness.
 func Links(body string) LinkSet {
 	var set LinkSet
-	for _, l := range scanLinks(body) {
-		switch t := l.Target; {
-		case t == "":
-			// empty target: not a link
-		case strings.HasPrefix(t, "#"):
+	_, ms := matchLinks(body)
+	for _, m := range ms {
+		l := Link{Text: m.text, Target: m.target, Line: m.line + 1}
+		switch classify(m.target) {
+		case kindSelfAnchor:
 			set.SelfAnchors = append(set.SelfAnchors, l) // same-page anchor; check validates it against own headings
-		case hasURLScheme(t):
+		case kindExternal:
 			set.External = append(set.External, l)
-		case strings.HasPrefix(t, "/"):
+		case kindAbsolute:
 			set.Absolute = append(set.Absolute, l)
-		default:
+		case kindRelative:
 			set.Relative = append(set.Relative, l)
 		}
 	}
 	return set
+}
+
+// MapInternalLinks returns body with the target of every internal (absolute or
+// relative) markdown link outside code replaced by fn(target). fn receives the
+// target as Links reports it (title stripped, anchor kept) and returns it
+// unchanged to leave the link alone. Only the target's bytes change: link text,
+// titles, URLs, #anchors and code are left exactly as written. A replacement
+// containing whitespace is wrapped in <…> when the original was bare, so the link
+// stays a link.
+func MapInternalLinks(body string, fn func(target string) string) string {
+	lines, ms := matchLinks(body)
+	// Replace right to left within a line so earlier offsets stay valid.
+	for i := len(ms) - 1; i >= 0; i-- {
+		m := ms[i]
+		if k := classify(m.target); k != kindAbsolute && k != kindRelative {
+			continue
+		}
+		repl := fn(m.target)
+		if repl == m.target {
+			continue
+		}
+		if !m.angled && strings.ContainsAny(repl, " \t") {
+			repl = "<" + repl + ">"
+		}
+		lines[m.line] = lines[m.line][:m.start] + repl + lines[m.line][m.end:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // hasURLScheme reports whether target begins with an RFC 3986 scheme

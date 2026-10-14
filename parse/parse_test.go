@@ -307,3 +307,55 @@ func TestTablesNone(t *testing.T) {
 		t.Errorf("a pipe line without a delimiter row is not a table, got %+v", got)
 	}
 }
+
+func TestLinkTextKeepsInlineCode(t *testing.T) {
+	// The text is read from the line as written: inline code inside the brackets
+	// is part of the link's text, not erased with the code a target might hold.
+	set := Links("[`wiki` docs](/w.md)")
+	if len(set.Absolute) != 1 || set.Absolute[0].Text != "`wiki` docs" {
+		t.Errorf("Absolute = %+v, want text \"`wiki` docs\"", set.Absolute)
+	}
+}
+
+func TestMapInternalLinks(t *testing.T) {
+	up := func(t string) string { return "/R/" + t }
+	cases := []struct{ name, in, want string }{
+		{"relative and absolute", "[a](x.md) and [b](/y.md)", "[a](/R/x.md) and [b](/R//y.md)"},
+		{"anchor kept in what fn sees", "[a](x.md#h)", "[a](/R/x.md#h)"},
+		{"title untouched", `[a](x.md "the title")`, `[a](/R/x.md "the title")`},
+		{"image", "![alt](img.png)", "![alt](/R/img.png)"},
+		{"url untouched", "[a](https://e.com/x.md) [m](mailto:a@b.c)", "[a](https://e.com/x.md) [m](mailto:a@b.c)"},
+		{"self anchor untouched", "[top](#top)", "[top](#top)"},
+		{"empty target untouched", "[a]( )", "[a]( )"},
+		{"inline code untouched", "`[c](x.md)` [a](x.md)", "`[c](x.md)` [a](/R/x.md)"},
+		{"fenced code untouched", "```\n[c](x.md)\n```\n~~~\n[d](x.md)\n~~~\n[a](x.md)", "```\n[c](x.md)\n```\n~~~\n[d](x.md)\n~~~\n[a](/R/x.md)"},
+		{"several per line, varying length", "[a](x.md) [b](longer/y.md) [c](z.md)", "[a](/R/x.md) [b](/R/longer/y.md) [c](/R/z.md)"},
+		{"angle brackets kept", "[a](<p q.md> \"t\")", "[a](</R/p q.md> \"t\")"},
+		{"leading space before target", "[a](  x.md)", "[a](  /R/x.md)"},
+		{"line count and CRLF preserved", "one\r\n[a](x.md)\r\nthree", "one\r\n[a](/R/x.md)\r\nthree"},
+	}
+	for _, c := range cases {
+		if got := MapInternalLinks(c.in, up); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestMapInternalLinksSpacesGetBrackets(t *testing.T) {
+	// A bare destination cannot hold a space, so a replacement that has one is
+	// bracketed; an already-bracketed one is not double-wrapped.
+	sp := func(string) string { return "/my dir/x.md" }
+	if got := MapInternalLinks("[a](x.md)", sp); got != "[a](</my dir/x.md>)" {
+		t.Errorf("bare -> %q", got)
+	}
+	if got := MapInternalLinks("[a](<x y.md>)", sp); got != "[a](</my dir/x.md>)" {
+		t.Errorf("angled -> %q", got)
+	}
+}
+
+func TestMapInternalLinksIdentityIsByteExact(t *testing.T) {
+	body := "# T\n[a](x.md \"t\") `[c](y.md)`\n```\n[d](z.md)\n```\n![i](<p q.png>)\n"
+	if got := MapInternalLinks(body, func(t string) string { return t }); got != body {
+		t.Errorf("identity map changed bytes:\n got %q\nwant %q", got, body)
+	}
+}

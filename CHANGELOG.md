@@ -2,6 +2,25 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.10.0 — 2026-10-14
+
+The release that makes a base publishable in one file. `wiki dump` prints every entry as a single markdown stream in the order its indexes give, with links made root-absolute so they still resolve once the files are concatenated: the whole base at one URL for an agent to read (`llms-full.txt`). Nothing on disk changes, and the same source always dumps the same bytes.
+
+No API breaks: the library only gains functions. Two behaviour changes worth knowing: `wiki --root <dir> init` now fails instead of ignoring `--root` and scaffolding into the current directory, and a link's `text` in `links` / `backlinks` json now keeps the inline code written in it. Both are argued below.
+
+### Added
+
+- **`wiki dump`: the whole base as one markdown stream**, for publishing at a single URL for agents (`wiki dump > llms-full.txt`; on llmstxt.org `llms.txt` is the index and `llms-full.txt` the full text, and this produces the latter). Each entry is headed by `<!-- /its/path.md -->` and they come in **reading order**: each folder's `index.md`, then the children it links in the order it links them, then the rest by path, a subfolder emitted whole where it lands. Links decide order, never inclusion, so an entry nothing links to is still there, and a bundle without indexes dumps in path order. `--prefix` / `--where` choose what is included, while the order is always that of the whole bundle; `--frontmatter` keeps frontmatter, which is stripped by default.
+
+  It is read-only and transforms only what it prints. Relative links, the on-disk canon, mean nothing once files are concatenated, so internal links become root-absolute (anchors kept) and resolved `[[wikilinks]]` become markdown links to the same path. URLs, out-of-bundle links and unresolvable wikilinks are left as written; out-of-bundle links are also listed on stderr, minus those acknowledged in `ignore`. The bytes depend only on the source: `\r\n` becomes `\n`, a UTF-8 BOM is dropped, and blank lines between entries are exact.
+
+  Library: `Index.ReadingOrder`, `Index.Dump`, `Index.OutOfBundle` (also what `check` now reports out-of-bundle links from), and `parse.MapInternalLinks`, which rewrites link targets in place through the same scanner `parse.Links` uses.
+
+### Changed
+
+- **`--root` works anywhere on the command line.** It was accepted only before the command, so `wiki dump --root kb` failed with "flag provided but not defined: -root", the natural spelling for anyone used to per-command flags. It is now taken out wherever it appears (up to a `--`), in every spelling the flag package accepts (`--root x`, `--root=x`, `-root x`). `init` refuses it in either position: it makes a bundle rather than finding one, and ignoring the flag, as the leading form used to, scaffolded into the current directory. Outside a bundle, the error now also says how to point at one.
+- **A link's text keeps the inline code in it.** ``[`wiki` docs](…)`` reported its text as `" docs"`, since inline code was deleted from the line before matching; it is now blanked in place only to find links, and the text is read as written. Visible as the `text` field of `links` / `backlinks` json.
+
 ## v0.9.0 — 2026-08-09
 
 The release that makes `wiki` importable. Everything that makes the tool useful now lives in public packages, so a Go program can build a bundle index and query it directly instead of spawning the CLI and parsing its output. The CLI runs on those same packages, so there is no second implementation of anything.

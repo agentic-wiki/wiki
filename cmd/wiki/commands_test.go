@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -763,6 +764,47 @@ func TestGlobalRoot(t *testing.T) {
 	if _, code := capture(t, func() int { return run([]string{"--root"}) }); code != 2 {
 		t.Errorf("--root no-arg exit=%d want 2", code)
 	}
+	if _, code := capture(t, func() int { return run([]string{"status", "--root"}) }); code != 2 {
+		t.Errorf("trailing --root no-arg exit=%d want 2", code)
+	}
+
+	// --root is global: after the command, among its flags, in every spelling
+	// the flag package accepts, it means the same thing.
+	for _, args := range [][]string{
+		{"dump", "--root", b},
+		{"dump", "--prefix", "/guide.md", "--root=" + b},
+		{"dump", "-root", b, "--prefix", "/guide.md"},
+		{"read", "guide.md", "-root=" + b},
+	} {
+		out, errOut, code := captureAll(t, func() int { return run(args) })
+		if code != 0 || !strings.Contains(out, "intro text") || errOut != "" {
+			t.Errorf("%v: exit=%d stderr=%q", args, code, errOut)
+		}
+	}
+	// init makes a bundle rather than finding one: --root in either position is
+	// refused, never silently ignored (which would scaffold into the cwd).
+	for _, args := range [][]string{{"--root", "x", "init"}, {"init", "--root", "x"}} {
+		if _, _, code := captureAll(t, func() int { return run(args) }); code != 2 {
+			t.Errorf("%v: exit=%d want 2", args, code)
+		}
+	}
+	if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+		t.Errorf("a refused init wrote into the cwd: %v", entries)
+	}
+	// After "--" nothing is an option, so a --root there is not consumed.
+	if got, code := applyRoot([]string{"search", "--", "--root", "x"}); code != 0 || rootDir != "" || !reflect.DeepEqual(got, []string{"search", "--", "--root", "x"}) {
+		t.Errorf("after --: got %v rootDir=%q code=%d", got, rootDir, code)
+	}
+
+	// Outside a bundle, the error names the way out.
+	if _, errOut, code := captureAll(t, func() int { return run([]string{"dump"}) }); code != 2 || !strings.Contains(errOut, "--root <dir>") {
+		t.Errorf("no bundle: exit=%d stderr=%q", code, errOut)
+	}
+	// ...but not when --root was given and still found nothing: the hint would
+	// tell them to do what they just did.
+	if _, errOut, _ := captureAll(t, func() int { return run([]string{"--root", t.TempDir(), "dump"}) }); strings.Contains(errOut, "--root <dir>") {
+		t.Errorf("--root given, hint repeated: %q", errOut)
+	}
 }
 
 // inOrder reports whether subs each appear in out, in the given order.
@@ -966,5 +1008,85 @@ func TestVocabularyCommandsAcceptWhere(t *testing.T) {
 	out, _ = capture(t, func() int { return cmdCheckboxes([]string{"/b/note.md", "--where", "type=task"}) })
 	if !strings.Contains(out, "a note subtask") {
 		t.Errorf("a named file should ignore --where, got %q", out)
+	}
+}
+
+// captureAll runs f with os.Stdout and os.Stderr redirected and returns both and
+// the exit code.
+func captureAll(t *testing.T, f func() int) (stdout, stderr string, code int) {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	stdout, code = capture(t, f)
+	w.Close()
+	os.Stderr = old
+	errOut, _ := io.ReadAll(r)
+	return stdout, string(errOut), code
+}
+
+func TestCmdDump(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "kb")
+	write := func(rel, content string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\", \"task\"]\nignore=[\"../ACK.md\"]\n")
+	write("index.md", "# Home\n[Zed](./zed.md) [Tasks](./tasks/index.md)\n")
+	write("zed.md", "---\ntype: note\n---\n# Zed\nsee [prd](../PRD.md) and [ack](../ACK.md)\n")
+	write("alpha.md", "---\ntype: note\n---\n# Alpha\n")
+	write("tasks/index.md", "[second](./b.md) [first](./a.md)\n")
+	write("tasks/a.md", "---\ntype: task\n---\nA [zed](../zed.md)\n")
+	write("tasks/b.md", "---\ntype: task\n---\nB\n")
+	t.Chdir(dir)
+
+	out, errOut, code := captureAll(t, func() int { return cmdDump(nil) })
+	want := "<!-- /index.md -->\n# Home\n[Zed](/zed.md) [Tasks](/tasks/index.md)\n\n" +
+		"<!-- /zed.md -->\n# Zed\nsee [prd](../PRD.md) and [ack](../ACK.md)\n\n" +
+		"<!-- /tasks/index.md -->\n[second](/tasks/b.md) [first](/tasks/a.md)\n\n" +
+		"<!-- /tasks/b.md -->\nB\n\n" +
+		"<!-- /tasks/a.md -->\nA [zed](/zed.md)\n\n" +
+		"<!-- /alpha.md -->\n# Alpha\n"
+	if code != 0 || out != want {
+		t.Errorf("dump (exit %d):\n got %q\nwant %q", code, out, want)
+	}
+	// The out-of-bundle link is reported, the one acknowledged in ignore is not,
+	// and stdout carries none of it.
+	if errOut != "wiki: warning: /zed.md:5 out-of-bundle link -> ../PRD.md\n" {
+		t.Errorf("stderr = %q", errOut)
+	}
+
+	// Filters include; the order still comes from the whole bundle, so the
+	// filtered-out tasks/index.md keeps ordering b before a.
+	out, errOut, code = captureAll(t, func() int { return cmdDump([]string{"--where", "type=task"}) })
+	if code != 0 || out != "<!-- /tasks/b.md -->\nB\n\n<!-- /tasks/a.md -->\nA [zed](/zed.md)\n" || errOut != "" {
+		t.Errorf("--where dump (exit %d): %q, stderr %q", code, out, errOut)
+	}
+	out, _, _ = captureAll(t, func() int { return cmdDump([]string{"--prefix", "/tasks", "--frontmatter"}) })
+	if !strings.HasPrefix(out, "<!-- /tasks/index.md -->\n[second]") || !strings.Contains(out, "<!-- /tasks/b.md -->\n---\ntype: task\n---\nB\n") {
+		t.Errorf("--prefix --frontmatter dump: %q", out)
+	}
+
+	// Nothing matched: empty output, still exit 0 like every listing.
+	out, errOut, code = captureAll(t, func() int { return cmdDump([]string{"--where", "type=none"}) })
+	if code != 0 || out != "" || errOut != "" {
+		t.Errorf("empty dump (exit %d): %q, stderr %q", code, out, errOut)
+	}
+	if _, _, code := captureAll(t, func() int { return cmdDump([]string{"zed.md"}) }); code != 2 {
+		t.Errorf("positional argument: exit %d, want 2", code)
+	}
+	// Through run, with --root, from anywhere.
+	t.Chdir(root)
+	if out, _, code := captureAll(t, func() int { return run([]string{"--root", dir, "dump", "--prefix", "/alpha.md"}) }); code != 0 || out != "<!-- /alpha.md -->\n# Alpha\n" {
+		t.Errorf("run dump (exit %d): %q", code, out)
 	}
 }
