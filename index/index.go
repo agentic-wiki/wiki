@@ -1092,6 +1092,7 @@ type Issue struct {
 // not-yet-written knowledge, so it does not fail the lint (`unresolved` lists them).
 func (idx *Index) Check() []Issue {
 	var issues []Issue
+	var root *Entry
 	// An unrecognized wiki.toml key is silently inert otherwise (a typo, or a
 	// renamed field like the old `skip`), so surface it rather than let the author
 	// assume it took effect.
@@ -1099,6 +1100,18 @@ func (idx *Index) Check() []Issue {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
 	}
 	for _, e := range idx.Entries {
+		raw, err := e.Raw()
+		if err != nil {
+			issues = append(issues, Issue{"error", e.Path, "cannot read entry: " + err.Error()})
+			continue
+		}
+		if err := parse.ValidateFrontmatter(raw); err != nil {
+			issues = append(issues, Issue{"error", e.Path, "invalid frontmatter: " + err.Error()})
+			continue // metadata-derived diagnostics would obscure the syntax error
+		}
+		if e.Path == "/index.md" {
+			root = e
+		}
 		if e.base() == "index.md" || e.IsLog() {
 			// Reserved files (OKF §6/§7) are not concept documents: they carry no
 			// frontmatter (the bundle-root index.md may carry okf_version) and are
@@ -1191,7 +1204,7 @@ func (idx *Index) Check() []Issue {
 	}
 	// The bundle-root index.md carries OKF's okf_version badge; wiki.toml `spec`
 	// is the source of truth, and the tool flags any drift between them.
-	if root, ok := idx.byPath["/index.md"]; ok {
+	if root != nil {
 		if want, embedsOKF := idx.Bundle.OKFVersion(); embedsOKF {
 			switch got := parse.String(root.fm, "okf_version"); got {
 			case want:
@@ -1249,6 +1262,9 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	raw, err := os.ReadFile(root.abs)
 	if err != nil {
 		return nil, err
+	}
+	if err := parse.ValidateFrontmatter(string(raw)); err != nil {
+		return nil, nil // Check reports the error; --fix must not rewrite a malformed header
 	}
 	updated, err := setFrontmatterValue(string(raw), "okf_version", want, false)
 	if err != nil {

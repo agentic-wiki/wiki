@@ -4,6 +4,10 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 
 ## v0.12.0 — Unreleased
 
+### Fixed
+
+- **`wiki check` rejects malformed YAML frontmatter.** Unclosed quotes, unfinished lists, repeated scalar mapping keys, non-mapping headers, and missing closing fences now produce per-file errors and exit 1. Validation preserves the existing metadata interpretation and file contents; `check --fix` leaves malformed headers for the author to repair.
+
 ### Added
 
 - **`wiki dump` explains what leaving logs out did.** On stderr, after the dump, exit still 0:

@@ -202,7 +202,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
 | `move <src> <dst>` | Relocate or rename, rewriting every link to it (`--include-frontmatter` also rewrites matching frontmatter values) |
 | `tidy` | Canonicalize the base: `--links`, `--slug`, `--wikilinks`, `--all` (bare previews) |
-| `check` | Health lint (`--fix` repairs the safe issues, e.g. version drift) |
+| `check` | Health lint, including YAML syntax and duplicate frontmatter keys (`--fix` repairs safe issues, e.g. version drift) |
 | `version` | Print the version |
 
 File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at (a global flag, accepted before or after the command: `wiki --root kb dump` and `wiki dump --root kb` are the same). `--prefix` takes the same form to scope a listing to a subtree.
@@ -225,7 +225,7 @@ wiki check                           # the backlog stays conformant
 ## Design
 
 - **Standalone first:** agents call `wiki` directly, no server in the way.
-- **Minimal on purpose:** one dependency (a TOML parser, for `wiki.toml`), a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
+- **Minimal on purpose:** two focused dependencies (TOML configuration parsing and YAML frontmatter validation), a single static binary, native on macOS, Linux, and Windows. Git is recommended but entirely optional.
 - **Files are truth:** the index is derived from disk and fully disposable.
 
 ## Develop
