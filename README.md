@@ -118,7 +118,7 @@ wiki dump --prefix docs/ --frontmatter      # a subtree only, keeping each entry
 wiki dump --logs                            # log.md files too: they are left out by default
 ```
 
-Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Every `log.md` is left out unless `--logs`: it is the history of a folder, not its content. Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
+Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Every `log.md` is left out unless `--logs`: it is the history of a folder, not its content (links to one, now pointing at nothing, are warned about on stderr). Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
 
 Every command except `dump` (plain markdown) speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 

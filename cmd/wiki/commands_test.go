@@ -1115,9 +1115,9 @@ func TestCmdDumpLogs(t *testing.T) {
 	write("z.md", "---\ntype: note\n---\nZ [history](./proj/log.md)\n")
 	write("changelog.md", "---\ntype: note\n---\nC\n")
 	write("proj/index.md", "[z](../z.md)\n")
-	write("proj/a.md", "---\ntype: note\n---\nA\n")
+	write("proj/a.md", "---\ntype: note\n---\nA [[proj/log]]\n")
 	write("proj/log.md", "## 2026-10-18\nP\n")
-	write("proj/z.md", "---\ntype: note\n---\nPZ\n")
+	write("proj/z.md", "---\ntype: note\n---\nPZ [entry](./log.md#2026-10-18) [again](./log.md)\n")
 	t.Chdir(dir)
 
 	headers := func(out string) []string {
@@ -1136,9 +1136,15 @@ func TestCmdDumpLogs(t *testing.T) {
 	if code != 0 || !slices.Equal(headers(out), without) {
 		t.Errorf("default dump (exit %d): %q", code, headers(out))
 	}
-	// A left-out log is not published, so its out-of-bundle link is not warned about.
-	if errOut != "" {
-		t.Errorf("default dump stderr = %q", errOut)
+	// A left-out log is not published, so its out-of-bundle link is not warned
+	// about; every link to a left-out log is, one per occurrence, in dump order,
+	// whatever its form (anchored, repeated on a line, a [[wikilink]]).
+	toLog := func(from, to string) string {
+		return "wiki: warning: " + from + " link to a left-out log -> " + to + " (--logs includes it)\n"
+	}
+	if want := toLog("/index.md:1", "/log.md") + toLog("/z.md:4", "/proj/log.md") + toLog("/proj/a.md:4", "/proj/log.md") +
+		toLog("/proj/z.md:4", "/proj/log.md") + toLog("/proj/z.md:4", "/proj/log.md"); errOut != want {
+		t.Errorf("default dump stderr:\n got %q\nwant %q", errOut, want)
 	}
 	// A link to a left-out log is still made root-absolute, naming an entry the
 	// stream does not hold, as for any entry a filter leaves out.
@@ -1157,10 +1163,24 @@ func TestCmdDumpLogs(t *testing.T) {
 		t.Errorf("--logs dump stderr = %q", errOut)
 	}
 
-	// No exception for a filter that names the log: without --logs it is out.
+	// A link to a log the filters left out is not warned about: --logs would not
+	// bring it back, so it is like any filtered-out entry.
+	if _, errOut, _ := captureAll(t, func() int { return cmdDump([]string{"--prefix", "/z.md"}) }); errOut != "" {
+		t.Errorf("--prefix /z.md stderr = %q", errOut)
+	}
+	if _, errOut, _ := captureAll(t, func() int { return cmdDump([]string{"--prefix", "/proj"}) }); errOut != toLog("/proj/a.md:4", "/proj/log.md")+toLog("/proj/z.md:4", "/proj/log.md")+toLog("/proj/z.md:4", "/proj/log.md") {
+		t.Errorf("--prefix /proj stderr = %q", errOut)
+	}
+
+	// No exception for a filter that names the log: without --logs it is out,
+	// and a dump left empty only by that says so.
 	out, errOut, code = captureAll(t, func() int { return cmdDump([]string{"--prefix", "/proj/log.md"}) })
-	if code != 0 || out != "" || errOut != "" {
+	if code != 0 || out != "" || errOut != "wiki: warning: only log.md entries matched (1), left out without --logs\n" {
 		t.Errorf("--prefix log dump (exit %d): %q, stderr %q", code, out, errOut)
+	}
+	// Every log, nothing else: still a count, still exit 0.
+	if out, errOut, code := captureAll(t, func() int { return cmdDump([]string{"--where", "type!=note", "--prefix", "/log.md"}) }); code != 0 || out != "" || errOut != "wiki: warning: only log.md entries matched (1), left out without --logs\n" {
+		t.Errorf("--where --prefix log dump (exit %d): %q, stderr %q", code, out, errOut)
 	}
 	out, _, code = captureAll(t, func() int { return cmdDump([]string{"--prefix", "/proj/log.md", "--logs"}) })
 	if code != 0 || out != "<!-- /proj/log.md -->\n## 2026-10-18\nP\n" {

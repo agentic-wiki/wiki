@@ -2,7 +2,15 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
-## v0.11.0 — Unreleased
+## v0.12.0 — Unreleased
+
+### Added
+
+- **`wiki dump` explains what leaving logs out did.** On stderr, after the dump, exit still 0:
+  - every link to a log left out for want of `--logs` (markdown or `[[wikilink]]`, one line per occurrence), since its root-absolute target names an entry the dump does not hold: `wiki: warning: /z.md:4 link to a left-out log -> /proj/log.md (--logs includes it)`. A log the filters exclude anyway is not warned about, since `--logs` would not bring it back;
+  - a dump left empty only because every match was a log (`wiki dump --prefix /proj/log.md`), which used to print nothing at all: `wiki: warning: only log.md entries matched (1), left out without --logs`.
+
+## v0.11.0 — 2026-10-19
 
 ### Changed
 

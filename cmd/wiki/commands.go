@@ -810,7 +810,8 @@ func cmdBacklinks(args []string) int {
 // its folder. Out-of-bundle links are left as written and listed on stderr once
 // the dump is out, since nothing at a published URL can resolve them. A log.md
 // is history, not content, so it is left out unless --logs, whatever the filters
-// match.
+// match; stderr then names every link to one and says when only logs matched,
+// so neither a dangling link nor an empty dump goes unexplained.
 func cmdDump(args []string) int {
 	fs := flag.NewFlagSet("dump", flag.ExitOnError)
 	prefix := fs.String("prefix", "", "filter to a path prefix")
@@ -832,9 +833,16 @@ func cmdDump(args []string) int {
 	for _, e := range idx.Filter(*prefix, *where) {
 		keep[e] = true
 	}
+	// droppedLogs holds the logs the filters matched but --logs is needed for, so
+	// the warnings below name only what --logs would actually bring back.
 	var entries []*index.Entry
+	droppedLogs := map[string]bool{}
 	for _, e := range idx.ReadingOrder() {
-		if keep[e] && (*logs || !e.IsLog()) {
+		switch {
+		case !keep[e]:
+		case e.IsLog() && !*logs:
+			droppedLogs[e.Path] = true
+		default:
 			entries = append(entries, e)
 		}
 	}
@@ -846,6 +854,15 @@ func cmdDump(args []string) int {
 		for _, r := range idx.OutOfBundle(e.Path) {
 			fmt.Fprintf(os.Stderr, "wiki: warning: %s:%d out-of-bundle link -> %s\n", r.From, r.Line, r.To)
 		}
+		// The link is still made root-absolute, so it names a section the dump lacks.
+		for _, l := range e.Links {
+			if droppedLogs[l.Target] {
+				fmt.Fprintf(os.Stderr, "wiki: warning: %s:%d link to a left-out log -> %s (--logs includes it)\n", e.Path, l.Line, l.Target)
+			}
+		}
+	}
+	if len(entries) == 0 && len(droppedLogs) > 0 {
+		fmt.Fprintf(os.Stderr, "wiki: warning: only log.md entries matched (%d), left out without --logs\n", len(droppedLogs))
 	}
 	return 0
 }
