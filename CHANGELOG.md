@@ -2,6 +2,14 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.11.0 — Unreleased
+
+### Changed
+
+- **`wiki dump` leaves `log.md` out; `--logs` brings it back.** A folder's log is the history of how it changed, not what it says, and an agent reading `llms-full.txt` wants the latter. Every `log.md` is now left out by default, even one `--prefix` names directly (`wiki dump --prefix /proj/log.md` prints nothing); `--logs` includes them where reading order puts them, composing with `--prefix`, `--where` and `--frontmatter`. A log left out is not published, so its out-of-bundle links are no longer warned about. A link *to* a log is still made root-absolute, as for any entry a filter leaves out, so it names an entry the dump does not hold.
+
+  Library: `Entry.IsLog` (exact base name `log.md`, case-sensitive), now the one test behind `dump`, `check` and `orphans`.
+
 ## v0.10.0 — 2026-10-14
 
 The release that makes a base publishable in one file. `wiki dump` prints every entry as a single markdown stream in the order its indexes give, with links made root-absolute so they still resolve once the files are concatenated: the whole base at one URL for an agent to read (`llms-full.txt`). Nothing on disk changes, and the same source always dumps the same bytes.

@@ -56,6 +56,13 @@ tags: [finance, out-of-pocket]
 | 2026-01 | groceries | 220        |
 MD
 
+cat > "$TMP/finance/log.md" <<'MD'
+# Finance log
+
+## 2026-01-31
+Closed January.
+MD
+
 cat > "$TMP/tasks/index.md" <<'MD'
 - [Reconcile accounts](/tasks/reconcile.md)
 MD
@@ -74,7 +81,7 @@ contains() { echo "$1" | grep -q "$2"; }
 cd "$TMP/finance"   # deep dir: discovery must walk up
 
 echo "--- status ---"
-contains "$($BIN status)" "Entries:    6"
+contains "$($BIN status)" "Entries:    7"
 contains "$($BIN status)" "Broken:     1"
 
 echo "--- check: broken link is a warning, not an error (exit 0) ---"
@@ -164,6 +171,8 @@ DUMP="$($BIN dump)"
 contains "$($BIN dump --frontmatter --prefix /finance/income.md)" "type: concept"
 [ "$($BIN dump --where type=task | head -1)" = "<!-- /tasks/reconcile.md -->" ]
 [ "$($BIN dump)" = "$DUMP" ]                                               # byte-stable
+! contains "$DUMP" "<!-- /finance/log.md -->"                               # logs are history, left out by default
+contains "$($BIN dump --logs --prefix /finance)" "<!-- /finance/log.md -->"
 
 echo "--- outline lists headings ---"
 contains "$($BIN outline /index.md)" "Home"

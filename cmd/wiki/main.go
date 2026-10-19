@@ -23,7 +23,7 @@ Commands:
   status        bundle counts: entries, links, tags, checkboxes, broken, orphans
   list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
   read          print an entry's body (frontmatter stripped)
-  dump          print every entry as one markdown stream, e.g. llms-full.txt (--frontmatter --prefix --where)
+  dump          print every entry as one markdown stream, e.g. llms-full.txt (--frontmatter --logs --prefix --where)
   outline       print an entry's heading hierarchy
   table         extract a dataset's markdown table as csv/json (--n)
   search        full-text search over entries (every word; --any --exact --where --prefix --lines)

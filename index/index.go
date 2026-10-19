@@ -64,6 +64,11 @@ type Entry struct {
 // is the single source of truth for identity, so the basename is not stored.
 func (e *Entry) base() string { return path.Base(e.Path) }
 
+// IsLog reports whether the entry is a folder's log.md (OKF §7): the side
+// narrative of how a folder changed, not its content. Matched by exact base
+// name, case-sensitive, like every reserved filename.
+func (e *Entry) IsLog() bool { return e.base() == "log.md" }
+
 // Depth is the number of folders below the content root (a top-level file is 0).
 func (e *Entry) Depth() int {
 	return strings.Count(strings.Trim(e.Path, "/"), "/")
@@ -715,7 +720,7 @@ func (idx *Index) Orphans() []*Entry {
 	}
 	var out []*Entry
 	for _, e := range idx.Entries {
-		if b := e.base(); b == "index.md" || b == "log.md" || idx.orphanExempt(e.Path) {
+		if e.base() == "index.md" || e.IsLog() || idx.orphanExempt(e.Path) {
 			continue
 		}
 		if incoming[e.Path] == 0 {
@@ -1094,8 +1099,7 @@ func (idx *Index) Check() []Issue {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
 	}
 	for _, e := range idx.Entries {
-		b := e.base()
-		if b == "index.md" || b == "log.md" {
+		if e.base() == "index.md" || e.IsLog() {
 			// Reserved files (OKF §6/§7) are not concept documents: they carry no
 			// frontmatter (the bundle-root index.md may carry okf_version) and are
 			// exempt from the type requirement.
@@ -1106,7 +1110,7 @@ func (idx *Index) Check() []Issue {
 				issues = append(issues, Issue{"warning", e.Path, "reserved file should carry no frontmatter"})
 				break
 			}
-			if b == "log.md" {
+			if e.IsLog() {
 				// OKF §7: log date headings use ISO YYYY-MM-DD.
 				for _, h := range e.Headings {
 					if looksLikeNonISODate(h.Text) {

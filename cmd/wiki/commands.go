@@ -808,16 +808,19 @@ func cmdBacklinks(args []string) int {
 // order (index.ReadingOrder). The filters decide inclusion only: the order comes
 // from the whole bundle, so an index.md filtered out of the dump still orders
 // its folder. Out-of-bundle links are left as written and listed on stderr once
-// the dump is out, since nothing at a published URL can resolve them.
+// the dump is out, since nothing at a published URL can resolve them. A log.md
+// is history, not content, so it is left out unless --logs, whatever the filters
+// match.
 func cmdDump(args []string) int {
 	fs := flag.NewFlagSet("dump", flag.ExitOnError)
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	where := &whereFilters{}
 	fs.Var(where, "where", "filter entries by frontmatter: key=value or key!=value (repeatable)")
 	withFrontmatter := fs.Bool("frontmatter", false, "keep each entry's frontmatter")
+	logs := fs.Bool("logs", false, "include log.md entries")
 	fs.Parse(args)
 	if fs.NArg() > 0 {
-		fmt.Fprintln(os.Stderr, "usage: wiki dump [--prefix <path>] [--where key=value] [--frontmatter]")
+		fmt.Fprintln(os.Stderr, "usage: wiki dump [--prefix <path>] [--where key=value] [--frontmatter] [--logs]")
 		return 2
 	}
 	idx, code := loadIndex()
@@ -831,7 +834,7 @@ func cmdDump(args []string) int {
 	}
 	var entries []*index.Entry
 	for _, e := range idx.ReadingOrder() {
-		if keep[e] {
+		if keep[e] && (*logs || !e.IsLog()) {
 			entries = append(entries, e)
 		}
 	}

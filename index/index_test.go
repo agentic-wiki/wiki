@@ -670,6 +670,17 @@ func TestDepth(t *testing.T) {
 	}
 }
 
+func TestIsLog(t *testing.T) {
+	for p, want := range map[string]bool{
+		"/log.md": true, "/a/b/log.md": true,
+		"/changelog.md": false, "/log.md/x.md": false, "/LOG.md": false, "/a/log.markdown": false, "/a/log": false,
+	} {
+		if got := (&Entry{Path: p}).IsLog(); got != want {
+			t.Errorf("IsLog(%q)=%v want %v", p, got, want)
+		}
+	}
+}
+
 func TestWikilinkGraph(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](/a.md)\n",

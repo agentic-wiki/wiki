@@ -14,7 +14,7 @@ Naming note: on [llmstxt.org](https://llmstxt.org) `llms.txt` is an *index* (tit
 
 **Read-only; transforms only what goes to stdout.** Nothing is written to disk. Files keep their canonical relative links ([012](../3-graph-and-mutation/012-switch-canonical-links.md)); every transformation below happens in memory, on the dumped stream. The stream is a pure function of the source: same source in, same bytes out.
 
-**Scope: indexed entries, not git-tracked files.** Git is optional; the index (entries minus `ignore`) is the set. `--prefix` / `--where` narrow it with their usual semantics. Filters decide **inclusion only**: ordering is always computed over the full tree, so a filtered-out `index.md` still orders its folder.
+**Scope: indexed entries, not git-tracked files.** Git is optional; the index (entries minus `ignore`) is the set, minus every `log.md` unless `--logs` ([019](./019-dump-skips-logs.md)). `--prefix` / `--where` narrow it with their usual semantics. Filters decide **inclusion only**: ordering is always computed over the full tree, so a filtered-out `index.md` still orders its folder.
 
 **Every entry in scope appears exactly once, linked or not.** Links only decide *order*, never inclusion: an entry nothing links to is still dumped.
 

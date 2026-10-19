@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1029,6 +1030,7 @@ func captureAll(t *testing.T, f func() int) (stdout, stderr string, code int) {
 }
 
 func TestCmdDump(t *testing.T) {
+	t.Cleanup(func() { rootDir = "" }) // global flag state; keep other tests independent
 	root := t.TempDir()
 	dir := filepath.Join(root, "kb")
 	write := func(rel, content string) {
@@ -1088,5 +1090,90 @@ func TestCmdDump(t *testing.T) {
 	t.Chdir(root)
 	if out, _, code := captureAll(t, func() int { return run([]string{"--root", dir, "dump", "--prefix", "/alpha.md"}) }); code != 0 || out != "<!-- /alpha.md -->\n# Alpha\n" {
 		t.Errorf("run dump (exit %d): %q", code, out)
+	}
+}
+
+// Logs are history, not content: out of the dump unless --logs, whatever the
+// filters match, and back in the place reading order gives them.
+func TestCmdDumpLogs(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel, content string) {
+		p := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("wiki.toml", "spec=\"0.1\"\ntypes=[\"note\"]\n")
+	// The root index links its log first, so --logs must put it right after index.md;
+	// the unlinked proj/log.md falls to path order, between a.md and z.md. The
+	// changelog.md lookalike is content and always stays.
+	write("index.md", "[log](./log.md) [z](./z.md) [proj](./proj/index.md)\n")
+	write("log.md", "## 2026-10-19\nsee [prd](../PRD.md)\n")
+	write("z.md", "---\ntype: note\n---\nZ [history](./proj/log.md)\n")
+	write("changelog.md", "---\ntype: note\n---\nC\n")
+	write("proj/index.md", "[z](../z.md)\n")
+	write("proj/a.md", "---\ntype: note\n---\nA\n")
+	write("proj/log.md", "## 2026-10-18\nP\n")
+	write("proj/z.md", "---\ntype: note\n---\nPZ\n")
+	t.Chdir(dir)
+
+	headers := func(out string) []string {
+		var h []string
+		for _, l := range strings.Split(out, "\n") {
+			if strings.HasPrefix(l, "<!-- ") {
+				h = append(h, l)
+			}
+		}
+		return h
+	}
+	without := []string{"<!-- /index.md -->", "<!-- /z.md -->", "<!-- /proj/index.md -->", "<!-- /proj/a.md -->", "<!-- /proj/z.md -->", "<!-- /changelog.md -->"}
+	with := []string{"<!-- /index.md -->", "<!-- /log.md -->", "<!-- /z.md -->", "<!-- /proj/index.md -->", "<!-- /proj/a.md -->", "<!-- /proj/log.md -->", "<!-- /proj/z.md -->", "<!-- /changelog.md -->"}
+
+	out, errOut, code := captureAll(t, func() int { return cmdDump(nil) })
+	if code != 0 || !slices.Equal(headers(out), without) {
+		t.Errorf("default dump (exit %d): %q", code, headers(out))
+	}
+	// A left-out log is not published, so its out-of-bundle link is not warned about.
+	if errOut != "" {
+		t.Errorf("default dump stderr = %q", errOut)
+	}
+	// A link to a left-out log is still made root-absolute, naming an entry the
+	// stream does not hold, as for any entry a filter leaves out.
+	if !strings.Contains(out, "Z [history](/proj/log.md)\n") {
+		t.Errorf("link to a log not rewritten: %q", out)
+	}
+
+	out, errOut, code = captureAll(t, func() int { return cmdDump([]string{"--logs"}) })
+	if code != 0 || !slices.Equal(headers(out), with) {
+		t.Errorf("--logs dump (exit %d): %q", code, headers(out))
+	}
+	if !strings.Contains(out, "<!-- /log.md -->\n## 2026-10-19\nsee [prd](../PRD.md)\n\n") {
+		t.Errorf("--logs dump body: %q", out)
+	}
+	if errOut != "wiki: warning: /log.md:2 out-of-bundle link -> ../PRD.md\n" {
+		t.Errorf("--logs dump stderr = %q", errOut)
+	}
+
+	// No exception for a filter that names the log: without --logs it is out.
+	out, errOut, code = captureAll(t, func() int { return cmdDump([]string{"--prefix", "/proj/log.md"}) })
+	if code != 0 || out != "" || errOut != "" {
+		t.Errorf("--prefix log dump (exit %d): %q, stderr %q", code, out, errOut)
+	}
+	out, _, code = captureAll(t, func() int { return cmdDump([]string{"--prefix", "/proj/log.md", "--logs"}) })
+	if code != 0 || out != "<!-- /proj/log.md -->\n## 2026-10-18\nP\n" {
+		t.Errorf("--prefix log --logs dump (exit %d): %q", code, out)
+	}
+	// --logs composes with the other filters: a negated --where admits logs
+	// (they have no frontmatter), a positive one never does.
+	out, _, _ = captureAll(t, func() int { return cmdDump([]string{"--logs", "--where", "type!=note"}) })
+	if got := headers(out); !slices.Equal(got, []string{"<!-- /index.md -->", "<!-- /log.md -->", "<!-- /proj/index.md -->", "<!-- /proj/log.md -->"}) {
+		t.Errorf("--logs --where type!=note: %q", got)
+	}
+	out, _, _ = captureAll(t, func() int { return cmdDump([]string{"--logs", "--where", "type=note"}) })
+	if got := headers(out); slices.Contains(got, "<!-- /log.md -->") || slices.Contains(got, "<!-- /proj/log.md -->") {
+		t.Errorf("--logs --where type=note admitted a log: %q", got)
 	}
 }

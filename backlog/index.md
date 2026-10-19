@@ -14,6 +14,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [search --fuzzy: opt-in typo-tolerant matching](./2-query-surface/013-fuzzy-search.md) (low)
 - [ ] [wiki table --links raw|text|path](./2-query-surface/014-table-link-transform.md)
 - [x] [dump: every entry as one markdown stream (llms-full.txt)](./2-query-surface/018-dump-single-file.md): `wiki dump` prints the bundle as one markdown file in index-guided reading order, `<!-- /path.md -->` per entry, links root-absolute, byte-stable, read-only. `--prefix`/`--where` include, the whole bundle orders; `--frontmatter` keeps it; out-of-bundle links are warned on stderr.
+- [x] [dump: leave log.md out by default](./2-query-surface/019-dump-skips-logs.md): a log is history, not content, so `wiki dump` drops every `log.md`, even one `--prefix` names; `--logs` brings them back in reading order. `Entry.IsLog` is the one test, shared with `check` and `orphans`.
 
 ## 3 — Graph & mutation
 - [ ] [wiki set: the missing write primitive](./3-graph-and-mutation/016-set-frontmatter.md)

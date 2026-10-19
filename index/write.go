@@ -260,8 +260,7 @@ func (e *Entry) reserved() bool {
 	if e.Path == "/index.md" {
 		return false
 	}
-	base := e.base()
-	return base == "index.md" || base == "log.md"
+	return e.base() == "index.md" || e.IsLog()
 }
 
 // formatField renders a `key: value` line, quoting only when the value needs it

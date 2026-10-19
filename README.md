@@ -115,9 +115,10 @@ wiki check --fix                # health report, and repair the safe issues
 ```sh
 wiki dump > llms-full.txt                   # every entry as one markdown file: the whole base at one URL, for agents
 wiki dump --prefix docs/ --frontmatter      # a subtree only, keeping each entry's frontmatter
+wiki dump --logs                            # log.md files too: they are left out by default
 ```
 
-Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
+Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Every `log.md` is left out unless `--logs`: it is the history of a folder, not its content. Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
 
 Every command except `dump` (plain markdown) speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
@@ -192,7 +193,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body; every word by default (`--any` any word, `--exact` verbatim phrase, `--lines` for file:line) |
 | `read <path>` | An entry's body, frontmatter stripped |
-| `dump` | Every entry as one markdown stream in index order, links made root-absolute, e.g. `llms-full.txt` (`--frontmatter` keeps frontmatter; out-of-bundle links are warned about on stderr) |
+| `dump` | Every entry as one markdown stream in index order, links made root-absolute, e.g. `llms-full.txt` (`--frontmatter` keeps frontmatter; `--logs` includes `log.md` files, left out by default; out-of-bundle links are warned about on stderr) |
 | `outline <path>` | An entry's heading hierarchy |
 | `table <path>` | Extract a dataset's markdown table as text/csv/json (`--n` to pick one) |
 | `checkboxes` | Open `- [ ]` items, not `type: task` entries (`--all`, `--done`; `[file]` scopes to one entry) |
