@@ -39,21 +39,11 @@ type Table struct {
 // YAML subset we use: scalars and string lists. Values are string or []string.
 func Frontmatter(content string) (fm map[string]any, body string) {
 	fm = map[string]any{}
-	rest, ok := strings.CutPrefix(content, "---\n")
-	if !ok {
-		if rest, ok = strings.CutPrefix(content, "---\r\n"); !ok {
-			return fm, content // no frontmatter (handles LF and CRLF openers)
-		}
-	}
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	header, body, err := splitFrontmatter(content)
+	if err != nil || header == "" {
 		return fm, content
 	}
-	block := rest[:end]
-	after := rest[end+1:] // starts at the closing "---"
-	if nl := strings.IndexByte(after, '\n'); nl >= 0 {
-		body = after[nl+1:]
-	}
+	_, block, _ := strings.Cut(header, "\n")
 	parseYAMLSubset(block, fm)
 	return fm, body
 }

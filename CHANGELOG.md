@@ -2,8 +2,13 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
-## v0.12.0 — Unreleased
+## v0.13.0
 
+### Fixed
+
+- **`wiki check` rejects malformed YAML frontmatter.** Unclosed quotes, unfinished lists, repeated scalar mapping keys, non-mapping headers, and missing closing fences now produce per-file errors and exit 1. Validation preserves the existing metadata interpretation and file contents; `check --fix` leaves malformed headers for the author to repair.
+
+## v0.12.0
 ### Added
 
 - **`wiki dump` explains what leaving logs out did.** On stderr, after the dump, exit still 0:
