@@ -1,6 +1,8 @@
 package index
 
 import (
+	"encoding/json"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -145,5 +147,54 @@ func TestParseFilter(t *testing.T) {
 				t.Errorf("ParseFilter(%q) = %+v, want {%q %q %v}", tc.in, got, tc.key, tc.value, tc.negate)
 			}
 		})
+	}
+}
+
+// TypedFrontmatter returns a copy, like Frontmatter, with YAML types.
+func TestTypedFrontmatterIsACopy(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: task\nn: 10\ns: '10'\nl: [1, x]\n---\nbody\n",
+	})
+	e, err := idx.Resolve("/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fm := e.TypedFrontmatter()
+	if fm["n"] != json.Number("10") || fm["s"] != "10" || fm["type"] != "task" {
+		t.Errorf("typed frontmatter = %#v", fm)
+	}
+	if got, ok := fm["l"].([]any); !ok || !reflect.DeepEqual(got, []any{json.Number("1"), "x"}) {
+		t.Fatalf("l=%#v", fm["l"])
+	}
+
+	fm["n"] = "clobbered"
+	fm["l"].([]any)[0] = "clobbered"
+	again := e.TypedFrontmatter()
+	if again["n"] != json.Number("10") || again["l"].([]any)[0] != json.Number("1") {
+		t.Errorf("mutating the copy reached the entry: %#v", again)
+	}
+}
+
+// A write re-parses the entry, so the typed view follows it like the string view.
+func TestTypedFrontmatterFollowsWrites(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: task\ndone: false\n---\nbody\n",
+	})
+	e, err := idx.Resolve("/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetField("status", "todo"); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.UnsetField("done"); err != nil {
+		t.Fatal(err)
+	}
+	fm := e.TypedFrontmatter()
+	if _, ok := fm["done"]; ok || fm["status"] != "todo" {
+		t.Errorf("typed frontmatter after writes = %#v", fm)
 	}
 }

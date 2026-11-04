@@ -2,11 +2,13 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 
 	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/index"
+	"github.com/agentic-wiki/wiki/internal/output"
 )
 
 // loadIndex discovers the bundle (from --root if given, else the current
@@ -38,4 +40,49 @@ func loadIndex() (*index.Index, int) {
 		return nil, 2
 	}
 	return idx, 0
+}
+
+// formatValue is the --format flag. Only text, json, jsonl, csv and tsv are
+// accepted, so a format wiki lacks is a flag error (exit 2) rather than text
+// output.
+type formatValue string
+
+func (f *formatValue) String() string { return string(*f) }
+
+func (f *formatValue) Set(s string) error {
+	switch s {
+	case "text", "json", "jsonl", "csv", "tsv":
+		*f = formatValue(s)
+		return nil
+	}
+	return fmt.Errorf("unknown --format %q (use text|json|jsonl|csv|tsv)", s)
+}
+
+// formatFlag registers --format on fs, defaulting to text: every command that
+// takes --format declares it through here.
+func formatFlag(fs *flag.FlagSet) *string {
+	f := formatValue("text")
+	fs.Var(&f, "format", "output `format`: text|json|jsonl|csv|tsv")
+	return (*string)(&f)
+}
+
+// emit prints a command's result (output.Emit) and returns the exit code: 0,
+// or 2 when it can't be printed, such as a result with no rows for csv, so a
+// command never prints nothing and exits 0.
+func emit(format string, lines []string, v any) int {
+	return exitOn(output.Emit(os.Stdout, format, lines, v))
+}
+
+// emitRows is emit with the csv/tsv rows given (output.EmitRows).
+func emitRows(format string, lines []string, v any, rows output.Rows) int {
+	return exitOn(output.EmitRows(os.Stdout, format, lines, v, rows))
+}
+
+// exitOn prints err, if any, as `wiki: <err>` and returns the exit code.
+func exitOn(err error) int {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
+	return 0
 }

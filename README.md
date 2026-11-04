@@ -77,6 +77,14 @@ wiki search "language model" --lines                    # every word by default 
 wiki read /tech/infra/hetzner.md                        # an entry's body, frontmatter stripped
 wiki outline /tech/infra/hetzner.md                     # its headings
 wiki table /finance/expenses.md --format csv            # a dataset's table as rows (csv/json), for jq/duckdb
+wiki list --where type=company --format csv --fields ticker,roe,listed   # chosen frontmatter keys as columns
+```
+
+`list --format json` keeps YAML types: an unquoted number, `true`/`false` or `null` is a JSON value, and a quoted value is a string. DuckDB can then query it without casts:
+
+```sh
+wiki list --where type=company --format json > companies.json
+duckdb -c "select ticker from read_json('companies.json') where roe >= 0.2"
 ```
 
 Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `dump`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
@@ -120,12 +128,33 @@ wiki dump --logs                            # log.md files too: they are left ou
 
 Entries come in the order the indexes give them (each folder's `index.md`, then what it links, then the rest by path), each headed by `<!-- /its/path.md -->`. Every `log.md` is left out unless `--logs`: it is the history of a folder, not its content (links to one, now pointing at nothing, are warned about on stderr). Links are made root-absolute so they still point somewhere in one file. Your files are never touched, and the same base always dumps the same bytes.
 
-Every command except `dump` (plain markdown) speaks `--format text|json|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
+Every command except `dump` (plain markdown) speaks `--format text|json|jsonl|csv|tsv` and returns conventional exit codes (`0` ok; `1` no match (`search`/`table`) or `check` errors; `2` error), so it drops straight into scripts and pipelines:
 
 ```sh
 wiki search "needs review" >/dev/null && echo "matches found" || echo "none"  # search is grep-like: 1 on no match
 [ -n "$(wiki unresolved)" ] && echo "broken links exist"                    # listings exit 0 even when empty; test the output
 ```
+
+In `jsonl`, `csv` and `tsv`, every command gives rows: a list result is one row per item, and any other result is a single row. jsonl holds the same rows as csv, not the json elements: one compact JSON object per line, with the row's own keys and its values in their JSON types, and nothing at all for an empty result. csv and tsv always start with a header; a list in a cell is written as JSON (`["a","b"]`), and an empty value is an empty cell. `text` and `json` are unchanged.
+
+| Command | One row per | Columns |
+| --- | --- | --- |
+| `list`, `ls`, `orphans` | entry | `_path,type`, then every other frontmatter key in use, or `_path` and the `--fields` you name |
+| `search` | hit | `_path,type,matches` |
+| `search --lines` | matching line | `_path,type,line,text` |
+| `checkboxes` | item | `entry,line,done,text` |
+| `tags`, `properties`, `property` | name | `name,count` |
+| `unresolved` | broken link | `from,to,line` |
+| `links`, `backlinks` | link | `from,to,text,line` |
+| `table` | table row | the table's header; cells as written (json and jsonl type them: `12.5` is a number, an empty cell or `~` is null) |
+| `tidy` | change | `entry,field,from,to` |
+| `check` | issue | `level,entry,msg` |
+| `check --fix` | fix, then issue | `level,entry,field,from,to,msg` (a fix has level `fixed` and no `msg`) |
+| `move`, `mv` | rewritten file | `_path,links,frontmatter_refs` |
+| `outline` | heading | `_path,level,text,line` |
+| `status` | (one row) | `dir,spec,entries,links,tags,checkboxes,broken,orphans` |
+| `init` | (one row) | `dir,files` (`files` is a JSON list) |
+| `read` | (one row) | `_path,type,body` (`body` is one cell over several lines) |
 
 ## How a base is organized
 
@@ -134,6 +163,8 @@ Three axes, kept separate, are what keep it friction-free:
 - **Folder is one stable home.** Group by domain, one place per thing. Moving is `wiki move`, and the links follow.
 - **`type` is what an entry is:** `note`, `concept`, `dataset`, `task`, `source`, and so on, one per entry, declared in `wiki.toml`.
 - **Tags are everything cross-cutting:** `tech`, `2026`, `needs-review`. If something wants to live in two folders at once, that is a tag.
+
+Frontmatter values are scalars (text, numbers, `true`/`false`, null) or lists of scalars. Nested objects, and a value that continues on the next line, are reported by `wiki check`; use `|` or `>` for text over several lines.
 
 Entries link with ordinary Markdown links from the base root, `[Income](/finance/income.md)`. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 
@@ -202,7 +233,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
 | `move <src> <dst>` | Relocate or rename, rewriting every link to it (`--include-frontmatter` also rewrites matching frontmatter values) |
 | `tidy` | Canonicalize the base: `--links`, `--slug`, `--wikilinks`, `--all` (bare previews) |
-| `check` | Health lint, including YAML syntax and duplicate frontmatter keys (`--fix` repairs safe issues, e.g. version drift) |
+| `check` | Health lint, including YAML syntax, duplicate frontmatter keys and the shape of values (`--fix` repairs safe issues, e.g. version drift) |
 | `version` | Print the version |
 
 File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at (a global flag, accepted before or after the command: `wiki --root kb dump` and `wiki dump --root kb` are the same). `--prefix` takes the same form to scope a listing to a subtree.

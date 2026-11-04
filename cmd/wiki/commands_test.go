@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -733,11 +736,11 @@ func TestCmdListJSONFrontmatter(t *testing.T) {
 		t.Errorf("tags should be emitted verbatim (scalar), got: %q", out)
 	}
 
-	// csv keeps the fixed canonical columns: just _path,type (title/tags and any
-	// other frontmatter are json-only)
+	// csv carries the same frontmatter: _path, type, then every other key; the
+	// frontmatter name:/path: are columns of their own
 	out, _ = capture(t, func() int { return cmdList([]string{"--format", "csv"}) })
-	if !strings.Contains(out, "_path,type") || strings.Contains(out, "title") || strings.Contains(out, "status") {
-		t.Errorf("csv should keep canonical columns only: %q", out)
+	if want := "_path,type,name,path,status,tags,title\n/dana.md,person,Dana Smith,/custom,active,staff,A\n"; out != want {
+		t.Errorf("csv = %q, want %q", out, want)
 	}
 }
 
@@ -1195,5 +1198,40 @@ func TestCmdDumpLogs(t *testing.T) {
 	out, _, _ = captureAll(t, func() int { return cmdDump([]string{"--logs", "--where", "type=note"}) })
 	if got := headers(out); slices.Contains(got, "<!-- /log.md -->") || slices.Contains(got, "<!-- /proj/log.md -->") {
 		t.Errorf("--logs --where type=note admitted a log: %q", got)
+	}
+}
+
+// Every command rejects a --format it doesn't have: exit 2, nothing on stdout.
+// A flag error exits the process, so each command runs in a child copy of this
+// test binary. The commands come from the usage text, so a new command is
+// checked as soon as it is documented.
+func TestEveryCommandRejectsUnknownFormat(t *testing.T) {
+	if args := os.Getenv("WIKI_TEST_ARGS"); args != "" {
+		os.Exit(run(strings.Fields(args)))
+	}
+	dir := writeBundle(t)
+	_, commands, _ := strings.Cut(usage, "Commands:\n")
+	commands, _, _ = strings.Cut(commands, "\n\n")
+	for _, line := range strings.Split(commands, "\n") {
+		name := strings.TrimSuffix(strings.Fields(line)[0], ",")
+		if name == "version" {
+			continue // takes no flags: it prints the version whatever follows
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestEveryCommandRejectsUnknownFormat$")
+		cmd.Env = append(os.Environ(), "WIKI_TEST_ARGS="+name+" --format xml")
+		cmd.Dir = dir
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &stdout, &stderr
+		err := cmd.Run()
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 2 || stdout.Len() != 0 {
+			t.Errorf("%s --format xml: %v, stdout %q", name, err, stdout.String())
+			continue
+		}
+		// A command with --format names the bad value; one without rejects the flag.
+		if e := stderr.String(); !strings.Contains(e, `unknown --format "xml" (use text|json|jsonl|csv|tsv)`) &&
+			!strings.Contains(e, "flag provided but not defined: -format") {
+			t.Errorf("%s --format xml: stderr %q", name, e)
+		}
 	}
 }

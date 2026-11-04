@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -19,7 +21,7 @@ func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	force := fs.Bool("force", false, "write into a non-empty directory")
 	workflow := fs.String("workflow", "", fmt.Sprintf("starter workflow: %s (default: %s)", strings.Join(scaffold.Workflows(), ", "), scaffold.DefaultWorkflow))
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	fs.Parse(args)
 	if rootDir != "" {
 		// --root finds an existing bundle; init makes one, so honoring it would
@@ -49,13 +51,12 @@ func cmdInit(args []string) int {
 	for _, f := range written {
 		lines = append(lines, "  "+f)
 	}
-	output.Emit(os.Stdout, *format, lines, out)
-	return 0
+	return emit(*format, lines, out)
 }
 
 func cmdStatus(args []string) int {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -91,8 +92,7 @@ func cmdStatus(args []string) int {
 		fmt.Sprintf("Broken:     %d", s.Broken),
 		fmt.Sprintf("Orphans:    %d", s.Orphans),
 	}
-	output.Emit(os.Stdout, *format, lines, s)
-	return 0
+	return emit(*format, lines, s)
 }
 
 // whereFilters collects repeated `--where key=value` flags into the property
@@ -116,13 +116,19 @@ func (w *whereFilters) Set(s string) error {
 
 func cmdList(args []string) int {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	var where whereFilters
 	fs.Var(&where, "where", "filter by frontmatter key=value or key!=value (repeatable = AND; e.g. type=note, status!=done)")
 	sortBy := fs.String("sort", "path", "sort order: path|timestamp (timestamp is newest-first)")
 	reverse := fs.Bool("reverse", false, "reverse the sort order")
+	fields := fieldsFlag(fs, format)
 	fs.Parse(args)
+	keys, err := fields()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
@@ -163,8 +169,99 @@ func cmdList(args []string) int {
 	for _, e := range entries {
 		lines = append(lines, fmt.Sprintf("%-44s %s", e.Path, e.Type))
 	}
-	output.Emit(os.Stdout, *format, lines, entries)
-	return 0
+	return emitEntries(*format, lines, entries, keys)
+}
+
+// parseFields reads --fields: keys split on "," with the spaces around each
+// trimmed. It returns an error for an empty key, a key named twice, _path
+// (always the first column) and a format other than csv or tsv.
+func parseFields(s, format string) ([]string, error) {
+	if format != "csv" && format != "tsv" {
+		return nil, errors.New("--fields needs --format csv or --format tsv")
+	}
+	keys := strings.Split(s, ",")
+	seen := map[string]bool{}
+	for i, k := range keys {
+		k = strings.TrimSpace(k)
+		switch {
+		case k == "":
+			return nil, fmt.Errorf("--fields has an empty key at position %d (use --fields a,b,c)", i+1)
+		case k == "_path":
+			return nil, errors.New("--fields can't name _path: it is always the first column")
+		case seen[k]:
+			return nil, fmt.Errorf("--fields names %q twice", k)
+		}
+		seen[k] = true
+		keys[i] = k
+	}
+	return keys, nil
+}
+
+// fieldsFlag registers --fields, the csv/tsv columns after _path, on fs. After
+// fs.Parse, the returned function gives the chosen keys: nil without the flag,
+// or the error to report. An explicit --fields "" is an error while no --fields
+// means every column, so whether the flag was given matters, not only its value.
+func fieldsFlag(fs *flag.FlagSet, format *string) func() ([]string, error) {
+	fields := fs.String("fields", "", "csv/tsv columns after _path, in order (e.g. --fields roe,listed)")
+	return func() (keys []string, err error) {
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "fields" {
+				keys, err = parseFields(*fields, *format)
+			}
+		})
+		return keys, err
+	}
+}
+
+// emitEntries prints a list of entries, as list and orphans do: text lines as
+// given, json the entries with their typed frontmatter, and csv/tsv one row per
+// entry with frontmatter columns (entryRows).
+func emitEntries(format string, lines []string, entries []*index.Entry, keys []string) int {
+	var rows output.Rows
+	if output.Tabular(format) {
+		rows = entryRows(entries, keys)
+	}
+	return emitRows(format, lines, entries, rows)
+}
+
+// entryRows builds the csv/tsv rows of a list of entries from their typed
+// frontmatter:
+// _path, then keys in order, or when keys is nil, type and every other key any
+// entry uses, in byte order. A key in keys that no entry has is still a column,
+// with one warning on stderr per key.
+func entryRows(entries []*index.Entry, keys []string) output.Rows {
+	fms := make([]map[string]any, len(entries))
+	used := map[string]bool{}
+	for i, e := range entries {
+		fms[i] = e.TypedFrontmatter()
+		for k := range fms[i] {
+			used[k] = true
+		}
+	}
+	if keys == nil {
+		delete(used, "_path") // the entry's path wins over a frontmatter key, as in json
+		delete(used, "type")
+		keys = append([]string{"type"}, slices.Sorted(maps.Keys(used))...)
+	} else if len(entries) > 0 {
+		for _, k := range keys {
+			if !used[k] {
+				fmt.Fprintf(os.Stderr, "wiki: warning: --fields: no listed entry has %q\n", k)
+			}
+		}
+	}
+	rows := output.Rows{Header: append([]string{"_path"}, keys...)}
+	for i, e := range entries {
+		row := []any{e.Path}
+		for _, k := range keys {
+			v, ok := fms[i][k]
+			if !ok {
+				v = output.Missing // a key the entry doesn't have: left out of its jsonl row
+			}
+			row = append(row, v)
+		}
+		rows.Values = append(rows.Values, row)
+	}
+	return rows
 }
 
 // countRow is one name with its entry count: the row shape for tags/properties.
@@ -200,13 +297,12 @@ func emitCounts(format string, rows []countRow, withCounts bool) int {
 			lines = append(lines, r.Name)
 		}
 	}
-	output.Emit(os.Stdout, format, lines, rows)
-	return 0
+	return emit(format, lines, rows)
 }
 
 // countFlags registers the flags shared by tags/properties/property.
 func countFlags(fs *flag.FlagSet, unit string) (format, sortBy, prefix *string, counts *bool, where *whereFilters) {
-	format = fs.String("format", "text", "output format: text|json|csv|tsv")
+	format = formatFlag(fs)
 	counts = fs.Bool("counts", false, "show entry count per "+unit)
 	sortBy = fs.String("sort", "name", "sort order: name|count")
 	prefix = fs.String("prefix", "", "filter to a path prefix")
@@ -257,7 +353,7 @@ func cmdProperty(args []string) int {
 
 func cmdCheckboxes(args []string) int {
 	fs := flag.NewFlagSet("checkboxes", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	all := fs.Bool("all", false, "include done tasks")
 	done := fs.Bool("done", false, "only done tasks")
 	prefix := fs.String("prefix", "", "filter to a path prefix")
@@ -318,13 +414,12 @@ func cmdCheckboxes(args []string) int {
 			lines = append(lines, fmt.Sprintf("[%s] %s:%d  %s", box, e.Path, t.Line, t.Text))
 		}
 	}
-	output.Emit(os.Stdout, *format, lines, rows)
-	return 0
+	return emit(*format, lines, rows)
 }
 
 func cmdUnresolved(args []string) int {
 	fs := flag.NewFlagSet("unresolved", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	fs.Parse(args)
 	idx, code := loadIndex()
 	if code != 0 {
@@ -336,14 +431,19 @@ func cmdUnresolved(args []string) int {
 	for _, b := range broken {
 		lines = append(lines, fmt.Sprintf("%s:%d -> %s", b.From, b.Line, b.Target))
 	}
-	output.Emit(os.Stdout, *format, lines, broken)
-	return 0
+	return emit(*format, lines, broken)
 }
 
 func cmdOrphans(args []string) int {
 	fs := flag.NewFlagSet("orphans", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
+	fields := fieldsFlag(fs, format)
 	fs.Parse(args)
+	keys, err := fields()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "wiki:", err)
+		return 2
+	}
 	idx, code := loadIndex()
 	if code != 0 {
 		return code
@@ -355,13 +455,12 @@ func cmdOrphans(args []string) int {
 	for _, e := range orph {
 		lines = append(lines, e.Path)
 	}
-	output.Emit(os.Stdout, *format, lines, orph)
-	return 0
+	return emitEntries(*format, lines, orph, keys)
 }
 
 func cmdCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	fix := fs.Bool("fix", false, "apply safe repairs, e.g. sync okf_version (writes files)")
 	fs.Parse(args)
 	idx, code := loadIndex()
@@ -406,12 +505,24 @@ func cmdCheck(args []string) int {
 		if issues == nil {
 			issues = []index.Issue{}
 		}
-		output.Emit(os.Stdout, *format, lines, struct {
+		// Rows: the fixes, then the issues, in one table. A fix has level
+		// "fixed" and no msg; an issue has no field, from or to (Missing).
+		rows := output.Rows{Header: []string{"level", "entry", "field", "from", "to", "msg"}}
+		for _, fx := range fixes {
+			rows.Values = append(rows.Values, []any{"fixed", fx.Entry, fx.Field, fx.From, fx.To, output.Missing})
+		}
+		for _, is := range issues {
+			rows.Values = append(rows.Values, []any{is.Level, is.Entry, output.Missing, output.Missing, output.Missing, is.Msg})
+		}
+		code = emitRows(*format, lines, struct {
 			Fixed  []index.Fix   `json:"fixed"`
 			Issues []index.Issue `json:"issues"`
-		}{fixes, issues})
+		}{fixes, issues}, rows)
 	} else {
-		output.Emit(os.Stdout, *format, lines, issues)
+		code = emit(*format, lines, issues)
+	}
+	if code != 0 {
+		return code
 	}
 	if errs > 0 {
 		return 1
@@ -425,7 +536,7 @@ func cmdCheck(args []string) int {
 // is the preview.
 func cmdTidy(args []string) int {
 	fs := flag.NewFlagSet("tidy", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	links := fs.Bool("links", false, "normalize links to relative (the canonical on-disk form)")
 	slug := fs.Bool("slug", false, "rename spaced filenames to hyphenated slugs (rewriting inbound links)")
 	wikilinks := fs.Bool("wikilinks", false, "convert [[wikilinks]] to standard markdown links")
@@ -492,13 +603,12 @@ func cmdTidy(args []string) int {
 	default:
 		lines = append(lines, "run `wiki tidy --links --slug` (or --all) to apply")
 	}
-	output.Emit(os.Stdout, *format, lines, changes)
-	return 0
+	return emit(*format, lines, changes)
 }
 
 func cmdRead(args []string) int {
 	fs := flag.NewFlagSet("read", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki read <file>")
@@ -524,13 +634,12 @@ func cmdRead(args []string) int {
 		Body string `json:"body"`
 	}{e.Path, e.Type, body}
 	lines := strings.Split(strings.TrimRight(body, "\n"), "\n")
-	output.Emit(os.Stdout, *format, lines, out)
-	return 0
+	return emit(*format, lines, out)
 }
 
 func cmdOutline(args []string) int {
 	fs := flag.NewFlagSet("outline", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki outline <file>")
@@ -557,25 +666,28 @@ func cmdOutline(args []string) int {
 		Path     string          `json:"_path"`
 		Headings []parse.Heading `json:"headings"`
 	}{e.Path, heads}
-	output.Emit(os.Stdout, *format, lines, out)
-	return 0
+	rows := output.Rows{Header: []string{"_path", "level", "text", "line"}}
+	for _, h := range heads {
+		rows.Values = append(rows.Values, []any{e.Path, h.Level, h.Text, h.Line})
+	}
+	return emitRows(*format, lines, out, rows)
 }
 
 func cmdSearch(args []string) int {
 	fs := flag.NewFlagSet("search", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	prefix := fs.String("prefix", "", "filter to a path prefix")
 	var where whereFilters
 	fs.Var(&where, "where", "filter by frontmatter key=value or key!=value (repeatable = AND; e.g. type=note, status!=done)")
 	showLines := fs.Bool("lines", false, "show matching lines instead of entries")
-	any := fs.Bool("any", false, "match lines containing any word of the query (default: every word)")
+	anyWord := fs.Bool("any", false, "match lines containing any word of the query (default: every word)")
 	exact := fs.Bool("exact", false, "match the query verbatim as one phrase (default: every word)")
 	query, ok := parseWithArg(fs, args)
 	if !ok || strings.TrimSpace(query) == "" {
 		fmt.Fprintln(os.Stderr, "usage: wiki search <query> [--any|--exact --where key=value --prefix --lines]  (every word by default; quote a multi-word query)")
 		return 2
 	}
-	if *any && *exact {
+	if *anyWord && *exact {
 		fmt.Fprintln(os.Stderr, "wiki search: --any and --exact are mutually exclusive")
 		return 2
 	}
@@ -584,7 +696,7 @@ func cmdSearch(args []string) int {
 	switch {
 	case *exact:
 		mode = index.SearchExact
-	case *any:
+	case *anyWord:
 		mode = index.SearchAny
 	}
 	idx, code := loadIndex()
@@ -594,21 +706,27 @@ func cmdSearch(args []string) int {
 
 	hits := idx.Search(query, *prefix, where, mode)
 	var lines []string
+	rows := output.Rows{Header: []string{"_path", "type", "matches"}}
 	if *showLines {
+		// One row per matching line, so a script reads lines, not lists of them.
+		rows.Header = []string{"_path", "type", "line", "text"}
 		for _, h := range hits {
 			for _, ln := range h.Lines {
-				lines = append(lines, fmt.Sprintf("%s:%d: %s", h.Path, ln.Line, strings.TrimRight(ln.Text, " \t\r")))
+				text := strings.TrimRight(ln.Text, " \t\r")
+				lines = append(lines, fmt.Sprintf("%s:%d: %s", h.Path, ln.Line, text))
+				rows.Values = append(rows.Values, []any{h.Path, h.Type, ln.Line, text})
 			}
 		}
 	} else {
-		for _, h := range hits {
+		for i, h := range hits {
 			lines = append(lines, fmt.Sprintf("%-44s %s", h.Path, h.Type))
-		}
-		for i := range hits {
+			rows.Values = append(rows.Values, []any{h.Path, h.Type, h.Matches})
 			hits[i].Lines = nil // json carries per-line detail only with --lines
 		}
 	}
-	output.Emit(os.Stdout, *format, lines, hits)
+	if code := emitRows(*format, lines, hits, rows); code != 0 {
+		return code
+	}
 	if len(hits) == 0 {
 		return 1
 	}
@@ -620,11 +738,11 @@ func cmdSearch(args []string) int {
 // asks for --n (1-based) rather than silently guessing.
 func cmdTable(args []string) int {
 	fs := flag.NewFlagSet("table", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	n := fs.Int("n", 0, "which table to extract when a file has several (1-based)")
 	target, ok := parseWithArg(fs, args)
 	if !ok {
-		fmt.Fprintln(os.Stderr, "usage: wiki table <file> [--n N] [--format text|json|csv|tsv]")
+		fmt.Fprintln(os.Stderr, "usage: wiki table <file> [--n N] [--format text|json|jsonl|csv|tsv]")
 		return 2
 	}
 	idx, code := loadIndex()
@@ -666,7 +784,7 @@ func cmdTable(args []string) int {
 		return 1 // no such table, like search with no match
 	}
 	tb := tables[sel-1]
-	if err := output.Table(os.Stdout, *format, tb.Header, tb.Rows); err != nil {
+	if err := output.Table(os.Stdout, *format, tb.Header, tb.Rows, tb.TypedRows()); err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}
@@ -706,7 +824,7 @@ func cmdMove(args []string) int {
 	fs := flag.NewFlagSet("move", flag.ExitOnError)
 	dryRun := fs.Bool("dry-run", false, "preview the move without writing")
 	includeFM := fs.Bool("include-frontmatter", false, "also rewrite frontmatter *.md values referencing the moved path (opt-in)")
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	src, dest, ok := parseWith2Args(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki move <src> <dest> [--dry-run] [--include-frontmatter]")
@@ -721,11 +839,10 @@ func cmdMove(args []string) int {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}
-	emitMove(res, *dryRun, *format)
-	return 0
+	return emitMove(res, *dryRun, *format)
 }
 
-func emitMove(res *index.MoveResult, dryRun bool, format string) {
+func emitMove(res *index.MoveResult, dryRun bool, format string) int {
 	verb := "moved"
 	if dryRun {
 		verb = "would move"
@@ -738,12 +855,13 @@ func emitMove(res *index.MoveResult, dryRun bool, format string) {
 		}
 		lines = append(lines, fmt.Sprintf("  %s in %s", what, rw.Path))
 	}
-	output.Emit(os.Stdout, format, lines, res)
+	rows, _ := output.RowsOf(res.Rewrites) // a slice of structs always has rows
+	return emitRows(format, lines, res, rows)
 }
 
 func cmdLinks(args []string) int {
 	fs := flag.NewFlagSet("links", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki links <file>")
@@ -774,13 +892,12 @@ func cmdLinks(args []string) int {
 		refs = append(refs, r)
 		lines = append(lines, r.To)
 	}
-	output.Emit(os.Stdout, *format, lines, refs)
-	return 0
+	return emit(*format, lines, refs)
 }
 
 func cmdBacklinks(args []string) int {
 	fs := flag.NewFlagSet("backlinks", flag.ExitOnError)
-	format := fs.String("format", "text", "output format: text|json|csv|tsv")
+	format := formatFlag(fs)
 	target, ok := parseWithArg(fs, args)
 	if !ok {
 		fmt.Fprintln(os.Stderr, "usage: wiki backlinks <file>")
@@ -800,8 +917,7 @@ func cmdBacklinks(args []string) int {
 	for _, r := range refs {
 		lines = append(lines, fmt.Sprintf("%s:%d  %s", r.From, r.Line, r.Text))
 	}
-	output.Emit(os.Stdout, *format, lines, refs)
-	return 0
+	return emit(*format, lines, refs)
 }
 
 // cmdDump prints the entries as one markdown stream (see index.Dump), in reading

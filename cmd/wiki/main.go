@@ -21,7 +21,7 @@ Usage: wiki [--root <dir>] <command> [flags]
 Commands:
   init          scaffold a new bundle (--workflow <name>, --force; 'init -h' lists workflows)
   status        bundle counts: entries, links, tags, checkboxes, broken, orphans
-  list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse)
+  list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse --fields)
   read          print an entry's body (frontmatter stripped)
   dump          print every entry as one markdown stream, e.g. llms-full.txt (--frontmatter --logs --prefix --where)
   outline       print an entry's heading hierarchy
@@ -32,7 +32,7 @@ Commands:
   properties    list frontmatter keys in use (--counts --sort --prefix --where)
   property      list values of a frontmatter key (--counts --sort --prefix --where)
   unresolved    broken internal links
-  orphans       entries with no incoming links
+  orphans       entries with no incoming links (--fields)
   links         an entry's outgoing links
   backlinks     every link that points to an entry
   move, mv      relocate or rename an entry, rewriting links to it (--dry-run, --include-frontmatter)
@@ -43,12 +43,17 @@ Commands:
 Run 'wiki <command> -h' to see a command's flags
   --root <dir>      operate on the bundle at <dir>, before or after the command (default: discover from cwd)
 
-Every command that reports results accepts --format text|json|csv|tsv (default text; csv/tsv suit
-  list-shaped results); version prints a bare string, dump raw markdown
+Every command that reports results accepts --format text|json|jsonl|csv|tsv (default text). In
+  jsonl, csv and tsv, a list result is one line or row per item, and any other result is a single
+  line or row (the README lists each command's columns); version prints a bare string, dump raw
+  markdown
 Two filters, available wherever a set of entries is narrowed (list, search, dump, checkboxes,
   tags, properties, property): --prefix <path> for where, --where key=value or key!=value for what
   (repeatable = AND). type and tags are ordinary fields, e.g. --where type=note, --where status!=done
-list --format json carries each entry's full frontmatter; csv/tsv carry the canonical columns
+list and orphans --format json give unquoted numbers, true/false and null as JSON values (quoted
+  values stay strings); csv/tsv add one column per frontmatter key (choose them with --fields).
+  Only _path and type have fixed positions: scripts should name their columns with --fields
+tsv quotes like csv: a cell with a quote, tab or newline is wrapped in double quotes
 Exit codes: 0 ok, 1 no match or check errors, 2 error
 `
 

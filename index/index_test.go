@@ -1056,21 +1056,6 @@ func TestFix(t *testing.T) {
 	}
 }
 
-func TestSetFrontmatterValue(t *testing.T) {
-	cases := []struct{ name, in, want string }{
-		{"update", "---\ntype: index\nokf_version: \"0.2\"\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
-		{"insert", "---\ntype: index\n---\nbody\n", "---\ntype: index\nokf_version: \"0.1\"\n---\nbody\n"},
-		{"crlf", "---\r\ntype: index\r\n---\r\nbody\r\n", "---\r\ntype: index\r\nokf_version: \"0.1\"\r\n---\r\nbody\r\n"},
-		{"create", "no frontmatter here\n", "---\nokf_version: \"0.1\"\n---\nno frontmatter here\n"},
-	}
-	for _, c := range cases {
-		got, err := setFrontmatterValue(c.in, "okf_version", "0.1", false)
-		if err != nil || got != c.want {
-			t.Errorf("%s: got %q err=%v, want %q", c.name, got, err, c.want)
-		}
-	}
-}
-
 func TestResolve(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md":          "---\ntype: index\n---\nhome\n",
@@ -1572,5 +1557,86 @@ func TestVocabularyCommandsTakeWhere(t *testing.T) {
 	notDone := []PropFilter{{Key: "type", Value: "task"}, {Key: "status", Value: "done", Negate: true}}
 	if got, want := idx.TagCounts("/backlog", notDone), map[string]int{"ui": 1}; !maps.Equal(got, want) {
 		t.Errorf("negated filter = %v, want %v", got, want)
+	}
+}
+
+// A guard, not a regression test: move --include-frontmatter rewrites the items
+// after a bare `-`, because it rewrites the lines parse.Scan says the key owns,
+// the same span the parser reads.
+func TestMoveIncludeFrontmatterAfterBareDash(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":      "---\nokf_version: \"0.1\"\n---\n",
+		"epics/auth.md": "---\ntype: note\n---\nepic\n",
+		"deps.md":       "---\ntype: note\nrelated:\n  - /index.md\n  -\n  - /epics/auth.md\n---\nx\n",
+	})
+	if _, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "deps.md"))
+	if want := "related:\n  - /index.md\n  -\n  - /epics/authn.md\n"; !strings.Contains(string(b), want) {
+		t.Errorf("deps.md = %q, want it to contain %q", b, want)
+	}
+}
+
+// A file the move would rewrite whose rewritten key appears twice stops the
+// move while it is planned: nothing is written, dry run included. A duplicated
+// key the move doesn't rewrite doesn't block it.
+func TestMoveIncludeFrontmatterRefusesDuplicateKey(t *testing.T) {
+	files := map[string]string{
+		"index.md":      "---\nokf_version: \"0.1\"\n---\n",
+		"epics/auth.md": "---\ntype: note\n---\nepic\n",
+	}
+	want := `move: /a.md: key "related" appears twice in frontmatter (lines 3 and 5); fix the file first (wiki check reports it)`
+	for _, a := range []string{
+		// The reference in the first occurrence, which a read doesn't keep, and in the last.
+		"---\ntype: note\nrelated: /epics/auth.md\nstatus: x\nrelated: /index.md\n---\nlink [e](./epics/auth.md)\n",
+		"---\ntype: note\nrelated: /index.md\nstatus: x\nrelated: /epics/auth.md\n---\nlink [e](./epics/auth.md)\n",
+	} {
+		files["a.md"] = a
+		for _, dryRun := range []bool{true, false} {
+			idx := build(t, files)
+			_, err := idx.Move("/epics/auth.md", "/epics/authn.md", dryRun, true)
+			if err == nil || err.Error() != want {
+				t.Fatalf("dry run %v: err = %v, want %q", dryRun, err, want)
+			}
+			for rel, content := range files {
+				if got, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, rel)); err != nil || string(got) != content {
+					t.Errorf("dry run %v: %s changed (or moved): %q, %v", dryRun, rel, got, err)
+				}
+			}
+		}
+	}
+
+	// Duplicates with no reference to the moved file: another key, or the same
+	// key whose occurrences all point elsewhere.
+	for _, a := range []string{
+		"---\ntype: note\nrelated: /epics/auth.md\nstatus: x\nstatus: y\n---\nx\n",
+		"---\ntype: note\nepic: /epics/auth.md\nrelated: /index.md\nrelated: /index.md\n---\nx\n",
+	} {
+		files["a.md"] = a
+		idx := build(t, files)
+		if _, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true); err != nil {
+			t.Fatalf("a duplicated key the move doesn't rewrite blocked it: %v", err)
+		}
+		if got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md")); !strings.Contains(string(got), ": /epics/authn.md") {
+			t.Errorf("a.md = %q", got)
+		}
+	}
+}
+
+// The rewrite covers every line a key owns, so a block list after a blank line
+// or a comment line is rewritten too.
+func TestMoveIncludeFrontmatterRewritesWholeSpan(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md":      "---\nokf_version: \"0.1\"\n---\n",
+		"epics/auth.md": "---\ntype: note\n---\nepic\n",
+		"deps.md":       "---\ntype: note\nrelated:\n  - /index.md\n\n# later ones\n  - /epics/auth.md\nother: /epics/auth.md.bak\n---\nx\n",
+	})
+	if _, err := idx.Move("/epics/auth.md", "/epics/authn.md", false, true); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "deps.md"))
+	if want := "related:\n  - /index.md\n\n# later ones\n  - /epics/authn.md\nother: /epics/auth.md.bak\n"; !strings.Contains(string(b), want) {
+		t.Errorf("deps.md = %q, want it to contain %q", b, want)
 	}
 }

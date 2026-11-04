@@ -2,6 +2,63 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.14.0
+
+### Breaking
+
+- **`list --format json` and `orphans --format json` give every unquoted number, boolean and null as a JSON value** (`"1"` → `1`, `"true"` → `true`, `"null"`/`"~"`/`""` → `null`). Numbers are byte for byte as written (`1.10` stays `1.10`). Quoted values, dates and YAML spellings that aren't JSON numbers (`007`, `+1`, `.5`) stay strings. `--where` still compares text: `--where n=10` matches `n: 10` and `n: '10'`, and `--where key=` doesn't match `key: null` (filter nulls in your query instead).
+- **`wiki check` checks the shape of frontmatter values.** A nested object, a list of objects, a list inside a list, a value or a list item that continues on the next line, and a value with no key, or a key that is a list or an object, are each reported as an error, next to the entry's other issues (`line 4: "m" holds a nested object; …`). Frontmatter values are scalars or lists of scalars. `check --fix` still repairs what it can.
+- **`csv` and `tsv` give each command's rows, and so does the new `jsonl`.**
+  - A list result is one row per item: `outline` its headings, `move` its rewritten files, `check --fix` its fixes and then its issues, `search --lines` its matching lines.
+  - `status`, `init` and `read` give a header and one row (`read`'s body is one multi-line cell).
+  - csv and tsv no longer fall back to the text output. `json` and `text` are unchanged.
+  - The README lists each command's columns.
+- **`table --format json` (and `jsonl`) types its cells.** `12.5` is a number, `true`/`false` are booleans, and an empty cell, `~` or `null` is `null` (an empty cell used to be `""`). A cell in quotes is a string without them, unless the same quote also appears inside it. text, csv and tsv print cells exactly as written, as before.
+
+### Added
+
+- **`--format jsonl` on every command that has `--format`.** One compact JSON object per row (the same rows as csv, not the json elements), with the row's own keys and its values in their JSON types; nothing at all for an empty result.
+- **Library: typed frontmatter.** `parse.TypedFrontmatter` returns the frontmatter with YAML types: an unquoted number is a `json.Number` as written, `true`/`false` a bool, `~`/`null`/an empty value nil, and a quoted value a string. `parse.Frontmatter` reads the same pass and gives the same strings as before.
+- **Library: `Entry.TypedFrontmatter`** returns a copy of an entry's typed frontmatter, like `Entry.Frontmatter`.
+- **Library: `parse.Scan`** reads a frontmatter header into its keys and the lines each key owns (`parse.Header`, `parse.Field`; `Field.Values` returns one occurrence's values, as `parse.Strings` does for the whole header). `Frontmatter`, `TypedFrontmatter` and `ValidateFrontmatter` read through it.
+- **Library: `parse.SetField`, `parse.SetFieldList` and `parse.UnsetField`** edit frontmatter text the way `Entry.SetField` does: they replace or remove the lines a key owns (see `parse.Scan`), and refuse an invalid key, an unterminated header and a key that appears twice.
+- **Library: `parse.ShapeIssues`** reports frontmatter values that are not scalars or lists of scalars, one error per key, as `wiki check` does.
+- **Library: `parse.Table.TypedRows`** types a table's cells by the same rule as `parse.TypedFrontmatter`.
+
+### Changed
+
+- **`list --format csv|tsv` and `orphans --format csv|tsv` add one column per frontmatter key after `_path,type`; `--fields` chooses and orders them.** Without `--fields`, the columns are `_path`, `type`, then every other key any listed entry uses, in byte order. With `--fields a,b,c`, they are `_path,a,b,c`. A list is a cell of JSON text (`[1,"a"]`), and null, an empty list or a missing key is an empty cell. A `--fields` key no listed entry has is still a column, with a warning on stderr.
+- **`search --lines --format csv` gives one row per matching line** (`_path,type,line,text`). It used to print Go syntax in a cell.
+- **`move --format json` always gives `frontmatter_refs`, including 0.** It used to leave the key out when no frontmatter value was rewritten.
+- **A block-list item that is `- ""` or only a comment (`- # c`) is dropped**, as an empty flow-list item (`[a, , b]`) already was. It used to give `""`.
+- **A block list whose items are all empty gives an empty list**, as `key: [""]` does. It used to give `""` (bare `-` items) or `[""]` (`- ""` items).
+- **An empty list is `[]` in JSON, not `null`** (`key: []`, `key: [""]`, in `list --format json` and wikiview's entry frontmatter). In Go it is an empty `[]string` instead of a nil one.
+- **A block list continues past a blank line or a comment at column 0, as in YAML.** `k:` / `  - a` / (blank) / `  - b` reads `["a","b"]`. It used to read `["a"]`.
+- **In a block list, a line that isn't an item continues the item before it**, joined with a newline: `k:` / `  - a long` / `    value` reads `["a long\nvalue"]`. It used to end the list. `wiki check` reports it.
+- **A nested map, and a value that continues on the next line, read as a multi-line string**: the lines the key owns, de-indented and joined with newlines.
+  - `m:` / `  a: 1` / `  b: x` gives `"a: 1\nb: x"`; it used to give `""`.
+  - `k: a long` / `  value` gives `"a long\nvalue"`; it used to give `"a long"`.
+  - `k: [a,` / `  b]` gives `"[a,\nb]"`; it used to give `["a"]`.
+
+  `wiki check` reports each of them. A flow map (`{a: 1}`) still reads as its text.
+- **A `|` or `>` text keeps its lines' indentation relative to the least-indented line.** It used to trim every line.
+- **A line with nothing before its colon (`: x`) is no longer read under the key `""`.** `wiki check` reports it.
+- **A line whose key contains ` #` (`a #b: x`) is a comment, as in YAML.** It used to be read under the key `a #b`.
+- **Writing a key that wouldn't read back as the same key is an error**: `key " k" can't be written: it would not read back as the same key (a key can't start with a space, "-" or "#", or contain ":" or " #")`. A key starting with `_` is still refused as reserved.
+- **Writing to a key that appears twice in the frontmatter is an error**, and so is `move --include-frontmatter` when a key it would rewrite appears twice: `key "k" appears twice in frontmatter (lines 3 and 7); fix the file first (wiki check reports it)`. Nothing is written, dry run included.
+- **Removing a field from a file whose header has no closing `---` is an error**; it used to do nothing.
+- **Writing a field keeps its type and its comment.**
+  - A number or boolean replacing a value of the same type, or a null placeholder (`key:`, `~`, `null`, `[]`), is written bare, for scalars and for each list item: `n: 10` set to `11` gives `n: 11`, and `r: [0.35, 0.36]` set to `0.35`, `0.37` gives `r: [0.35, 0.37]`. They used to be quoted (`n: "11"`), which turned them into strings in `list --format json`. A list's type is the type its items share.
+  - The inline comment on the key's line is kept: `n: 10 # ten` set to `11` gives `n: 11 # ten`. It used to be dropped.
+  - A value replacing a quoted one keeps its quote character whenever the value fits in it, even when the value would be quoted anyway (`1.1`), and when a comment follows: `v: '1.0'` set to `1.1` gives `v: '1.1'`, and `v: 'abc' # note` set to `xyz` gives `v: 'xyz' # note`. A value that doesn't fit (`it's` in single quotes) is written in double quotes.
+
+### Fixed
+
+- **An empty `-` item in a block list no longer ends the list and drops the items after it.** `l:` / `  - a` / `  -` / `  - b` gives `["a","b"]`; it used to give `["a"]`.
+- **An unknown `--format` is an error on every command.** `--format xml` used to print text and exit 0; it now exits 2 with `invalid value "xml" for flag -format: unknown --format "xml" (use text|json|jsonl|csv|tsv)`.
+- **Setting or removing a field replaces or removes every line the field owns**: block-list items (including a bare `-`, items under a commented key, and items after a blank line or a comment line), `|`/`>` text lines, nested-map lines, and continuation lines. Each of these used to be left in the file, usually as invalid YAML.
+- **A quote opens only at the start of a value or of a list item, as in YAML.** `title: Don't panic # draft` reads `"Don't panic"`, and `[it's, b]` reads `["it's","b"]`; the `'` used to open a quote, so the comment, or the rest of the list, was read as part of the value.
+
 ## v0.13.0
 
 ### Fixed

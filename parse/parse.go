@@ -3,6 +3,7 @@
 package parse
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 )
@@ -35,109 +36,151 @@ type Table struct {
 	Rows   [][]string `json:"rows"`
 }
 
-// Frontmatter splits a leading `---` block from the body and parses the small
-// YAML subset we use: scalars and string lists. Values are string or []string.
+// Frontmatter splits a leading `---` block from the body and reads its keys
+// (see Scan). Every value is a string or a []string, as written, with quotes
+// removed: `n: 10` and `n: '10'` both give "10". An empty value (`k:`) gives "".
+// A key written twice keeps its last value.
 func Frontmatter(content string) (fm map[string]any, body string) {
-	fm = map[string]any{}
-	header, body, err := splitFrontmatter(content)
-	if err != nil || header == "" {
-		return fm, content
-	}
-	_, block, _ := strings.Cut(header, "\n")
-	parseYAMLSubset(block, fm)
+	fm, _, body = parseFrontmatter(content)
 	return fm, body
 }
 
-// parseYAMLSubset fills fm from a frontmatter block. Supported: `key: value`
-// scalars (quoted or bare, internal spaces kept), flow lists `[a, "b c"]`, block
-// lists (`- item`), block scalars (`|`/`>`), and full-line and inline `#`
-// comments. Out of scope and skipped without corrupting other keys: nested maps,
-// anchors, multi-document streams. Numbers and booleans are kept as strings.
-func parseYAMLSubset(block string, fm map[string]any) {
-	lines := strings.Split(block, "\n")
-	for i := 0; i < len(lines); i++ {
-		line := strings.TrimRight(lines[i], "\r")
-		if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '-' {
-			continue // blank or nested; nested is consumed by the scans below
-		}
-		if strings.HasPrefix(strings.TrimSpace(line), "#") {
-			continue
-		}
-		key, val, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		val = stripComment(strings.TrimSpace(val))
-		switch {
-		case strings.HasPrefix(val, "["):
-			fm[key] = list(val)
-		case strings.HasPrefix(val, "|") || strings.HasPrefix(val, ">"):
-			// block scalar: gather the following more-indented lines
-			var blk []string
-			for j := i + 1; j < len(lines); j++ {
-				raw := strings.TrimRight(lines[j], "\r")
-				if raw != "" && raw[0] != ' ' && raw[0] != '\t' {
-					break // dedent ends the block
-				}
-				blk = append(blk, strings.TrimSpace(raw))
-				i = j
-			}
-			fm[key] = strings.TrimSpace(strings.Join(blk, "\n"))
-		case val == "":
-			var list []string
-			for j := i + 1; j < len(lines); j++ {
-				t := strings.TrimSpace(strings.TrimRight(lines[j], "\r"))
-				if strings.HasPrefix(t, "- ") {
-					list = append(list, Unquote(stripComment(t[2:])))
-					i = j
-					continue
-				}
-				break
-			}
-			if list != nil {
-				fm[key] = list
-			} else {
-				fm[key] = ""
-			}
-		default:
-			fm[key] = Unquote(val)
-		}
-	}
+// TypedFrontmatter is Frontmatter with YAML types: each unquoted scalar and
+// list item is typed by typedScalar, so a value is a string, a json.Number, a
+// bool, nil, or a []any of those. A quoted value and a multi-line value (a
+// block scalar, a nested map) stay strings.
+func TypedFrontmatter(content string) (fm map[string]any, body string) {
+	_, fm, body = parseFrontmatter(content)
+	return fm, body
 }
 
-// stripComment removes a trailing inline YAML comment — a `#` at the start or
-// preceded by whitespace — that is not inside single/double quotes. A `#` glued
-// to the preceding character (URLs, anchors) is kept.
+// parseFrontmatter reads the header once and returns both views of it: strs
+// for Frontmatter and typed for TypedFrontmatter, with the same keys. A file
+// without a header, or with an unterminated one, has no keys and is all body.
+func parseFrontmatter(content string) (strs, typed map[string]any, body string) {
+	strs, typed = map[string]any{}, map[string]any{}
+	h, _, body, err := scan(content)
+	if err != nil {
+		return strs, typed, content
+	}
+	for _, f := range h.Fields {
+		strs[f.Key], typed[f.Key] = f.str, f.typed
+	}
+	return strs, typed, body
+}
+
+// listViews builds both views of a list from its raw tokens, dropping the
+// items that are empty once unquoted (`""` included). Neither view is nil.
+func listViews(tokens []string) (strs []string, typed []any) {
+	strs, typed = []string{}, []any{}
+	for _, tok := range tokens {
+		if s := Unquote(tok); s != "" {
+			strs = append(strs, s)
+			typed = append(typed, typedScalar(tok))
+		}
+	}
+	return strs, typed
+}
+
+// isBlockItem reports whether a frontmatter line is a block-list item: after
+// trimming, a `-` alone (an empty item) or `- ` and a value. The writer uses it
+// too, so reading and writing agree on where a list ends.
+func isBlockItem(line string) bool {
+	t := strings.TrimSpace(line)
+	return t == "-" || strings.HasPrefix(t, "- ")
+}
+
+// jsonNumberRe is JSON's number grammar. Every token it matches is also a YAML
+// 1.2 core int or float; YAML spellings outside it (+1, 007, .5, 0x1F, .inf)
+// stay strings.
+var jsonNumberRe = regexp.MustCompile(`^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$`)
+
+// typedScalar types one raw token (trimmed, quotes kept), so tok is "" only
+// when nothing follows the colon. The first match wins:
+//
+//	key: "" or key: ''         the string "" (any quoted token is its string)
+//	key:, key: ~, key: null    nil, as in YAML
+//	key: true, key: False      a bool (yes/no/on/off stay strings, as in YAML 1.2)
+//	key: 10, key: 1.10         a json.Number, byte for byte as written
+//	anything else              the token itself; dates are never reformatted
+//
+// An empty placeholder is null rather than "", so a DuckDB column that is
+// still waiting for its numbers keeps its type instead of becoming text.
+func typedScalar(tok string) any {
+	if quoted(tok) {
+		return Unquote(tok)
+	}
+	return typedBare(tok)
+}
+
+// typedBare is rule T for a token that isn't quoted: nil, a bool, a json.Number
+// or the token itself.
+func typedBare(tok string) any {
+	switch tok {
+	case "", "~", "null", "Null", "NULL": // "" is nothing written (`key:`, an empty cell), never a quoted ""
+		return nil
+	case "true", "True", "TRUE":
+		return true
+	case "false", "False", "FALSE":
+		return false
+	}
+	if jsonNumberRe.MatchString(tok) {
+		return json.Number(tok)
+	}
+	return tok
+}
+
+// stripComment removes a trailing inline YAML comment, a `#` at the start or
+// after a space or tab, that is not inside quotes. A `#` glued to the character
+// before it (URLs, anchors) is kept. As in YAML, a quote opens only at the start
+// of a token: the value, or each item of a flow list, so the ' in `Don't` is
+// just a letter.
 func stripComment(s string) string {
-	inSingle, inDouble := false, false
+	flow := strings.HasPrefix(strings.TrimSpace(s), "[")
+	start := true // at a token's start, where a quote may open
 	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '\'':
-			if !inDouble {
-				inSingle = !inSingle
-			}
-		case '"':
-			if !inSingle {
-				inDouble = !inDouble
-			}
-		case '#':
-			if !inSingle && !inDouble && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t') {
-				return strings.TrimRight(s[:i], " \t")
-			}
+		switch c := s[i]; {
+		case c == '#' && (i == 0 || s[i-1] == ' ' || s[i-1] == '\t'):
+			return strings.TrimRight(s[:i], " \t")
+		case start && (c == '"' || c == '\''):
+			i = closeQuote(s, i)
+			start = false
+		case c == ' ' || c == '\t':
+		case flow && (c == '[' || c == ','):
+			start = true
+		default:
+			start = false
 		}
 	}
 	return s
 }
 
-// list parses a frontmatter flow list of quoted or bare tokens, e.g.
-// `[a, "b c", d]` into ["a", "b c", "d"]. Empties are dropped.
+// closeQuote returns the index of the quote that closes the one opening at
+// s[i], or len(s) when it never closes. Inside single quotes, two quotes in a
+// row are an escaped quote, not the end; inside double quotes, so is a quote
+// after a backslash. Neither escape is decoded here.
+func closeQuote(s string, i int) int {
+	q := s[i]
+	for j := i + 1; j < len(s); j++ {
+		switch {
+		case q == '"' && s[j] == '\\':
+			j++
+		case q == '\'' && s[j] == '\'' && j+1 < len(s) && s[j+1] == '\'':
+			j++
+		case s[j] == q:
+			return j
+		}
+	}
+	return len(s)
+}
+
+// list splits a frontmatter flow list into its raw tokens, trimmed with their
+// quotes kept: `[a, "b c", , d]` gives a, "b c", an empty token and d. Callers
+// unquote and drop the empty ones (listViews).
 //
-// Unexported: this is how the frontmatter subset spells a list, not a general
-// parser. It was exported for wiki.toml, which now goes through a real TOML
-// reader.
 // The split honours quoting: a comma inside "a,b" separates nothing, and
-// splitting on every comma would turn one item into two broken halves.
+// splitting on every comma would turn one item into two broken halves. A quote
+// opens only at an item's start (see stripComment), so `[it's, b]` is two items.
 func list(val string) []string {
 	val = strings.TrimSpace(val)
 	val = strings.TrimPrefix(val, "[")
@@ -145,40 +188,40 @@ func list(val string) []string {
 
 	var out []string
 	var item strings.Builder
-	var quote byte // the open quote character, or 0 outside one
-	flush := func() {
-		if p := Unquote(item.String()); p != "" {
-			out = append(out, p)
-		}
-		item.Reset()
-	}
-	for i := range len(val) {
+	start := true // at an item's start, where a quote may open
+	for i := 0; i < len(val); i++ {
 		switch c := val[i]; {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-			item.WriteByte(c)
-		case c == '"' || c == '\'':
-			quote = c
-			item.WriteByte(c)
+		case start && (c == '"' || c == '\''):
+			end := min(closeQuote(val, i)+1, len(val))
+			item.WriteString(val[i:end])
+			i = end - 1
+			start = false
 		case c == ',':
-			flush()
+			out = append(out, strings.TrimSpace(item.String()))
+			item.Reset()
+			start = true
+		case c == ' ' || c == '\t':
+			item.WriteByte(c)
 		default:
 			item.WriteByte(c)
+			start = false
 		}
 	}
-	flush()
-	return out
+	return append(out, strings.TrimSpace(item.String()))
 }
 
 // Unquote trims surrounding whitespace and a matching pair of quotes.
 func Unquote(s string) string {
 	s = strings.TrimSpace(s)
-	if len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0] {
+	if quoted(s) {
 		s = s[1 : len(s)-1]
 	}
 	return strings.TrimSpace(s)
+}
+
+// quoted reports whether the trimmed token s is wrapped in '…' or "…".
+func quoted(s string) bool {
+	return len(s) >= 2 && (s[0] == '"' || s[0] == '\'') && s[len(s)-1] == s[0]
 }
 
 // String returns frontmatter key as a string ("" if absent or not a string).
@@ -189,8 +232,12 @@ func String(fm map[string]any, key string) string {
 
 // Strings returns frontmatter key as a string slice. A lone scalar
 // (e.g. `tags: foo`) is treated as a single-element list.
-func Strings(fm map[string]any, key string) []string {
-	switch x := fm[key].(type) {
+func Strings(fm map[string]any, key string) []string { return stringsOf(fm[key]) }
+
+// stringsOf is Strings for one string-view value: a list is its items, a
+// scalar a one-element list, and "" (or anything else) nil.
+func stringsOf(v any) []string {
+	switch x := v.(type) {
 	case []string:
 		return x
 	case string:
@@ -480,4 +527,24 @@ func fitRow(row []string, n int) []string {
 		return append(row, make([]string, n-len(row))...)
 	}
 	return row[:n]
+}
+
+// TypedRows returns the table's cells typed by rule T, the way TypedFrontmatter
+// types a value: an empty cell, ~ or null is nil, true/false a bool, a JSON
+// number a json.Number as written, and anything else a string. A cell is a
+// quoted string, without its quotes, only when the same quote starts and ends
+// it and appears nowhere else in it, so `"Yes," she said, "no"` stays as written.
+func (t Table) TypedRows() [][]any {
+	rows := make([][]any, len(t.Rows))
+	for i, r := range t.Rows {
+		rows[i] = make([]any, len(r))
+		for j, c := range r {
+			if quoted(c) && !strings.ContainsRune(c[1:len(c)-1], rune(c[0])) {
+				rows[i][j] = c[1 : len(c)-1]
+			} else {
+				rows[i][j] = typedBare(c)
+			}
+		}
+	}
+	return rows
 }

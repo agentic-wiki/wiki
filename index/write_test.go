@@ -58,46 +58,9 @@ Prose with a [link](./other.md).
 	}
 }
 
-func TestSetFieldShapes(t *testing.T) {
-	tests := []struct{ name, doc, key, value, want string }{
-		{"bare stays bare", "---\nstatus: todo\n---\nb\n", "status", "done", "---\nstatus: done\n---\nb\n"},
-		{"author's quoting kept", "---\nstatus: \"todo\"\n---\nb\n", "status", "done", "---\nstatus: \"done\"\n---\nb\n"},
-		{"a value needing quotes gets them", "---\ns: a\n---\nb\n", "s", "in: progress", "---\ns: \"in: progress\"\n---\nb\n"},
-		// A bare `true` would parse as a boolean and a bare 0.1 as a float, so
-		// neither would still be the string that was set.
-		{"yaml keyword quoted", "---\nk: a\n---\nb\n", "k", "true", "---\nk: \"true\"\n---\nb\n"},
-		{"number quoted", "---\nk: a\n---\nb\n", "k", "0.1", "---\nk: \"0.1\"\n---\nb\n"},
-		{"absent key inserted", "---\ntype: task\n---\nb\n", "status", "todo", "---\ntype: task\nstatus: todo\n---\nb\n"},
-		// Replacing a list with a scalar must take the list's items with it, or
-		// they orphan into the next key.
-		{"block list replaced whole", "---\ntags:\n  - a\n  - b\ntype: task\n---\nb\n", "tags", "c", "---\ntags: c\ntype: task\n---\nb\n"},
-		{"flow list replaced", "---\ntags: [a, b]\ntype: task\n---\nb\n", "tags", "c", "---\ntags: c\ntype: task\n---\nb\n"},
-		{"crlf survives", "---\r\ns: todo\r\n---\r\nb\r\n", "s", "done", "---\r\ns: done\r\n---\r\nb\r\n"},
-		{"no frontmatter gets a block", "# Just a body\n", "s", "todo", "---\ns: todo\n---\n# Just a body\n"},
-		// A key that is a prefix of another must not match it.
-		{"similar key untouched", "---\ns_note: keep\ns: todo\n---\nb\n", "s", "done", "---\ns_note: keep\ns: done\n---\nb\n"},
-		// The body may contain something that looks like frontmatter.
-		{"only the leading block", "---\ns: todo\n---\nt\n---\ns: decoy\n---\n", "s", "done", "---\ns: done\n---\nt\n---\ns: decoy\n---\n"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := setFrontmatterValue(tc.doc, tc.key, tc.value, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.want {
-				t.Errorf("got:\n%q\nwant:\n%q", got, tc.want)
-			}
-		})
-	}
-}
-
 // index.md and log.md carry no frontmatter by definition, so giving one a block
 // would break the format. The bundle-root index.md is the documented exception.
 func TestSetFieldAndReservedFiles(t *testing.T) {
-	if _, err := setFrontmatterValue("# Board\n", "status", "todo", true); err != ErrNoFrontmatter {
-		t.Errorf("err=%v, want ErrNoFrontmatter", err)
-	}
 	idx := build(t, map[string]string{
 		"index.md":     "---\nokf_version: \"0.1\"\n---\nhome\n",
 		"sub/index.md": "# a folder board\n",
@@ -109,6 +72,12 @@ func TestSetFieldAndReservedFiles(t *testing.T) {
 	sub, _ := idx.Resolve("/sub/index.md")
 	if !sub.reserved() {
 		t.Error("a folder index.md carries no frontmatter")
+	}
+	if err := sub.SetField("status", "todo"); err != ErrNoFrontmatter {
+		t.Errorf("SetField on a folder index.md: err=%v, want ErrNoFrontmatter", err)
+	}
+	if raw, _ := sub.Raw(); raw != "# a folder board\n" {
+		t.Errorf("a refused write changed the file: %q", raw)
 	}
 }
 
@@ -453,75 +422,6 @@ func TestNoDirectWritesOutsideWriteFile(t *testing.T) {
 		if r.homeIn != "" && !enforced[r.homeIn] {
 			t.Errorf("%s no longer contains the call %s guards; the rule is dead", r.homeIn, r.use)
 		}
-	}
-}
-
-// A list is not a string that happens to contain brackets: SetField would quote
-// it into a scalar, so a consumer had no way to write `tags` or `blockers` — the
-// two list fields the format uses most.
-func TestSetFieldList(t *testing.T) {
-	tests := []struct{ name, doc, key, want string }{
-		{
-			"flow stays flow",
-			"---\ntags: [ui, api]\ntype: task\n---\nb\n", "tags",
-			"---\ntags: [ui, api, new]\ntype: task\n---\nb\n",
-		},
-		{
-			// The API was asked to change a value, not to reformat the file.
-			"block stays block",
-			"---\nblockers:\n  - /x.md\n  - /y.md\ntype: task\n---\nb\n", "blockers",
-			"---\nblockers:\n  - ui\n  - api\n  - new\ntype: task\n---\nb\n",
-		},
-		{
-			"absent key is inserted flow-style",
-			"---\ntype: task\n---\nb\n", "tags",
-			"---\ntype: task\ntags: [ui, api, new]\n---\nb\n",
-		},
-		{
-			// Replacing a scalar with a list must not leave the old quoting.
-			"scalar becomes a list",
-			"---\ntags: \"just one\"\ntype: task\n---\nb\n", "tags",
-			"---\ntags: [ui, api, new]\ntype: task\n---\nb\n",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := setFrontmatterList(tc.doc, tc.key, []string{"ui", "api", "new"}, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.want {
-				t.Errorf("got:\n%q\nwant:\n%q", got, tc.want)
-			}
-		})
-	}
-}
-
-// Items are quoted more strictly than scalars: a comma or a bracket would end
-// the item in flow style, where in a scalar they are harmless.
-func TestSetFieldListQuoting(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		in   []string
-		want string
-	}{
-		{"plain items bare", []string{"ui", "api"}, "---\nk: [ui, api]\n---\n"},
-		{"comma forces quotes", []string{"a,b", "c"}, "---\nk: [\"a,b\", c]\n---\n"},
-		{"brackets force quotes", []string{"[x]"}, "---\nk: [\"[x]\"]\n---\n"},
-		{"colon forces quotes", []string{"a: b"}, "---\nk: [\"a: b\"]\n---\n"},
-		{"number forces quotes", []string{"0.1"}, "---\nk: [\"0.1\"]\n---\n"},
-		{"empty list is explicit", nil, "---\nk: []\n---\n"},
-		{"paths stay bare", []string{"/a/b.md"}, "---\nk: [/a/b.md]\n---\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := setFrontmatterList("---\nk: old\n---\n", "k", tc.in, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != tc.want {
-				t.Errorf("got %q want %q", got, tc.want)
-			}
-		})
 	}
 }
 

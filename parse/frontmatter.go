@@ -14,31 +14,42 @@ import (
 // Files without a header are valid here; requiring a type is the index's job.
 // YAML errors retain file-relative line numbers by including the opening fence.
 func ValidateFrontmatter(content string) error {
-	header, _, err := splitFrontmatter(content)
+	_, err := decodeHeader(content)
+	return err
+}
+
+// decodeHeader decodes a leading header with yaml.v3 and checks it as
+// ValidateFrontmatter does, returning its top-level mapping: nil, with no
+// error, for a file without a header or with an empty or comment-only one.
+func decodeHeader(content string) (*yaml.Node, error) {
+	_, header, _, err := scan(content)
 	if err != nil || header == "" {
-		return err
+		return nil, err
 	}
 	decoder := yaml.NewDecoder(strings.NewReader(header))
 	var document yaml.Node
 	if err := decoder.Decode(&document); err != nil {
-		return err
+		return nil, err
 	}
 	node := document.Content[0]
 	// An empty or comment-only header is allowed, like an absent header.
 	if node.Kind != yaml.MappingNode && !(node.Tag == "!!null" && node.Value == "") {
-		return fmt.Errorf("line %d: frontmatter must be a YAML mapping", node.Line)
+		return nil, fmt.Errorf("line %d: frontmatter must be a YAML mapping", node.Line)
 	}
 	if err := duplicateFrontmatterKeys(&document); err != nil {
-		return err
+		return nil, err
 	}
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return errors.New("frontmatter must contain a single YAML mapping")
+		return nil, errors.New("frontmatter must contain a single YAML mapping")
 	}
-	return nil
+	if node.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	return node, nil
 }
 
 // duplicateFrontmatterKeys checks scalar mapping keys throughout the node tree.
@@ -66,29 +77,4 @@ func duplicateFrontmatterKeys(node *yaml.Node) error {
 		}
 	}
 	return nil
-}
-
-// splitFrontmatter shares fence recognition between extraction and validation.
-// header includes the opener, excludes the closer, and is empty when absent.
-// Only a complete --- line closes the header, never a ---prefix or indented text.
-func splitFrontmatter(content string) (header, body string, err error) {
-	first, _, _ := strings.Cut(content, "\n")
-	if strings.TrimSuffix(first, "\r") != "---" {
-		return "", content, nil
-	}
-	for start := len(first) + 1; start <= len(content); {
-		line, _, newline := strings.Cut(content[start:], "\n")
-		end := start + len(line)
-		if newline {
-			end++
-		}
-		if strings.TrimSuffix(line, "\r") == "---" {
-			return content[:start], content[end:], nil
-		}
-		if !newline {
-			break
-		}
-		start = end
-	}
-	return "", content, errors.New("line 1: unterminated frontmatter (missing closing --- fence)")
 }

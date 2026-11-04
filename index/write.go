@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
+
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // ErrNoFrontmatter is returned when asked to set a field on a reserved file that
@@ -94,28 +95,25 @@ func (e *Entry) SetField(key, value string) error {
 // half-updated if the second fails, and a consumer changing two related fields
 // (a status and an assignee, say) means them as one change.
 //
-// The edit is surgical. It finds the `---` fence, replaces exactly the lines
-// belonging to each key, and leaves the rest of the file untouched — never
-// parsing the frontmatter into a map and re-serializing it, which would silently
-// drop everything the YAML subset does not model (nested maps, anchors,
-// comments, quoting style).
+// The edit changes only the lines each key owns (parse.SetField,
+// parse.SetFieldList) and leaves the rest of the file as it is. It never parses
+// the frontmatter into a map and re-serializes it, which would silently drop
+// everything the YAML subset does not model (anchors, comments, quoting style).
+//
+// The new content is built in memory and written once, so an invalid key or a
+// key that appears twice fails the whole batch before anything is written.
 func (e *Entry) SetFields(fields map[string]any) error {
 	if len(fields) == 0 {
 		return errors.New("no fields to set")
 	}
-	// Validate every key and value before writing anything, so a rejected batch
-	// applies nothing rather than the prefix that happened to be valid.
 	for key, v := range fields {
-		if err := validFieldKey(key); err != nil {
-			return err
-		}
 		switch v.(type) {
 		case string, []string:
 		default:
 			return fmt.Errorf("field %q: value must be a string or []string, got %T", key, v)
 		}
 	}
-	raw, err := e.Raw()
+	raw, err := e.frontmatterRaw()
 	if err != nil {
 		return err
 	}
@@ -125,15 +123,32 @@ func (e *Entry) SetFields(fields map[string]any) error {
 	for _, key := range slices.Sorted(maps.Keys(fields)) {
 		switch v := fields[key].(type) {
 		case string:
-			out, err = setFrontmatterValue(out, key, v, e.reserved())
+			out, err = parse.SetField(out, key, v)
 		case []string:
-			out, err = setFrontmatterList(out, key, v, e.reserved())
+			out, err = parse.SetFieldList(out, key, v)
 		}
 		if err != nil {
 			return err
 		}
 	}
 	return e.commit(raw, out)
+}
+
+// frontmatterRaw reads the entry for a frontmatter write. A reserved file has no
+// header by definition, so it gets none: ErrNoFrontmatter.
+func (e *Entry) frontmatterRaw() (string, error) {
+	raw, err := e.Raw()
+	if err != nil {
+		return "", err
+	}
+	h, err := parse.Scan(raw)
+	if err != nil {
+		return "", err // an unterminated header: nothing is written
+	}
+	if e.reserved() && h.Open < 0 {
+		return "", ErrNoFrontmatter
+	}
+	return raw, nil
 }
 
 // SetFieldList writes a list-valued frontmatter field: `tags`, `blockers`, and
@@ -150,17 +165,17 @@ func (e *Entry) SetFieldList(key string, values []string) error {
 	return e.SetFields(map[string]any{key: values})
 }
 
-// UnsetField removes a key from the entry's frontmatter, including a block list
-// belonging to it.
+// UnsetField removes a key from the entry's frontmatter, with every line it owns.
 func (e *Entry) UnsetField(key string) error {
-	if err := validFieldKey(key); err != nil {
-		return err
-	}
 	raw, err := e.Raw()
 	if err != nil {
 		return err
 	}
-	return e.commit(raw, unsetFrontmatterValue(raw, key))
+	out, err := parse.UnsetField(raw, key)
+	if err != nil {
+		return err
+	}
+	return e.commit(raw, out)
 }
 
 // SetCheckbox sets the done state of the `- [ ]` item at the given line.
@@ -231,27 +246,13 @@ func (e *Entry) refresh() error {
 	e.Headings = fresh.Headings
 	e.wikilinks = fresh.wikilinks
 	e.fm = fresh.fm
+	e.typed = fresh.typed
 	return nil
 }
 
 // checkboxMark matches a GFM checkbox's mark, capturing the single character
 // between the brackets so exactly that character can be replaced.
 var checkboxMark = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]`)
-
-// validFieldKey rejects keys the engine must not write: the reserved underscore
-// namespace (`_path` is the index's, not the user's) and anything that would not
-// survive as a YAML key.
-func validFieldKey(key string) error {
-	switch {
-	case strings.TrimSpace(key) == "":
-		return errors.New("key must not be empty")
-	case strings.HasPrefix(key, "_"):
-		return fmt.Errorf("key %q is reserved (leading underscore)", key)
-	case strings.ContainsAny(key, ":\n\r"):
-		return fmt.Errorf("key %q must not contain ':' or a newline", key)
-	}
-	return nil
-}
 
 // reserved reports whether the entry is one of the two filenames the format
 // defines as carrying no frontmatter.
@@ -261,201 +262,4 @@ func (e *Entry) reserved() bool {
 		return false
 	}
 	return e.base() == "index.md" || e.IsLog()
-}
-
-// formatField renders a `key: value` line, quoting only when the value needs it
-// and otherwise matching whatever style the line already used.
-func formatField(key, value, existing string) string {
-	if needsQuote(value) {
-		return fmt.Sprintf("%s: %q", key, value)
-	}
-	if e := strings.TrimSpace(existing); len(e) >= 2 && (e[0] == '\'' || e[0] == '"') && e[len(e)-1] == e[0] {
-		return fmt.Sprintf("%s: %c%s%c", key, e[0], value, e[0]) // keep the author's quoting
-	}
-	return key + ": " + value
-}
-
-// needsQuote reports whether a value would not survive unquoted. Deliberately
-// conservative: a wrongly-bare value corrupts the file, while a needlessly
-// quoted one is merely noisy.
-//
-// Numbers are quoted, which matters more than it looks: a bare `0.1` is a float,
-// so a version or an identifier written bare would stop being the string it was.
-func needsQuote(v string) bool {
-	if v == "" || v != strings.TrimSpace(v) {
-		return true
-	}
-	if strings.ContainsAny(v, ":#[]{},&*!|>'\"%@`\n\r\t") {
-		return true
-	}
-	if _, err := strconv.ParseFloat(v, 64); err == nil {
-		return true
-	}
-	switch strings.ToLower(v) {
-	case "true", "false", "null", "yes", "no", "on", "off", "~":
-		return true
-	}
-	return v[0] == '-' || v[0] == '?'
-}
-
-// setFrontmatterValue returns content with the frontmatter key set to value,
-// changing that key's lines and nothing else.
-//
-// A file with no frontmatter gets a block, unless it is a reserved file, which by
-// definition has none. Replacing a key that held a block list takes the list's
-// items with it, or they would orphan into whatever key came next.
-func setFrontmatterValue(content, key, value string, reserved bool) (string, error) {
-	lines := strings.Split(content, "\n")
-	open, closed := frontmatterFence(lines)
-	if open < 0 {
-		if reserved {
-			return "", ErrNoFrontmatter
-		}
-		return fmt.Sprintf("---\n%s\n---\n%s", formatField(key, value, ""), content), nil
-	}
-	if closed < 0 {
-		return "", errors.New("unterminated frontmatter")
-	}
-
-	if i, end, existing, ok := findKey(lines, open, closed, key); ok {
-		out := append([]string{}, lines[:i]...)
-		out = append(out, formatField(key, value, existing)+carriage(lines[i]))
-		return strings.Join(append(out, lines[end+1:]...), "\n"), nil
-	}
-	// Absent: insert before the closing fence, so the new key joins the block
-	// rather than displacing anything already in it.
-	out := append([]string{}, lines[:closed]...)
-	out = append(out, formatField(key, value, "")+carriage(lines[closed]))
-	return strings.Join(append(out, lines[closed:]...), "\n"), nil
-}
-
-// setFrontmatterList is setFrontmatterValue for a list value, emitting one or
-// more lines in place of the key's existing ones.
-func setFrontmatterList(content, key string, values []string, reserved bool) (string, error) {
-	lines := strings.Split(content, "\n")
-	open, closed := frontmatterFence(lines)
-	if open < 0 {
-		if reserved {
-			return "", ErrNoFrontmatter
-		}
-		return fmt.Sprintf("---\n%s\n---\n%s", flowList(key, values), content), nil
-	}
-	if closed < 0 {
-		return "", errors.New("unterminated frontmatter")
-	}
-
-	if i, end, _, ok := findKey(lines, open, closed, key); ok {
-		// end > i means the key owned `- item` lines, so it was written as a
-		// block. Keep it that way.
-		var repl []string
-		if end > i && len(values) > 0 {
-			repl = blockList(key, values)
-		} else {
-			repl = []string{flowList(key, values)}
-		}
-		cr := carriage(lines[i])
-		for j := range repl {
-			repl[j] += cr
-		}
-		out := append([]string{}, lines[:i]...)
-		out = append(out, repl...)
-		return strings.Join(append(out, lines[end+1:]...), "\n"), nil
-	}
-	out := append([]string{}, lines[:closed]...)
-	out = append(out, flowList(key, values)+carriage(lines[closed]))
-	return strings.Join(append(out, lines[closed:]...), "\n"), nil
-}
-
-// flowList renders `key: [a, b]`. An empty list is written `key: []`, which is
-// a declared-but-empty field, not the same thing as an absent one.
-func flowList(key string, values []string) string {
-	items := make([]string, len(values))
-	for i, v := range values {
-		items[i] = quoteItem(v)
-	}
-	return key + ": [" + strings.Join(items, ", ") + "]"
-}
-
-// blockList renders a key over several lines, one `- item` each.
-func blockList(key string, values []string) []string {
-	out := make([]string, 0, len(values)+1)
-	out = append(out, key+":")
-	for _, v := range values {
-		out = append(out, "  - "+quoteItem(v))
-	}
-	return out
-}
-
-// quoteItem quotes a list item that would not survive bare. A comma or a
-// bracket ends the item in flow style, so the rule is stricter than for a
-// scalar, where those characters are harmless.
-func quoteItem(v string) string {
-	if needsQuote(v) || strings.ContainsAny(v, ",[]") {
-		return fmt.Sprintf("%q", v)
-	}
-	return v
-}
-
-// unsetFrontmatterValue removes a key and any block list belonging to it,
-// returning content unchanged when the key is absent.
-func unsetFrontmatterValue(content, key string) string {
-	lines := strings.Split(content, "\n")
-	open, closed := frontmatterFence(lines)
-	if open < 0 || closed < 0 {
-		return content
-	}
-	i, end, _, ok := findKey(lines, open, closed, key)
-	if !ok {
-		return content
-	}
-	return strings.Join(append(append([]string{}, lines[:i]...), lines[end+1:]...), "\n")
-}
-
-// findKey locates a key's line within a frontmatter block, along with the last
-// line belonging to it: a block list's `- item` lines belong to the key above
-// them, so replacing or removing the key has to take them too.
-func findKey(lines []string, open, closed int, key string) (start, end int, existing string, ok bool) {
-	for i := open + 1; i < closed; i++ {
-		line := strings.TrimRight(lines[i], "\r")
-		if line == "" || line[0] == ' ' || line[0] == '\t' || strings.HasPrefix(strings.TrimSpace(line), "- ") {
-			continue // a nested or block-list line belongs to the key above it
-		}
-		k, v, cut := strings.Cut(line, ":")
-		if !cut || strings.TrimSpace(k) != key {
-			continue
-		}
-		end = i
-		if strings.TrimSpace(v) == "" { // a block list follows
-			for j := i + 1; j < closed; j++ {
-				if strings.HasPrefix(strings.TrimSpace(strings.TrimRight(lines[j], "\r")), "- ") {
-					end = j
-					continue
-				}
-				break
-			}
-		}
-		return i, end, v, true
-	}
-	return 0, 0, "", false
-}
-
-// frontmatterFence locates the opening and closing `---` lines, or -1 when the
-// content has no frontmatter block at all.
-func frontmatterFence(lines []string) (open, closed int) {
-	if len(lines) == 0 || strings.TrimRight(lines[0], "\r") != "---" {
-		return -1, -1
-	}
-	for i := 1; i < len(lines); i++ {
-		if strings.TrimRight(lines[i], "\r") == "---" {
-			return 0, i
-		}
-	}
-	return 0, -1
-}
-
-func carriage(line string) string {
-	if strings.HasSuffix(line, "\r") {
-		return "\r"
-	}
-	return ""
 }
