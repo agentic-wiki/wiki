@@ -128,7 +128,7 @@ func (e *Entry) SetFields(fields map[string]any) error {
 			out, err = parse.SetFieldList(out, key, v)
 		}
 		if err != nil {
-			return err
+			return e.named(err)
 		}
 	}
 	return e.commit(raw, out)
@@ -141,11 +141,10 @@ func (e *Entry) frontmatterRaw() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	h, err := parse.Scan(raw)
-	if err != nil {
-		return "", err // an unterminated header: nothing is written
-	}
-	if e.reserved() && h.Open < 0 {
+	// A reserved file has no header (Body is all of it): it gets none. An
+	// unterminated one counts as none there, and elsewhere goes on to the write,
+	// which refuses it with the file named (parse.EditError).
+	if e.reserved() && parse.Body(raw) == raw {
 		return "", ErrNoFrontmatter
 	}
 	return raw, nil
@@ -173,7 +172,7 @@ func (e *Entry) UnsetField(key string) error {
 	}
 	out, err := parse.UnsetField(raw, key)
 	if err != nil {
-		return err
+		return e.named(err)
 	}
 	return e.commit(raw, out)
 }
@@ -247,6 +246,7 @@ func (e *Entry) refresh() error {
 	e.wikilinks = fresh.wikilinks
 	e.fm = fresh.fm
 	e.typed = fresh.typed
+	e.fmErr = fresh.fmErr
 	return nil
 }
 
@@ -262,4 +262,17 @@ func (e *Entry) reserved() bool {
 		return false
 	}
 	return e.base() == "index.md" || e.IsLog()
+}
+
+// named puts the entry's path into a write's refusal (parse.EditError), so it
+// reads "frontmatter of /x.md can't be edited safely: …". Other errors are
+// returned as they are.
+func (e *Entry) named(err error) error {
+	var refused *parse.EditError
+	if errors.As(err, &refused) {
+		named := *refused
+		named.Path = e.Path
+		return &named
+	}
+	return err
 }

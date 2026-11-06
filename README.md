@@ -87,7 +87,7 @@ wiki list --where type=company --format json > companies.json
 duckdb -c "select ticker from read_json('companies.json') where roe >= 0.2"
 ```
 
-Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `dump`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question.
+Two filters narrow any set of entries: **`--prefix` for where, `--where` for what.** Both work on `list`, `search`, `dump`, `checkboxes`, `tags`, `properties`, and `property` — so a folder that mixes kinds can still be asked a narrow question. `--where key=value` compares text: a list matches when any item equals the value, and a list or map item, or a whole map, compares as its one line of YAML (copy it from `property` or a csv cell, since that line fixes the spelling). `--where key=` matches a key with no value: absent, null, `""`, `[]`, `{}`, or a list of empty items.
 
 **Follow the graph** (the part `grep` cannot do)
 
@@ -135,7 +135,7 @@ wiki search "needs review" >/dev/null && echo "matches found" || echo "none"  # 
 [ -n "$(wiki unresolved)" ] && echo "broken links exist"                    # listings exit 0 even when empty; test the output
 ```
 
-In `jsonl`, `csv` and `tsv`, every command gives rows: a list result is one row per item, and any other result is a single row. jsonl holds the same rows as csv, not the json elements: one compact JSON object per line, with the row's own keys and its values in their JSON types, and nothing at all for an empty result. csv and tsv always start with a header; a list in a cell is written as JSON (`["a","b"]`), and an empty value is an empty cell. `text` and `json` are unchanged.
+In `jsonl`, `csv` and `tsv`, every command gives rows: a list result is one row per item, and any other result is a single row. jsonl holds the same rows as csv, not the json elements: one compact JSON object per line, with the row's own keys and its values in their JSON types, and nothing at all for an empty result. csv and tsv always start with a header; a list or map in a cell is one line of YAML in flow style (`[a, b]`, `{income: 2025-12-31}`, with strings another YAML reader would type, such as `yes` or `"10"`, quoted), and a value with no value (absent, null, `""`, `[]`, `{}`, or a list of empty items) is an empty cell. JSON appears only in `json` and `jsonl`. `text` and `json` are unchanged.
 
 | Command | One row per | Columns |
 | --- | --- | --- |
@@ -164,7 +164,7 @@ Three axes, kept separate, are what keep it friction-free:
 - **`type` is what an entry is:** `note`, `concept`, `dataset`, `task`, `source`, and so on, one per entry, declared in `wiki.toml`.
 - **Tags are everything cross-cutting:** `tech`, `2026`, `needs-review`. If something wants to live in two folders at once, that is a tag.
 
-Frontmatter values are scalars (text, numbers, `true`/`false`, null) or lists of scalars. Nested objects, and a value that continues on the next line, are reported by `wiki check`; use `|` or `>` for text over several lines.
+Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists and nested maps. `--format json` gives lists and maps as JSON, and it is the exact view. Everywhere else, a list or map is one line of YAML in flow style (`[a, b]`, `{k: v}`), and types are lost: the text `"{a: 1}"` and the map `{a: 1}` both read `{a: 1}` there. `wiki check` reports what wiki can't read or edit safely.
 
 Entries link with ordinary Markdown links from the base root, `[Income](/finance/income.md)`. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 

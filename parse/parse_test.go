@@ -76,9 +76,9 @@ func TestFrontmatterBlockList(t *testing.T) {
 }
 
 func TestFrontmatterTagsTrimmed(t *testing.T) {
-	// Quoted and unquoted alike trim surrounding whitespace; internal spaces stay.
+	// An unquoted item is trimmed; a quoted one keeps its spaces, as in YAML.
 	fm, _ := Frontmatter("---\ntags: [ \"hi \", ho  , \"x y\" ]\n---\nbody\n")
-	want := []string{"hi", "ho", "x y"}
+	want := []string{"hi ", "ho", "x y"}
 	if got := fm["tags"]; !reflect.DeepEqual(got, want) {
 		t.Errorf("tags = %#v, want %#v", got, want)
 	}
@@ -102,7 +102,7 @@ func TestFrontmatterComments(t *testing.T) {
 
 func TestFrontmatterBlockScalar(t *testing.T) {
 	fm, body := Frontmatter("---\ntype: note\ndescription: |\n  line one\n  line two\ntitle: After\n---\nbody\n")
-	if fm["description"] != "line one\nline two" {
+	if fm["description"] != "line one\nline two\n" { // | keeps the final newline
 		t.Errorf("block scalar = %q", fm["description"])
 	}
 	if fm["title"] != "After" {
@@ -114,9 +114,9 @@ func TestFrontmatterBlockScalar(t *testing.T) {
 }
 
 func TestFrontmatterNestedMapGraceful(t *testing.T) {
-	// A nested map reads as its lines, de-indented, and doesn't touch sibling keys.
+	// A nested map reads as its Flow, and doesn't touch sibling keys.
 	fm, _ := Frontmatter("---\ntype: note\nmeta:\n  a: 1\n  b: 2\ntitle: Kept\n---\nbody\n")
-	if fm["type"] != "note" || fm["title"] != "Kept" || fm["meta"] != "a: 1\nb: 2" {
+	if fm["type"] != "note" || fm["title"] != "Kept" || fm["meta"] != "{a: 1, b: 2}" {
 		t.Errorf("type=%q title=%q meta=%q", fm["type"], fm["title"], fm["meta"])
 	}
 }
@@ -136,26 +136,22 @@ func TestUnquote(t *testing.T) {
 	}
 }
 
-func TestList(t *testing.T) {
-	if got, _ := listViews(list(`[a, "b c" ,  , d]`)); !reflect.DeepEqual(got, []string{"a", "b c", "d"}) {
-		t.Errorf("list = %#v", got)
-	}
-	if got, _ := listViews(list("[]")); got == nil || len(got) != 0 {
-		t.Errorf("empty list = %#v, want []string{}", got)
-	}
-	// A comma inside quotes separates nothing. Splitting on every comma turned
-	// one item into two broken halves ("a and b").
+// A flow list reads as YAML reads it: a comma inside quotes separates nothing.
+func TestReadFlowList(t *testing.T) {
 	for _, tc := range []struct {
 		in   string
 		want []string
 	}{
+		{`[a, "b c" , d]`, []string{"a", "b c", "d"}},
+		{`[]`, []string{}},
 		{`["a,b", c]`, []string{"a,b", "c"}},
 		{`['x,y', 'z']`, []string{"x,y", "z"}},
 		{`["a: b", "0.1", "[x]"]`, []string{"a: b", "0.1", "[x]"}},
 		{`["only one"]`, []string{"only one"}},
 	} {
-		if got, _ := listViews(list(tc.in)); !reflect.DeepEqual(got, tc.want) {
-			t.Errorf("list(%s) = %#v, want %#v", tc.in, got, tc.want)
+		fm, _ := Frontmatter("---\nk: " + tc.in + "\n---\n")
+		if !reflect.DeepEqual(fm["k"], tc.want) {
+			t.Errorf("k: %s reads %#v, want %#v", tc.in, fm["k"], tc.want)
 		}
 	}
 }
@@ -425,8 +421,8 @@ func TestTypedFrontmatterRuleT(t *testing.T) {
 			"flow":   "---\nk: [" + tc.token + "]\n---\n",
 			"block":  "---\nk:\n  - " + tc.token + "\n---\n",
 		} {
-			fm, _ := TypedFrontmatter(content)
-			got := fm["k"]
+			fm, _ := typedFrontmatter(content)
+			got := get(fm, "k")
 			want := tc.want
 			if name != "scalar" {
 				want = []any{tc.want}
@@ -438,8 +434,9 @@ func TestTypedFrontmatterRuleT(t *testing.T) {
 	}
 }
 
-// TestTypedFrontmatterScalars covers the values that are never typed by rule T:
-// empty values, block scalars, nested and flow maps.
+// TestTypedFrontmatterScalars covers empty values, block scalars, and nested
+// and flow maps, which are Maps in the typed view and their Flow in the string
+// view.
 func TestTypedFrontmatterScalars(t *testing.T) {
 	for _, tc := range []struct {
 		name, content string
@@ -453,53 +450,54 @@ func TestTypedFrontmatterScalars(t *testing.T) {
 		{"number with comment", "k: 10 # ten\n", "10", json.Number("10")},
 		{"empty flow list", "k: []\n", []string{}, []any{}},
 		{"mixed flow list", "k: [1, 2.5, x, \"7\"]\n", []string{"1", "2.5", "x", "7"}, []any{json.Number("1"), json.Number("2.5"), "x", "7"}},
-		{"literal block scalar", "k: |\n  10\n", "10", "10"},
-		{"folded block scalar", "k: >\n  true\n", "true", "true"},
-		{"nested map", "k:\n  a: 1\n", "a: 1", "a: 1"},
-		{"flow map", "k: {a: 1}\n", "{a: 1}", "{a: 1}"},
+		{"literal block scalar", "k: |\n  10\n", "10\n", "10\n"},
+		{"folded block scalar", "k: >\n  true\n", "true\n", "true\n"},
+		{"nested map", "k:\n  a: 1\n", "{a: 1}", Map{{"a", json.Number("1")}}},
+		{"flow map", "k: {a: 1}\n", "{a: 1}", Map{{"a", json.Number("1")}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			content := "---\n" + tc.content + "---\n"
 			strs, _ := Frontmatter(content)
-			typed, _ := TypedFrontmatter(content)
+			typed, _ := typedFrontmatter(content)
 			if !reflect.DeepEqual(strs["k"], tc.str) {
 				t.Errorf("string view = %#v, want %#v", strs["k"], tc.str)
 			}
-			if !reflect.DeepEqual(typed["k"], tc.typed) {
-				t.Errorf("typed view = %#v, want %#v", typed["k"], tc.typed)
+			if !reflect.DeepEqual(get(typed, "k"), tc.typed) {
+				t.Errorf("typed view = %#v, want %#v", get(typed, "k"), tc.typed)
 			}
 		})
 	}
 }
 
-// TestFrontmatterEmptyListItems: an empty item is dropped in both views, and the
-// list goes on after it. Empty is tested after unquoting; a null token is kept.
-func TestFrontmatterEmptyListItems(t *testing.T) {
+// TestReadListItems: list items are kept as YAML reads them. `""` and `”` are
+// "" in both views; a bare `-` (or one followed by a comment) is null, "" in
+// the string view; `~` is its text in the string view. A list or map item is
+// its Flow in the string view, so a nested `~` reads null there (a stated gap).
+func TestReadListItems(t *testing.T) {
 	for _, tc := range []struct {
 		name, content string
 		str, typed    any
 	}{
-		{"flow empty item", "k: [a, , b]\n", []string{"a", "b"}, []any{"a", "b"}},
-		{"flow quoted empty", "k: [\"\"]\n", []string{}, []any{}},
-		{"flow null kept", "k: [~, 1]\n", []string{"~", "1"}, []any{nil, json.Number("1")}},
-		{"block bare dash", "k:\n  - a\n  -\n  - b\n", []string{"a", "b"}, []any{"a", "b"}},
-		{"block quoted empty", "k:\n  - a\n  - \"\"\n  - b\n", []string{"a", "b"}, []any{"a", "b"}},
-		{"block single quoted empty", "k:\n  - ''\n  - b\n", []string{"b"}, []any{"b"}},
-		{"block comment only", "k:\n  - a\n  - # c\n  - b\n", []string{"a", "b"}, []any{"a", "b"}},
-		{"block null kept", "k:\n  - ~\n  - 1\n", []string{"~", "1"}, []any{nil, json.Number("1")}},
-		{"block all empty", "k:\n  -\n  - \"\"\n  - # c\n", []string{}, []any{}},
-		{"block bare dash only", "k:\n  -\n", []string{}, []any{}},
-		{"block bare dash at end", "k:\n  - a\n  -\nnext: x\n", []string{"a"}, []any{"a"}},
+		{"flow quoted empty", "k: [\"\", a]\n", []string{"", "a"}, []any{"", "a"}},
+		{"flow null", "k: [~, 1]\n", []string{"~", "1"}, []any{nil, json.Number("1")}},
+		{"flow nested null", "k: [~, [~]]\n", []string{"~", "[null]"}, []any{nil, []any{nil}}},
+		{"block bare dash", "k:\n  - a\n  -\n  - b\n", []string{"a", "", "b"}, []any{"a", nil, "b"}},
+		{"block quoted empty", "k:\n  - a\n  - \"\"\n  - b\n", []string{"a", "", "b"}, []any{"a", "", "b"}},
+		{"block single quoted empty", "k:\n  - ''\n  - b\n", []string{"", "b"}, []any{"", "b"}},
+		{"block comment only", "k:\n  - a\n  - # c\n  - b\n", []string{"a", "", "b"}, []any{"a", nil, "b"}},
+		{"block tilde", "k:\n  - ~\n  - 1\n", []string{"~", "1"}, []any{nil, json.Number("1")}},
+		{"block bare dash only", "k:\n  -\n", []string{""}, []any{nil}},
+		{"block bare dash at end", "k:\n  - a\n  -\nnext: x\n", []string{"a", ""}, []any{"a", nil}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			content := "---\n" + tc.content + "---\n"
 			strs, _ := Frontmatter(content)
-			typed, _ := TypedFrontmatter(content)
+			typed, _ := typedFrontmatter(content)
 			if !reflect.DeepEqual(strs["k"], tc.str) {
 				t.Errorf("string view = %#v, want %#v", strs["k"], tc.str)
 			}
-			if !reflect.DeepEqual(typed["k"], tc.typed) {
-				t.Errorf("typed view = %#v, want %#v", typed["k"], tc.typed)
+			if !reflect.DeepEqual(get(typed, "k"), tc.typed) {
+				t.Errorf("typed view = %#v, want %#v", get(typed, "k"), tc.typed)
 			}
 		})
 	}
@@ -515,7 +513,7 @@ func TestFrontmatterEmptyListItems(t *testing.T) {
 func TestTypedFrontmatterBodyAndKeys(t *testing.T) {
 	content := "---\ntype: note\nn: 10\ntags: [a, b]\n---\n# Body\n"
 	strs, sb := Frontmatter(content)
-	typed, tb := TypedFrontmatter(content)
+	typed, tb := typedFrontmatter(content)
 	if sb != "# Body\n" || tb != sb {
 		t.Errorf("bodies %q and %q, want %q", sb, tb, "# Body\n")
 	}
@@ -523,27 +521,9 @@ func TestTypedFrontmatterBodyAndKeys(t *testing.T) {
 		t.Errorf("keys: string view %v, typed view %v", strs, typed)
 	}
 	for _, content := range []string{"# No header\n", "---\nk: 1\n"} {
-		typed, body := TypedFrontmatter(content)
+		typed, body := typedFrontmatter(content)
 		if len(typed) != 0 || body != content {
 			t.Errorf("%q: typed = %v, body = %q", content, typed, body)
-		}
-	}
-}
-
-func TestIsBlockItem(t *testing.T) {
-	for line, want := range map[string]bool{
-		"  - a":   true,
-		"- a":     true,
-		"  -":     true,
-		"  -\r":   true,
-		"-":       true,
-		"  -a":    false,
-		"  --- x": false,
-		"k: v":    false,
-		"":        false,
-	} {
-		if got := isBlockItem(line); got != want {
-			t.Errorf("isBlockItem(%q) = %v, want %v", line, got, want)
 		}
 	}
 }
@@ -580,4 +560,22 @@ func TestTableTypedRows(t *testing.T) {
 	if got := (Table{Header: []string{"a"}}).TypedRows(); got == nil || len(got) != 0 {
 		t.Errorf("no rows: %#v, want an empty slice", got)
 	}
+}
+
+// get is m's value for key, nil when absent.
+func get(m Map, key string) any {
+	v, _ := m.Get(key)
+	return v
+}
+
+// scanLayout is a header's layout, for the tests.
+func scanLayout(content string) (layout, error) {
+	h, _, _, err := scanDecoded(content)
+	return h, err
+}
+
+// typedFrontmatter is ReadFrontmatter's typed view and body, for the tests.
+func typedFrontmatter(content string) (Map, string) {
+	_, m, body, _ := ReadFrontmatter(content)
+	return m, body
 }

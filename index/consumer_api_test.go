@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // The accessors below exist only for library consumers: no command calls them,
@@ -154,7 +156,7 @@ func TestParseFilter(t *testing.T) {
 func TestTypedFrontmatterIsACopy(t *testing.T) {
 	idx := build(t, map[string]string{
 		"index.md": "---\nokf_version: \"0.1\"\n---\n",
-		"a.md":     "---\ntype: task\nn: 10\ns: '10'\nl: [1, x]\n---\nbody\n",
+		"a.md":     "---\ntype: task\nn: 10\ns: '10'\nl: [1, x]\nm: {k: [1]}\n---\nbody\n",
 	})
 	e, err := idx.Resolve("/a.md")
 	if err != nil {
@@ -162,17 +164,28 @@ func TestTypedFrontmatterIsACopy(t *testing.T) {
 	}
 
 	fm := e.TypedFrontmatter()
-	if fm["n"] != json.Number("10") || fm["s"] != "10" || fm["type"] != "task" {
+	get := func(m parse.Map, k string) any { v, _ := m.Get(k); return v }
+	if get(fm, "n") != json.Number("10") || get(fm, "s") != "10" || get(fm, "type") != "task" {
 		t.Errorf("typed frontmatter = %#v", fm)
 	}
-	if got, ok := fm["l"].([]any); !ok || !reflect.DeepEqual(got, []any{json.Number("1"), "x"}) {
-		t.Fatalf("l=%#v", fm["l"])
+	if got, ok := get(fm, "l").([]any); !ok || !reflect.DeepEqual(got, []any{json.Number("1"), "x"}) {
+		t.Fatalf("l=%#v", get(fm, "l"))
 	}
 
-	fm["n"] = "clobbered"
-	fm["l"].([]any)[0] = "clobbered"
+	for i := range fm {
+		switch fm[i].Key {
+		case "n":
+			fm[i].Value = "clobbered"
+		case "l":
+			fm[i].Value.([]any)[0] = "clobbered"
+		case "m":
+			k, _ := fm[i].Value.(parse.Map).Get("k")
+			k.([]any)[0] = "clobbered"
+		}
+	}
 	again := e.TypedFrontmatter()
-	if again["n"] != json.Number("10") || again["l"].([]any)[0] != json.Number("1") {
+	deep, _ := get(again, "m").(parse.Map).Get("k")
+	if get(again, "n") != json.Number("10") || get(again, "l").([]any)[0] != json.Number("1") || deep.([]any)[0] != json.Number("1") {
 		t.Errorf("mutating the copy reached the entry: %#v", again)
 	}
 }
@@ -194,7 +207,25 @@ func TestTypedFrontmatterFollowsWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	fm := e.TypedFrontmatter()
-	if _, ok := fm["done"]; ok || fm["status"] != "todo" {
+	status, _ := fm.Get("status")
+	if _, ok := fm.Get("done"); ok || status != "todo" {
 		t.Errorf("typed frontmatter after writes = %#v", fm)
+	}
+}
+
+// An entry marshals with _path first, then its keys in file order at every
+// depth; a frontmatter key named _path doesn't replace the entry's path.
+func TestMapJSONFileOrder(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: note\nz: 1\n_path: /elsewhere.md\nm: {y: [b, {d: 1, c: 2}], x: true}\n---\nbody\n",
+	})
+	e, err := idx.Resolve("/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := json.Marshal(e)
+	if want := `{"_path":"/a.md","type":"note","z":1,"m":{"y":["b",{"d":1,"c":2}],"x":true}}`; err != nil || string(got) != want {
+		t.Errorf("got %s, %v\nwant %s", got, err, want)
 	}
 }

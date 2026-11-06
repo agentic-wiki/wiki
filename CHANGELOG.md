@@ -2,6 +2,64 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.15.0
+
+### Breaking
+
+- **Frontmatter is read by yaml.v3, the same parser `check` uses.** Values read as YAML reads them:
+  - escapes (`''`, `\"`) are decoded, and spaces inside quotes are kept;
+  - `>` text is folded, and `|` keeps its final newline;
+  - a value continued on the next line is joined with a space;
+  - empty list items (`""`, `''`, a bare `-`) are kept;
+  - anchors, aliases and `!!str` are applied;
+  - a quoted key loses its quotes, and keys are matched by their text, whatever their tag.
+
+  Rule T is unchanged, and dates stay as written.
+- **Nested values are read.** `--format json` and `jsonl` give maps as JSON objects and lists as arrays, to any depth. Wherever a value must be text (csv/tsv cells, `property`, `--where`, and the library's `Field` and `Frontmatter`), a list or map is one line of YAML in flow style: `{income: 2025-12-31, balance: 2025-09-30}`. `FieldList` still gives a list's items. `--where` matches a list by any item, and a map by its whole flow text.
+- **A list in a csv/tsv cell is one line of YAML** (`[finance, 10-K]`), not JSON. JSON appears only in `--format json` and `jsonl`. Strings that another YAML reader would type (`yes`, `0x1F`, `"10"`) are quoted.
+- **`--format json` lists keys in file order, with `_path` first. Nested maps are in file order in every format. jsonl, csv and tsv keep one column order across entries.**
+- **A header that isn't valid YAML reads with no fields.** Every command except `check` warns, naming the file (`wiki: warning: /x.md: frontmatter not read (line 3: …); run wiki check`). Writes refuse it.
+- **Writes refuse a header wiki can't edit safely** (the library's `Entry.SetField`, `SetFields`, `SetFieldList` and `UnsetField`, and `check --fix`), and `check` reports it. That is a header whose keys aren't each a scalar key at column 0 (a flow-map header, a `?` key). A refusal names the file: `frontmatter of /x.md can't be edited safely: line 3 …`.
+- **A write is refused when its result wouldn't read back the same**: when the header would no longer read (an anchor removed while an alias still names it, a limit passed), or when another key would change value through an anchor. Nothing is written.
+- **A key written twice refuses a write** with `frontmatter has key "k" twice (lines 2 and 4); …`.
+- **`move --include-frontmatter` follows the same rules, file by file.** A file whose rewrite would be refused (a header wiki can't edit safely, a key written twice with a reference in any of its occurrences, a result that wouldn't read back as planned) keeps its frontmatter as it is, with a warning naming the file and the reason, and the move goes on, body links included. A rewritten key written twice used to stop the whole move. A new value is quoted when it needs it (`related: "/x: y.md"`, `spec: "/lib/c.md#usage"`).
+- **Library:**
+  - `parse.ShapeIssues` is replaced by `parse.CheckFrontmatter`;
+  - `Entry.TypedFrontmatter` returns `parse.Map`, with keys in file order, as a deep copy;
+  - `parse.Scan`, `Header`, `Field` and `TypedFrontmatter` are removed;
+  - a write's refusal is a `*parse.EditError`.
+
+### Added
+
+- `parse.ReadFrontmatter` (both views from one decode).
+- `parse.Body` (the body, without a decode).
+- `parse.Flow` (one line of YAML for a value).
+- `parse.Map`, with `Get`, `Clone` and `MarshalJSON`.
+- `parse.Empty`, the one "no value" test.
+- `parse.CheckFrontmatter` (the syntax error, then the shape issues).
+- `parse.EditError` (why a write refused, with the file's `Path`).
+- `parse.RewriteValues` (respell frontmatter values item by item, asking a callback about every value of every occurrence, under the same checks as `SetField`).
+- `index.Entry.FrontmatterErr` (why a header wasn't read).
+- `index.MoveResult.Warnings` (the files whose frontmatter a move left as it is, and why; not in the json result).
+
+### Changed
+
+- **`check` accepts nested maps and lists of maps.** It still reports a key that is a list or an object. It now also reports merge keys (`<<`), keys written with escapes, and headers wiki can't edit safely. It no longer reports a value continued on the next line.
+- **`--where k=` matches `k: ~` and `k: null`.** One test of "no value" now serves `--where k=`, empty csv cells and `property`: absent, null, `""`, `[]`, `{}`, or a list of empty items. `property` skips empty items.
+- A duplicate key is now found by its text alone, at any depth: `status` and `!x status` are the same key.
+- A header over 1 MiB, or one whose read expands to more than 10,000 values or 1 MiB of text (through aliases or flow text), is refused by both `check` and the read.
+- A value holding `?` is written quoted, by `SetField`/`SetFieldList` and in flow text: yaml.v3 can't read `[Why?, b]`.
+- Writes (`SetField`, `UnsetField`) and `move` edit a header whose value continues on an unindented line, as YAML reads it, instead of refusing; `check` no longer reports it.
+- A key such as `a:b` can be written.
+- A key that YAML wouldn't read back as itself can't be written: one starting with a YAML indicator (`[`, `{`, `*`, `'`, `%`, `@`, `|`), and `~`, `null` or `<<`.
+- `check --fix` names the file when it can't edit the root `index.md`.
+
+### Fixed
+
+- `'company''s'` reads `company's`, and `'text '` keeps its space (71 pages in the reporting team's wiki).
+- `Entry.SetField` on a quoted key (`"my key": v`) replaces it instead of adding a second key.
+- `move --include-frontmatter` no longer rewrites a path in a trailing comment.
+
 ## v0.14.0
 
 ### Breaking

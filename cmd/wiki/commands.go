@@ -230,12 +230,13 @@ func emitEntries(format string, lines []string, entries []*index.Entry, keys []s
 // entry uses, in byte order. A key in keys that no entry has is still a column,
 // with one warning on stderr per key.
 func entryRows(entries []*index.Entry, keys []string) output.Rows {
-	fms := make([]map[string]any, len(entries))
+	fms := make([]map[string]any, len(entries)) // a lookup per entry, so many keys cost their number
 	used := map[string]bool{}
 	for i, e := range entries {
-		fms[i] = e.TypedFrontmatter()
-		for k := range fms[i] {
-			used[k] = true
+		fms[i] = map[string]any{}
+		for _, p := range e.TypedFrontmatter() {
+			fms[i][p.Key] = p.Value
+			used[p.Key] = true
 		}
 	}
 	if keys == nil {
@@ -463,7 +464,7 @@ func cmdCheck(args []string) int {
 	format := formatFlag(fs)
 	fix := fs.Bool("fix", false, "apply safe repairs, e.g. sync okf_version (writes files)")
 	fs.Parse(args)
-	idx, code := loadIndex()
+	idx, code := buildIndex() // check reports unreadable headers as errors: no warnings
 	if code != 0 {
 		return code
 	}
@@ -477,7 +478,7 @@ func cmdCheck(args []string) int {
 		}
 		fixes = applied
 		if len(applied) > 0 { // re-read so remaining issues reflect the writes
-			if rebuilt, c := loadIndex(); c == 0 {
+			if rebuilt, c := buildIndex(); c == 0 {
 				idx = rebuilt
 			}
 		}
@@ -838,6 +839,9 @@ func cmdMove(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
+	}
+	for _, w := range res.Warnings {
+		fmt.Fprintln(os.Stderr, "wiki: warning:", w)
 	}
 	return emitMove(res, *dryRun, *format)
 }

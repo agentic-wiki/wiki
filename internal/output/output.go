@@ -14,6 +14,8 @@ import (
 	"io"
 	"reflect"
 	"strings"
+
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // Rows is a result as a table: the column names and one row of values per
@@ -138,25 +140,36 @@ func omitted(f reflect.Value) bool {
 	return f.IsZero()
 }
 
-// Cell is the one rule for a csv or tsv cell: nil, Missing, or an empty list or
-// map is an empty cell, a string is itself, and anything else is its compact
-// JSON, without HTML escaping: a number as written, true/false, a list as
-// `["a","b"]`.
+// Cell is the one rule for a csv or tsv cell, for the values rows carry:
+// frontmatter values (a string, json.Number, bool, nil, []any or parse.Map),
+// string lists, and a command's own numbers. Missing, and a value for which
+// parse.Empty holds (nil, "", an empty list or map, a list of empty items), is
+// an empty cell. A string is itself. A list or map is one line of YAML in flow
+// style (parse.Flow), so JSON appears only in json and jsonl output. A number
+// is as written, a bool true or false.
 func Cell(v any) string {
 	switch x := v.(type) {
-	case nil, missing:
+	case missing:
 		return ""
 	case string:
 		return x
+	case []string:
+		items := make([]any, len(x))
+		for i, s := range x {
+			items[i] = s
+		}
+		v = items
 	}
-	if rv := reflect.ValueOf(v); (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Map) && rv.Len() == 0 {
+	if parse.Empty(v) {
 		return ""
 	}
-	b, err := compactJSON(v)
-	if err != nil {
-		return fmt.Sprint(v) // not JSON-encodable, which no command result is
+	switch x := v.(type) {
+	case []any, parse.Map:
+		return parse.Flow(x)
+	case json.Number:
+		return string(x)
 	}
-	return string(b)
+	return fmt.Sprint(v) // a bool, or a command's int (a line, a count)
 }
 
 // compactJSON encodes v as one line of JSON, without HTML escaping: rows are

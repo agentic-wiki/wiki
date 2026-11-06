@@ -1,6 +1,7 @@
 package parse
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -215,10 +216,10 @@ func TestWriteEachSpanShape(t *testing.T) {
 			continue
 		}
 		content := "---\n" + strings.Join(row.lines, "\n") + "\n---\nb\n"
-		h, _ := Scan(content)
-		var owned []Field
-		for _, f := range h.Fields {
-			if f.Key == row.read {
+		h, _ := scanLayout(content)
+		var owned []field
+		for _, f := range h.fields {
+			if f.key == row.read {
 				owned = append(owned, f)
 			}
 		}
@@ -235,7 +236,7 @@ func TestWriteEachSpanShape(t *testing.T) {
 		}
 		f := owned[0]
 		lines := strings.Split(content, "\n")
-		before, after := strings.Join(lines[:f.Line], "\n"), strings.Join(lines[f.End+1:], "\n")
+		before, after := strings.Join(lines[:f.line], "\n"), strings.Join(lines[f.end+1:], "\n")
 		// The span becomes the one key line; how the value is quoted is TestSetFieldShapes' job.
 		if !strings.HasPrefix(set, before+"\n"+row.read+": ") || !strings.HasSuffix(set, "\n"+after) || strings.Count(set, "\n") != strings.Count(before+"\nk\n"+after, "\n") {
 			t.Errorf("%q: SetField wrote %q, want %q, one key line, then %q", row.lines, set, before, after)
@@ -272,7 +273,7 @@ func TestWriteReplacesWholeSpans(t *testing.T) {
 // A key is valid when the scanner reads `key: x` back as exactly that key, and
 // it doesn't start with _ (reserved for _path).
 func TestWriteKeyValidity(t *testing.T) {
-	invalid := `can't be written: it would not read back as the same key (a key can't start with a space, "-" or "#", or contain ":" or " #")`
+	invalid := `can't be written: it would not read back as the same key (a key can't start with a space or a YAML indicator such as "-", "#", "[" or "*", or be null or "<<")`
 	for key, want := range map[string]string{
 		"k":          "",
 		"my key":     "",
@@ -281,10 +282,22 @@ func TestWriteKeyValidity(t *testing.T) {
 		"- k":        invalid,
 		"# k":        invalid,
 		"a #b":       invalid,
-		"a:b":        invalid,
+		"a:b":        "", // YAML reads `a:b: x` as the key a:b
+		"a: b":       invalid,
 		"k ":         invalid,
 		"":           invalid,
 		"a\nb":       invalid,
+		"[a":         invalid,
+		"{a":         invalid,
+		"*a":         invalid,
+		"'a":         invalid,
+		"%a":         invalid,
+		"@a":         invalid,
+		"|a":         invalid,
+		"~":          invalid,
+		"null":       invalid,
+		"<<":         invalid,
+		"why?":       "",
 		"_x":         `is reserved (leading underscore)`,
 	} {
 		for name, write := range map[string]func() (string, error){
@@ -307,7 +320,7 @@ func TestWriteKeyValidity(t *testing.T) {
 // other keys writable.
 func TestWriteDuplicateKey(t *testing.T) {
 	const content = "---\nk: 1\nt: x\nk: 2\n---\n"
-	want := `key "k" appears twice in frontmatter (lines 2 and 4); fix the file first (wiki check reports it)`
+	want := `frontmatter has key "k" twice (lines 2 and 4); fix the file first (wiki check reports it)`
 	for name, write := range map[string]func() (string, error){
 		"SetField":     func() (string, error) { return SetField(content, "k", "3") },
 		"SetFieldList": func() (string, error) { return SetFieldList(content, "k", []string{"3"}) },
@@ -422,5 +435,207 @@ func TestRuleW(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("%q: got %q, %v\nwant %q", tc.before, got, err, want)
 		}
+	}
+}
+
+// Rule W on a list of maps: it counts as a string, so a number set in its
+// place is quoted.
+func TestOldTypeNested(t *testing.T) {
+	content := "---\nraw:\n  - path: a.pdf\n    pages: 40\n---\n"
+	got, err := SetField(content, "raw", "5")
+	if want := "---\nraw: \"5\"\n---\n"; err != nil || got != want {
+		t.Errorf("got %q, %v; want %q", got, err, want)
+	}
+}
+
+// Headers wiki can't edit safely: every write refuses with the reason, and
+// nothing is returned to write. Shade's cases C and D (keys not at column 0),
+// and a header that isn't valid YAML.
+func TestWriteRefusesUneditable(t *testing.T) {
+	const notAKey = "line %d is not a key on its own line at column 0"
+	for name, tc := range map[string]struct {
+		header, why string
+		line        int
+	}{
+		"C: a flow-map header": {"{title: x, type: note}", notAKey, 2},
+		"D: a ? key":           {"? title\n: x\ntype: note", notAKey, 2},
+		"not valid YAML":       {"title: Fix: x\ntype: note", "not read (line %d: ", 2},
+	} {
+		content := "---\n" + tc.header + "\n---\n# Body\n"
+		why := fmt.Sprintf(tc.why, tc.line)
+		for write, fn := range map[string]func() (string, error){
+			"SetField title":   func() (string, error) { return SetField(content, "title", "new") },
+			"SetField status":  func() (string, error) { return SetField(content, "status", "done") },
+			"SetFieldList":     func() (string, error) { return SetFieldList(content, "tags", []string{"x"}) },
+			"UnsetField title": func() (string, error) { return UnsetField(content, "title") },
+			"UnsetField type":  func() (string, error) { return UnsetField(content, "type") },
+		} {
+			got, err := fn()
+			var refused *EditError
+			if got != "" || !errors.As(err, &refused) || !strings.Contains(err.Error(), why) {
+				t.Errorf("%s: %s: %q, %v; want a refusal saying %q", name, write, got, err, why)
+			}
+		}
+	}
+	// A real comment line at column 0 between keys doesn't block a write.
+	got, err := SetField("---\ntitle: x\n# note\ntype: note\n---\n", "type", "task")
+	if want := "---\ntitle: x\n# note\ntype: task\n---\n"; err != nil || got != want {
+		t.Errorf("# note between keys: %q, %v", got, err)
+	}
+}
+
+// A value continued on an unindented line is YAML's own reading, and writes
+// edit it as such, byte for byte: Shade's cases A, B, E1, E2 and `foo #bar"`.
+// Each key's lines run to the next key's line.
+func TestWriteEditsContinuedValues(t *testing.T) {
+	for name, tc := range map[string]struct {
+		header string
+		want   map[string]string // the write, to the header after it
+	}{
+		"A: a key line inside a quoted scalar": {"title: \"first\nstatus: x\"\ntype: note", map[string]string{
+			"set title":  "title: \"new\"\ntype: note",
+			"set status": "title: \"first\nstatus: x\"\ntype: note\nstatus: done",
+			"unset type": "title: \"first\nstatus: x\"",
+		}},
+		"B: a key line inside a flow list": {"tags: [a,\nstatus: b]\ntype: note", map[string]string{
+			"set tags":   "tags: [x]\ntype: note",
+			"set status": "tags: [a,\nstatus: b]\ntype: note\nstatus: done",
+			"unset tags": "type: note",
+		}},
+		"E1: a quoted value continued at column 0": {"title: \"Ship it\nsoon\"\ntype: note", map[string]string{
+			"set title":   "title: \"new\"\ntype: note",
+			"set status":  "title: \"Ship it\nsoon\"\ntype: note\nstatus: done",
+			"unset title": "type: note",
+		}},
+		"E2: a flow list continued at column 0": {"tags: [a,\nb]\ntype: note", map[string]string{
+			"set tags":   "tags: [x]\ntype: note",
+			"unset type": "tags: [a,\nb]",
+		}},
+		"a # inside a continued quoted value": {"title: \"a\nfoo #bar\"\ntype: note", map[string]string{
+			"set title":   "title: \"new\"\ntype: note",
+			"unset title": "type: note",
+		}},
+	} {
+		content := "---\n" + tc.header + "\n---\n# Body\n"
+		for write, want := range tc.want {
+			op, key, _ := strings.Cut(write, " ")
+			var got string
+			var err error
+			switch {
+			case op == "unset":
+				got, err = UnsetField(content, key)
+			case key == "tags":
+				got, err = SetFieldList(content, key, []string{"x"})
+			case key == "title":
+				got, err = SetField(content, key, "new")
+			default:
+				got, err = SetField(content, key, "done")
+			}
+			if want := "---\n" + want + "\n---\n# Body\n"; err != nil || got != want {
+				t.Errorf("%s: %s: %v\n got %q\nwant %q", name, write, err, got, want)
+			}
+		}
+	}
+}
+
+// nestedAndQuoted is a header holding the requester's nested shapes and every
+// kind of quoted text whose reading changed: rows 1–3, 13 and 15 of the ADR's
+// Decision 8.
+const nestedAndQuoted = "---\n" +
+	"type: dataset\n" +
+	"raw:\n  - path: a.pdf # first\n    meta:\n      form: 10-K\n  - &r {path: b.pdf, pages: 2}\n" +
+	"data_as_of:\n  income: 2025-12-31\n\n  balance: 2025-09-30\n" +
+	"a: 'company''s'\nb: 'text '\nc: \" a \"\nd: \"a \\\"q\\\"\"\ne: \"\\t\\u00e9\"\n" +
+	"f: [\"\", a]\ng:\n  - ''\n  -\nh: \"x\n  y\"\n" +
+	"status: open # now\n" +
+	"---\n# Body\n"
+
+// Setting or removing a key changes no other byte, next to nested values and
+// quoted text.
+func TestSetFieldKeepsNestedAndQuotedBytes(t *testing.T) {
+	got, err := SetField(nestedAndQuoted, "status", "done")
+	if want := strings.Replace(nestedAndQuoted, "status: open # now", "status: done # now", 1); err != nil || got != want {
+		t.Errorf("set: %v\n got %q\nwant %q", err, got, want)
+	}
+	got, err = UnsetField(nestedAndQuoted, "status")
+	if want := strings.Replace(nestedAndQuoted, "status: open # now\n", "", 1); err != nil || got != want {
+		t.Errorf("unset: %v\n got %q\nwant %q", err, got, want)
+	}
+	got, err = SetField(nestedAndQuoted, "owner", "ana")
+	if want := strings.Replace(nestedAndQuoted, "status: open # now\n", "status: open # now\nowner: ana\n", 1); err != nil || got != want {
+		t.Errorf("add: %v\n got %q\nwant %q", err, got, want)
+	}
+}
+
+// Removing a nested value removes all its lines, and nothing else.
+func TestUnsetNestedRemovesItsLines(t *testing.T) {
+	got, err := UnsetField(nestedAndQuoted, "raw")
+	if want := strings.Replace(nestedAndQuoted, "raw:\n  - path: a.pdf # first\n    meta:\n      form: 10-K\n  - &r {path: b.pdf, pages: 2}\n", "", 1); err != nil || got != want {
+		t.Errorf("raw: %v\n got %q\nwant %q", err, got, want)
+	}
+	got, err = UnsetField(nestedAndQuoted, "data_as_of")
+	if want := strings.Replace(nestedAndQuoted, "data_as_of:\n  income: 2025-12-31\n\n  balance: 2025-09-30\n", "", 1); err != nil || got != want {
+		t.Errorf("data_as_of: %v\n got %q\nwant %q", err, got, want)
+	}
+}
+
+// Every write reads its result back: one that would leave the header
+// unreadable, here an anchor removed while an alias still names it, is refused,
+// and nothing is returned to write.
+func TestWriteRefusesBreakingTheHeader(t *testing.T) {
+	const values = "---\nbase: &b {form: 10-K}\ncopy: *b\n---\n"
+	const keys = "---\na: &k status\n*k : open\n---\n"
+	for name, write := range map[string]func() (string, error){
+		"unset base":                   func() (string, error) { return UnsetField(values, "base") },
+		"set base x":                   func() (string, error) { return SetField(values, "base", "x") },
+		"set base [x]":                 func() (string, error) { return SetFieldList(values, "base", []string{"x"}) },
+		"set the anchored key's value": func() (string, error) { return SetField(keys, "a", "x") },
+	} {
+		got, err := write()
+		var ee *EditError
+		if got != "" || !errors.As(err, &ee) || !strings.Contains(err.Error(), "would not read after this write") || !strings.Contains(err.Error(), "unknown anchor") {
+			t.Errorf("%s: %q, %v; want a refusal naming the unknown anchor", name, got, err)
+		}
+	}
+	// A write that would make another key change value, through an alias that
+	// now names an earlier anchor, is refused too.
+	const rebound = "---\na: &s 1\nstatus: &s open\nother: *s\n---\n"
+	for name, write := range map[string]func() (string, error){
+		"set status":   func() (string, error) { return SetField(rebound, "status", "done") },
+		"unset status": func() (string, error) { return UnsetField(rebound, "status") },
+	} {
+		got, err := write()
+		if want := "frontmatter would change other through an anchor; nothing written"; got != "" || err == nil || err.Error() != want {
+			t.Errorf("%s: %q, %v; want %q", name, got, err, want)
+		}
+	}
+	// A write that would pass a budget is refused: here the 1 MiB header cap.
+	got, err := SetField(values, "big", strings.Repeat("x", 1<<20))
+	if want := "frontmatter would not read after this write (header larger than 1 MiB); nothing written"; got != "" || err == nil || err.Error() != want {
+		t.Errorf("set a 1 MiB value: %d bytes, %v; want %q", len(got), err, want)
+	}
+	// Writes that keep the anchor, or that touch the alias, go through.
+	if got, err := UnsetField(values, "copy"); err != nil || got != "---\nbase: &b {form: 10-K}\n---\n" {
+		t.Errorf("unset copy: %q, %v", got, err)
+	}
+	if got, err := SetField(values, "status", "done"); err != nil || got != "---\nbase: &b {form: 10-K}\ncopy: *b\nstatus: done\n---\n" {
+		t.Errorf("set status: %q, %v", got, err)
+	}
+}
+
+// A value holding ? is quoted, so a list written with it reads back as written.
+func TestSetFieldListQuestionMark(t *testing.T) {
+	values := []string{"Why?", "a?b", "a ?", "b"}
+	out, err := SetFieldList("---\ntype: note\n---\n", "tags", values)
+	if err != nil {
+		t.Fatal(err)
+	}
+	strs, _, _, err := ReadFrontmatter(out)
+	if err != nil || !reflect.DeepEqual(strs["tags"], values) {
+		t.Errorf("%q reads %#v, %v", out, strs["tags"], err)
+	}
+	out, err = SetField("---\ntype: note\n---\n", "q", "Why?")
+	if strs, _, _, _ := ReadFrontmatter(out); err != nil || strs["q"] != "Why?" {
+		t.Errorf("%q: %v", out, err)
 	}
 }

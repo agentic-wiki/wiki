@@ -18,7 +18,6 @@ func TestValidateFrontmatter(t *testing.T) {
 		"block values":                  "---\ntags:\n  - one\n  - two\nliteral: |\n  --- is text\n  another line\nfolded: >\n  first\n  second\n---\n",
 		"nested maps and aliases":       "---\nmeta: &meta\n  key: value\ncopy: *meta\n---\n",
 		"complex nested keys":           "---\nmeta:\n  ? [a, b]\n  : value\n---\n",
-		"recursive alias":               "---\nmeta: &meta {self: *meta}\n---\n",
 		"numbers and booleans":          "---\nversion: 0.1\nenabled: true\n---\n",
 		"crlf":                          "---\r\ntitle: \"Hello\"\r\n---\r\n# Body\r\n",
 		"closer at eof":                 "---\ntype: note\n---",
@@ -45,6 +44,8 @@ func TestValidateFrontmatter(t *testing.T) {
 		"opener only":                  "---",
 		"closer prefix is not a fence": "---\ntype: note\n---suffix\n",
 		"content after document end":   "---\ntype: note\n...\ntitle: Second\n---\n",
+		// The read refuses it (the value budget), so check does too.
+		"recursive alias": "---\nmeta: &meta {self: *meta}\n---\n",
 	}
 	for name, content := range invalid {
 		t.Run(name, func(t *testing.T) {

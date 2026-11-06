@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 func TestEmit(t *testing.T) {
@@ -55,7 +57,7 @@ func TestEmitCSV(t *testing.T) {
 	if err := Emit(&b, "csv", nil, rows); err != nil {
 		t.Fatal(err)
 	}
-	want := "path,count,done,tags\n/a.md,2,true,\"[\"\"x\"\",\"\"<y>\"\"]\"\n\"has,comma\",0,false,\n"
+	want := "path,count,done,tags\n/a.md,2,true,\"[x, \"\"<y>\"\"]\"\n\"has,comma\",0,false,\n" // a list is its Flow
 	if b.String() != want {
 		t.Errorf("csv:\n got %q\nwant %q", b.String(), want)
 	}
@@ -64,7 +66,7 @@ func TestEmitCSV(t *testing.T) {
 func TestEmitTSV(t *testing.T) {
 	var b bytes.Buffer
 	Emit(&b, "tsv", nil, []*sample{{Path: "/a.md", Count: 1, Tags: []string{"x"}}})
-	if want := "path\tcount\tdone\ttags\n/a.md\t1\tfalse\t\"[\"\"x\"\"]\"\n"; b.String() != want {
+	if want := "path\tcount\tdone\ttags\n/a.md\t1\tfalse\t[x]\n"; b.String() != want {
 		t.Errorf("tsv:\n got %q\nwant %q", b.String(), want)
 	}
 }
@@ -102,11 +104,16 @@ func TestCell(t *testing.T) {
 		{json.Number("1.10"), "1.10"},
 		{true, "true"},
 		{3, "3"},
-		{[]string{"a", "b"}, `["a","b"]`},
-		{[]any{json.Number("1"), "<b>", nil}, `[1,"<b>",null]`},
+		{[]string{"a", "b"}, "[a, b]"},
+		{[]any{json.Number("1"), "<b>", nil}, `[1, "<b>", null]`},
+		{[]any{"10", "yes"}, `["10", "yes"]`},
+		{[]any{"", nil}, ""},
+		{parse.Map{{Key: "income", Value: "2025-12-31"}}, "{income: 2025-12-31}"},
+		{parse.Map{}, ""},
 		{[]string{}, ""},
 		{[]string(nil), ""},
-		{map[string]int{"a": 1}, `{"a":1}`},
+		{[]any{[]any{}}, ""},
+		{false, "false"},
 	} {
 		if got := Cell(tc.v); got != tc.want {
 			t.Errorf("Cell(%#v) = %q, want %q", tc.v, got, tc.want)
@@ -174,7 +181,7 @@ func TestEmitJSONL(t *testing.T) {
 	// csv of the same rows: Missing and nil are both empty cells
 	b.Reset()
 	EmitRows(&b, "csv", nil, nil, rows)
-	if want := "_path,n,tags,z\n/a.md,10,\"[\"\"x\"\",\"\"<y>\"\"]\",\n/b.md,,,s\n"; b.String() != want {
+	if want := "_path,n,tags,z\n/a.md,10,\"[x, \"\"<y>\"\"]\",\n/b.md,,,s\n"; b.String() != want {
 		t.Errorf("csv:\n got %q\nwant %q", b.String(), want)
 	}
 	// an empty result is nothing in jsonl, the header alone in csv

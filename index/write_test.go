@@ -1,6 +1,7 @@
 package index
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -119,7 +120,7 @@ func TestSetFieldsIsOnePassAndDeterministic(t *testing.T) {
 func TestSetFieldsRejectsReservedKeys(t *testing.T) {
 	idx := build(t, map[string]string{"index.md": "---\nokf_version: \"0.1\"\n---\n", "a.md": "---\ntype: task\n---\n"})
 	e, _ := idx.Resolve("/a.md")
-	for _, key := range []string{"_path", "", "a:b"} {
+	for _, key := range []string{"_path", "", "a: b"} {
 		if err := e.SetField(key, "v"); err == nil {
 			t.Errorf("SetField(%q) should be rejected", key)
 		}
@@ -539,5 +540,97 @@ func TestRenameRetriesThenGivesUp(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {
 		t.Errorf("gave up after %v; the retry must stay bounded", elapsed)
+	}
+}
+
+// A refused write names the file, and the file is left as it was.
+func TestWriteRefusalNamesTheFile(t *testing.T) {
+	uneditable := "---\n{title: x, type: note}\n---\nbody\n" // a flow-map header
+	breaking := "---\ntype: note\nbase: &b {form: 10-K}\ncopy: *b\n---\nbody\n"
+	idx := build(t, map[string]string{"x.md": uneditable, "y.md": breaking})
+	for _, tc := range []struct {
+		path  string
+		write func(e *Entry) error
+		want  string
+	}{
+		{"/x.md", func(e *Entry) error { return e.SetField("type", "task") },
+			"frontmatter of /x.md can't be edited safely: line 2 is not a key on its own line at column 0; fix the file first (wiki check reports it)"},
+		{"/x.md", func(e *Entry) error { return e.UnsetField("type") },
+			"frontmatter of /x.md can't be edited safely: line 2 is not a key on its own line at column 0; fix the file first (wiki check reports it)"},
+		{"/y.md", func(e *Entry) error { return e.UnsetField("base") },
+			"frontmatter of /y.md would not read after this write (unknown anchor 'b' referenced); nothing written"},
+	} {
+		e, err := idx.Resolve(tc.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _ := e.Raw()
+		if err := tc.write(e); err == nil || err.Error() != tc.want {
+			t.Errorf("%s: %v\nwant %s", tc.path, err, tc.want)
+		}
+		if after, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, tc.path)); string(after) != before {
+			t.Errorf("%s changed: %q", tc.path, after)
+		}
+	}
+}
+
+// An unterminated header, and check --fix on a root index.md it can't edit,
+// are refused with the file named.
+func TestWriteRefusalNamesTheFileElsewhere(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\n{okf_version: \"0.2\", title: Home}\n---\nhome\n",
+		"u.md":     "---\ntype: note\nbody without a closing fence\n",
+	})
+	e, err := idx.Resolve("/u.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "frontmatter of /u.md not read (line 1: unterminated frontmatter (missing closing --- fence)); fix the file first"
+	if err := e.SetField("type", "task"); err == nil || err.Error() != want {
+		t.Errorf("unterminated: %v\nwant %s", err, want)
+	}
+	_, err = idx.Fix(false)
+	want = "frontmatter of /index.md can't be edited safely: line 2 is not a key on its own line at column 0; fix the file first (wiki check reports it)"
+	if err == nil || err.Error() != want {
+		t.Errorf("check --fix: %v\nwant %s", err, want)
+	}
+}
+
+// A quoted key is set in place, by its decoded text: the file keeps one key.
+func TestSetQuotedKeyEndToEnd(t *testing.T) {
+	idx := build(t, map[string]string{"x.md": "---\ntype: note\n\"my key\": v # kept\n---\nbody\n"})
+	e, err := idx.Resolve("/x.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.SetField("my key", "w"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "x.md"))
+	if want := "---\ntype: note\nmy key: w # kept\n---\nbody\n"; string(got) != want {
+		t.Errorf("file %q, want %q", got, want)
+	}
+	if e.Field("my key") != "w" || len(e.Frontmatter()) != 2 {
+		t.Errorf("read back: %#v", e.Frontmatter())
+	}
+}
+
+// An entry whose header doesn't read stays in the index with no fields, says
+// why, and keeps the body after its closing fence.
+func TestFrontmatterErr(t *testing.T) {
+	idx := build(t, map[string]string{"bad.md": "---\ntitle: Fix: x\ntype: note\n---\n# Body\n", "ok.md": "---\ntype: note\n---\n"})
+	bad, err := idx.Resolve("/bad.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := bad.Body()
+	if bad.FrontmatterErr() == nil || bad.Type != "" || len(bad.Frontmatter()) != 0 || body != "# Body\n" {
+		t.Errorf("err %v, type %q, fields %v, body %q", bad.FrontmatterErr(), bad.Type, bad.Frontmatter(), body)
+	}
+	if got, _ := json.Marshal(bad); string(got) != `{"_path":"/bad.md"}` {
+		t.Errorf("json %s", got)
+	}
+	if ok, _ := idx.Resolve("/ok.md"); ok.FrontmatterErr() != nil {
+		t.Errorf("ok.md: %v", ok.FrontmatterErr())
 	}
 }

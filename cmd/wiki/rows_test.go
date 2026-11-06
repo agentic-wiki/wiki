@@ -40,7 +40,7 @@ func TestRowsPerCommand(t *testing.T) {
 		code       int
 	}{
 		{"list", cmdList, nil,
-			"_path,type,n,okf_version,tags,title\n/data.md,note,,,,\n/flat.md,note,,,,\n/guide.md,note,10,,\"[\"\"a\"\",\"\"b\"\"]\",Guide\n/index.md,,,0.1,,\n",
+			"_path,type,n,okf_version,tags,title\n/data.md,note,,,,\n/flat.md,note,,,,\n/guide.md,note,10,,\"[a, b]\",Guide\n/index.md,,,0.1,,\n",
 			`{"_path":"/data.md","type":"note"}` + "\n" + `{"_path":"/flat.md","type":"note"}` + "\n" + `{"_path":"/guide.md","type":"note","n":10,"tags":["a","b"],"title":"Guide"}` + "\n" + `{"_path":"/index.md","okf_version":"0.1"}` + "\n", 0},
 		{"orphans", cmdOrphans, nil, "_path,type\n/data.md,note\n", `{"_path":"/data.md","type":"note"}` + "\n", 0},
 		{"orphans --fields", cmdOrphans, []string{"--fields", "type"}, "_path,type\n/data.md,note\n", "", -1},
@@ -135,7 +135,7 @@ func TestRowsCheckFix(t *testing.T) {
 func TestRowsInit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	out, code := capture(t, func() int { return cmdInit([]string{"--format", "csv"}) })
-	want := "dir,files\n.,\"[\"\"AGENTS.md\"\",\"\".gitignore\"\",\"\"WORKFLOW.md\"\",\"\"index.md\"\",\"\"wiki.toml\"\",\"\"CLAUDE.md\"\"]\"\n"
+	want := "dir,files\n.,\"[AGENTS.md, .gitignore, WORKFLOW.md, index.md, wiki.toml, CLAUDE.md]\"\n" // a list is its Flow
 	if out != want || code != 0 {
 		t.Errorf("init: exit %d\n got %q\nwant %q", code, out, want)
 	}

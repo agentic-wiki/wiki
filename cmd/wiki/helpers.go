@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/index"
@@ -14,7 +15,26 @@ import (
 // loadIndex discovers the bundle (from --root if given, else the current
 // directory) and builds the index. On failure it prints to stderr and returns
 // a non-zero exit code.
+//
+// It is the one place that warns about unreadable headers: one stderr line per
+// entry whose frontmatter couldn't be read, whether or not the command shows
+// that entry, and with no change to the exit code. check, which reports these
+// entries as errors, calls buildIndex instead.
 func loadIndex() (*index.Index, int) {
+	idx, code := buildIndex()
+	if idx == nil {
+		return nil, code
+	}
+	for _, e := range idx.Entries {
+		if err := e.FrontmatterErr(); err != nil {
+			fmt.Fprintf(os.Stderr, "wiki: warning: %s: frontmatter not read (%s); run wiki check\n", e.Path, strings.TrimPrefix(err.Error(), "yaml: "))
+		}
+	}
+	return idx, code
+}
+
+// buildIndex is loadIndex without the warnings.
+func buildIndex() (*index.Index, int) {
 	start := rootDir
 	if start == "" {
 		cwd, err := os.Getwd()

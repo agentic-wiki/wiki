@@ -144,7 +144,7 @@ func (idx *Index) dumpText(e *Entry, resolve func(target, from string) string, w
 	raw = strings.Join(lines, "\n")
 	raw = strings.ReplaceAll(strings.TrimPrefix(raw, "\uFEFF"), "\r\n", "\n")
 
-	_, body := parse.Frontmatter(raw)
+	body := parse.Body(raw)
 	head := raw[:len(raw)-len(body)]
 	body = parse.MapInternalLinks(body, func(target string) string {
 		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, target)

@@ -4,6 +4,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -505,7 +506,7 @@ func TestMoveIncludeFrontmatterRelative(t *testing.T) {
 		t.Errorf("moved file's own refs should be normalized: %q", moved)
 	}
 	// An anchor survives the normalization.
-	if !strings.Contains(moved, "spec: /lib/c.md#usage") {
+	if !strings.Contains(moved, `spec: "/lib/c.md#usage"`) { // quoted by the one rule: it holds a #
 		t.Errorf("anchor should be preserved: %q", moved)
 	}
 	// Values that are not `.md` paths are metadata, not refs, even though they
@@ -1561,7 +1562,7 @@ func TestVocabularyCommandsTakeWhere(t *testing.T) {
 }
 
 // A guard, not a regression test: move --include-frontmatter rewrites the items
-// after a bare `-`, because it rewrites the lines parse.Scan says the key owns,
+// after a bare `-`, because it rewrites the lines the key owns (its YAML span),
 // the same span the parser reads.
 func TestMoveIncludeFrontmatterAfterBareDash(t *testing.T) {
 	idx := build(t, map[string]string{
@@ -1578,15 +1579,17 @@ func TestMoveIncludeFrontmatterAfterBareDash(t *testing.T) {
 	}
 }
 
-// A file the move would rewrite whose rewritten key appears twice stops the
-// move while it is planned: nothing is written, dry run included. A duplicated
-// key the move doesn't rewrite doesn't block it.
-func TestMoveIncludeFrontmatterRefusesDuplicateKey(t *testing.T) {
+// A file whose rewritten key appears twice keeps its frontmatter as it is,
+// with a warning naming the file and the reason, and the move goes on: the
+// file's body links are still rewritten. Every occurrence is asked about, so a
+// reference in either the first or the last gives the warning. A duplicated
+// key the move doesn't rewrite doesn't stop that file's rewrite.
+func TestMoveIncludeFrontmatterSkipsDuplicateKey(t *testing.T) {
 	files := map[string]string{
 		"index.md":      "---\nokf_version: \"0.1\"\n---\n",
 		"epics/auth.md": "---\ntype: note\n---\nepic\n",
 	}
-	want := `move: /a.md: key "related" appears twice in frontmatter (lines 3 and 5); fix the file first (wiki check reports it)`
+	want := []string{`frontmatter of /a.md has key "related" twice (lines 3 and 5); fix the file first (wiki check reports it); its frontmatter references are left as they are`}
 	for _, a := range []string{
 		// The reference in the first occurrence, which a read doesn't keep, and in the last.
 		"---\ntype: note\nrelated: /epics/auth.md\nstatus: x\nrelated: /index.md\n---\nlink [e](./epics/auth.md)\n",
@@ -1595,14 +1598,16 @@ func TestMoveIncludeFrontmatterRefusesDuplicateKey(t *testing.T) {
 		files["a.md"] = a
 		for _, dryRun := range []bool{true, false} {
 			idx := build(t, files)
-			_, err := idx.Move("/epics/auth.md", "/epics/authn.md", dryRun, true)
-			if err == nil || err.Error() != want {
-				t.Fatalf("dry run %v: err = %v, want %q", dryRun, err, want)
+			res, err := idx.Move("/epics/auth.md", "/epics/authn.md", dryRun, true)
+			if err != nil || !slices.Equal(res.Warnings, want) {
+				t.Fatalf("dry run %v: %v, warnings %q", dryRun, err, res.Warnings)
 			}
-			for rel, content := range files {
-				if got, err := os.ReadFile(filepath.Join(idx.Bundle.Dir, rel)); err != nil || string(got) != content {
-					t.Errorf("dry run %v: %s changed (or moved): %q, %v", dryRun, rel, got, err)
-				}
+			wantA := a
+			if !dryRun {
+				wantA = strings.Replace(a, "](./epics/auth.md)", "](./epics/authn.md)", 1)
+			}
+			if got, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "a.md")); string(got) != wantA {
+				t.Errorf("dry run %v: a.md = %q, want %q", dryRun, got, wantA)
 			}
 		}
 	}

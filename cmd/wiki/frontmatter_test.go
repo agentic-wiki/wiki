@@ -93,21 +93,26 @@ func TestCmdCheckAcceptsValidFrontmatter(t *testing.T) {
 	}
 }
 
-// A nested map, and an alias to it, are valid YAML: never a syntax error, only
-// the shape issue, one per key.
-func TestCmdCheckReportsNestedAnchor(t *testing.T) {
+// A nested map, and an alias to it, are valid YAML and pass check. A merge key
+// through that alias is reported once, where it is written: the alias is not
+// followed.
+func TestCmdCheckNestedAnchor(t *testing.T) {
 	t.Chdir(writeBundle(t))
 	const nested = "---\r\ntype: note\r\nbase: &base\r\n  key: value\r\ncopy: *base\r\n---\r\n# Body\r\n"
 	if err := os.WriteFile("guide.md", []byte(nested), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out, code := capture(t, func() int { return cmdCheck(nil) })
-	want := []string{
-		`/guide.md: line 3: "base" holds a nested object; values are scalars or lists of scalars (flatten it, e.g. base_key: value)`,
-		`/guide.md: line 5: "copy" holds a nested object; values are scalars or lists of scalars (flatten it, e.g. copy_key: value)`,
-	}
-	if code != 1 || strings.Contains(out, "invalid frontmatter") || strings.Count(out, "\n") != len(want) || !inOrder(out, want...) {
+	if out, code := capture(t, func() int { return cmdCheck(nil) }); code != 0 || out != "ok: no issues found\n" {
 		t.Errorf("nested map: exit=%d output=%s", code, out)
+	}
+	merged := strings.Replace(nested, "copy: *base\r\n", "copy:\r\n  <<: *base\r\nmore: *base\r\n", 1)
+	if err := os.WriteFile("guide.md", []byte(merged), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, code := capture(t, func() int { return cmdCheck(nil) })
+	want := `/guide.md: line 6: "<<" merges keys, which wiki does not read; write the keys out`
+	if code != 1 || strings.Contains(out, "invalid frontmatter") || strings.Count(out, "\n") != 1 || !strings.Contains(out, want) {
+		t.Errorf("merge key: exit=%d output=%s", code, out)
 	}
 }
 
@@ -136,14 +141,14 @@ func TestCmdListJSONTyped(t *testing.T) {
 	if err := json.Compact(&compact, got[0]); err != nil {
 		t.Fatal(err)
 	}
-	want := `{"_path":"/e.md","b":true,"d":"2026-06-30","l":[1,2.5],"n":10,"s":"7372","type":"entry","x":0.2,"z":null}`
+	want := `{"_path":"/e.md","type":"entry","n":10,"x":0.2,"b":true,"z":null,"s":"7372","l":[1,2.5],"d":"2026-06-30"}` // keys in file order
 	if compact.String() != want {
 		t.Errorf("list --format json\n got %s\nwant %s", compact.String(), want)
 	}
 }
 
-// --where compares text on the string view, as before: a quoted and an unquoted
-// 10 match alike, and key= matches an empty value but not null or ~.
+// --where compares text on the string view: a quoted and an unquoted 10 match
+// alike. key= matches no value by parse.Empty: empty, null and ~ alike.
 func TestCmdListWhereComparesText(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -159,7 +164,7 @@ func TestCmdListWhereComparesText(t *testing.T) {
 	}
 	for where, want := range map[string]string{
 		"n=10":   "/bare.md /quoted.md",
-		"epoch=": "/bare.md",
+		"epoch=": "/bare.md /other.md /quoted.md",
 	} {
 		out, code := capture(t, func() int { return cmdList([]string{"--where", where}) })
 		var paths []string
@@ -188,12 +193,12 @@ func writeCSVBundle(t *testing.T) {
 }
 
 // Without --fields: _path, type, then every other key any listed entry uses, in
-// byte order. A missing key and null are empty cells; a list is its JSON text.
+// byte order. A missing key and null are empty cells; a list is its Flow.
 func TestCmdListCSVColumns(t *testing.T) {
 	writeCSVBundle(t)
 	out, errOut, code := captureAll(t, func() int { return cmdList([]string{"--format", "csv"}) })
 	want := "_path,type,b,d,l,n,s,x,z\n" +
-		"/a.md,entry,true,,\"[1,\"\"a,b\"\",\"\"<i>\"\"]\",10,7372,0.2,\n" +
+		"/a.md,entry,true,,\"[1, \"\"a,b\"\", \"\"<i>\"\"]\",10,7372,0.2,\n" +
 		"/b.md,entry,,2026-06-30,,7,,,\n"
 	if code != 0 || out != want || errOut != "" {
 		t.Errorf("list --format csv: exit %d, stderr %q\n got %q\nwant %q", code, errOut, out, want)
@@ -276,31 +281,21 @@ func TestCmdOrphansJSONTyped(t *testing.T) {
 	}
 }
 
-// move --include-frontmatter on a file with a duplicated rewritten key exits 2,
-// names the file, the key and both lines, and writes nothing.
-func TestCmdMoveRefusesDuplicateKey(t *testing.T) {
-	t.Chdir(t.TempDir())
-	files := map[string]string{
+// A file whose rewritten key appears twice keeps its frontmatter, with one
+// warning naming it, and the move goes on.
+func TestCmdMoveSkipsDuplicateKey(t *testing.T) {
+	writeFiles(t, map[string]string{
 		"wiki.toml": "spec=\"0.1\"\ntypes=[\"note\"]\n",
 		"x.md":      "---\ntype: note\n---\n",
 		"a.md":      "---\ntype: note\nrelated: /x.md\nrelated: /x.md\n---\n",
+	})
+	out, errOut, code := captureAll(t, func() int { return cmdMove([]string{"x.md", "/y.md", "--include-frontmatter"}) })
+	want := "wiki: warning: frontmatter of /a.md has key \"related\" twice (lines 3 and 4); fix the file first (wiki check reports it); its frontmatter references are left as they are\n"
+	if code != 0 || errOut != want || !strings.Contains(out, "moved /x.md -> /y.md") {
+		t.Errorf("exit %d, stdout %q\n stderr %q\n   want %q", code, out, errOut, want)
 	}
-	for name, content := range files {
-		if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	for _, args := range [][]string{{"x.md", "/y.md", "--include-frontmatter"}, {"x.md", "/y.md", "--include-frontmatter", "--dry-run"}} {
-		out, errOut, code := captureAll(t, func() int { return cmdMove(args) })
-		want := "wiki: move: /a.md: key \"related\" appears twice in frontmatter (lines 3 and 4); fix the file first (wiki check reports it)\n"
-		if code != 2 || out != "" || errOut != want {
-			t.Errorf("move %v: exit %d, stdout %q\n stderr %q\n   want %q", args, code, out, errOut, want)
-		}
-	}
-	for name, content := range files {
-		if got, err := os.ReadFile(name); err != nil || string(got) != content {
-			t.Errorf("%s changed (or moved): %q, %v", name, got, err)
-		}
+	if got, _ := os.ReadFile("a.md"); string(got) != "---\ntype: note\nrelated: /x.md\nrelated: /x.md\n---\n" {
+		t.Errorf("a.md changed: %q", got)
 	}
 }
 
@@ -308,7 +303,7 @@ func TestCmdMoveRefusesDuplicateKey(t *testing.T) {
 // "invalid frontmatter:" prefix, which stays for syntax errors.
 func TestCmdCheckReportsShapeIssues(t *testing.T) {
 	t.Chdir(writeBundle(t))
-	if err := os.WriteFile("guide.md", []byte("---\ntitle: Guide\nmeta:\n  a: 1\n---\n# Guide\n"), 0o644); err != nil {
+	if err := os.WriteFile("guide.md", []byte("---\ntitle: Guide\nbase: &b {a: 1}\nmeta:\n  <<: *b\n---\n# Guide\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, code := capture(t, func() int { return cmdCheck([]string{"--format", "json"}) })
@@ -320,8 +315,8 @@ func TestCmdCheckReportsShapeIssues(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		`line 3: "meta" holds a nested object; values are scalars or lists of scalars (flatten it, e.g. meta_a: 1)`: false,
-		"missing required `type` (or add this file to `ignore` in wiki.toml if it is not a bundle entry)":           false,
+		`line 5: "<<" merges keys, which wiki does not read; write the keys out`:                          false,
+		"missing required `type` (or add this file to `ignore` in wiki.toml if it is not a bundle entry)": false,
 	}
 	for _, is := range issues {
 		if is.Entry != "/guide.md" {
@@ -346,14 +341,14 @@ func TestCmdCheckReportsShapeIssues(t *testing.T) {
 func TestCmdCheckFixWithShapeIssue(t *testing.T) {
 	dir := writeBundle(t)
 	t.Chdir(dir)
-	if err := os.WriteFile("index.md", []byte("---\nokf_version: \"0.2\"\nmeta:\n  a: 1\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
+	if err := os.WriteFile("index.md", []byte("---\nokf_version: \"0.2\"\n\"m\\x65ta\": 1\n---\n# Home\n[g](/guide.md)\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out, code := capture(t, func() int { return cmdCheck([]string{"--fix"}) })
-	if code != 1 || !strings.Contains(out, "okf_version") || !strings.Contains(out, `"meta" holds a nested object`) {
+	if code != 1 || !strings.Contains(out, "okf_version") || !strings.Contains(out, `key "meta" is written with escapes`) {
 		t.Errorf("check --fix: exit %d\n%s", code, out)
 	}
-	if got, _ := os.ReadFile("index.md"); string(got) != "---\nokf_version: \"0.1\"\nmeta:\n  a: 1\n---\n# Home\n[g](/guide.md)\n" {
+	if got, _ := os.ReadFile("index.md"); string(got) != "---\nokf_version: \"0.1\"\n\"m\\x65ta\": 1\n---\n# Home\n[g](/guide.md)\n" {
 		t.Errorf("index.md = %q", got)
 	}
 }

@@ -1,80 +1,50 @@
 package parse
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"strings"
-
-	"go.yaml.in/yaml/v3"
+	"sort"
 )
 
-// ValidateFrontmatter checks the syntax of a leading YAML header without
-// changing its contents or the scalar/string-list interpretation in Frontmatter.
-// Files without a header are valid here; requiring a type is the index's job.
-// YAML errors retain file-relative line numbers by including the opening fence.
+// CheckFrontmatter returns the header's syntax error or, when there is none,
+// its shape issues, each starting "line N: " (N counts from the file's first
+// line), in line order. One decode serves both.
+//
+// The syntax errors are exactly the headers ReadFrontmatter refuses, with the
+// same messages (not valid YAML, not a mapping, unterminated, over a limit),
+// plus one the read accepts: a key written twice, at any depth, identified by
+// its decoded text (the read keeps its last value).
+//
+// The shape issues are what wiki can't read or edit safely: a key that is a
+// list or a map, a key with no text (`~: x`), a merge key (`<<`), and a key
+// written with escapes, at any depth; and a header whose keys aren't each a
+// scalar key at column 0 (a flow-map header, a `?` key).
+// An alias is never followed for these. A file without a header has neither.
+//
+//lint:ignore ST1008 the syntax error comes first on purpose: shape issues exist only when there is none (the ADR's signature)
+func CheckFrontmatter(content string) (syntax error, shape []error) {
+	_, d, unreadable, err := scanDecoded(content)
+	switch {
+	case err != nil:
+		return err, nil
+	case unreadable != nil:
+		return unreadable, nil
+	case d.duplicate != nil:
+		return d.duplicate, nil
+	}
+	issues := d.issues
+	if line := uneditable(d); line > 0 {
+		issues = append(issues, issue{line, "wiki can't edit this header safely: write each key on its own line at column 0"})
+	}
+	sort.SliceStable(issues, func(i, j int) bool { return issues[i].line < issues[j].line })
+	for _, is := range issues {
+		shape = append(shape, fmt.Errorf("line %d: %s", is.line, is.msg))
+	}
+	return nil, shape
+}
+
+// ValidateFrontmatter is CheckFrontmatter's syntax error alone. Files without
+// a header are valid here; requiring a type is the index's job.
 func ValidateFrontmatter(content string) error {
-	_, err := decodeHeader(content)
-	return err
-}
-
-// decodeHeader decodes a leading header with yaml.v3 and checks it as
-// ValidateFrontmatter does, returning its top-level mapping: nil, with no
-// error, for a file without a header or with an empty or comment-only one.
-func decodeHeader(content string) (*yaml.Node, error) {
-	_, header, _, err := scan(content)
-	if err != nil || header == "" {
-		return nil, err
-	}
-	decoder := yaml.NewDecoder(strings.NewReader(header))
-	var document yaml.Node
-	if err := decoder.Decode(&document); err != nil {
-		return nil, err
-	}
-	node := document.Content[0]
-	// An empty or comment-only header is allowed, like an absent header.
-	if node.Kind != yaml.MappingNode && !(node.Tag == "!!null" && node.Value == "") {
-		return nil, fmt.Errorf("line %d: frontmatter must be a YAML mapping", node.Line)
-	}
-	if err := duplicateFrontmatterKeys(&document); err != nil {
-		return nil, err
-	}
-	var extra yaml.Node
-	if err := decoder.Decode(&extra); err != io.EOF {
-		if err != nil {
-			return nil, err
-		}
-		return nil, errors.New("frontmatter must contain a single YAML mapping")
-	}
-	if node.Kind != yaml.MappingNode {
-		return nil, nil
-	}
-	return node, nil
-}
-
-// duplicateFrontmatterKeys checks scalar mapping keys throughout the node tree.
-// Complex keys are outside extraction's subset but remain valid YAML. Walking
-// Content rather than resolving aliases also permits recursive YAML anchors.
-func duplicateFrontmatterKeys(node *yaml.Node) error {
-	if node.Kind == yaml.MappingNode {
-		type key struct{ tag, value string }
-		seen := map[key]int{}
-		for i := 0; i < len(node.Content); i += 2 {
-			k := node.Content[i]
-			if k.Kind != yaml.ScalarNode {
-				continue
-			}
-			id := key{k.Tag, k.Value}
-			if line, exists := seen[id]; exists {
-				return fmt.Errorf("line %d: mapping key %q already defined at line %d", k.Line, k.Value, line)
-			}
-			seen[id] = k.Line
-		}
-	}
-	for _, child := range node.Content {
-		if err := duplicateFrontmatterKeys(child); err != nil {
-			return err
-		}
-	}
-	return nil
+	syntax, _ := CheckFrontmatter(content)
+	return syntax
 }

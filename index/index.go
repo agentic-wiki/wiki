@@ -3,6 +3,7 @@ package index
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -58,7 +59,8 @@ type Entry struct {
 	abs         string
 	root        string // the bundle dir, so an entry can re-parse itself after a write
 	fm          map[string]any
-	typed       map[string]any // fm with YAML types (parse.TypedFrontmatter): what MarshalJSON emits
+	typed       parse.Map // fm with YAML types (parse.ReadFrontmatter): what MarshalJSON emits
+	fmErr       error     // why the header wasn't read (parse.ReadFrontmatter), or nil
 }
 
 // base is the entry's filename (basename of Path), computed on demand: the path
@@ -104,12 +106,12 @@ func (e *Entry) Body() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	_, body := parse.Frontmatter(raw)
-	return body, nil
+	return parse.Body(raw), nil
 }
 
 // MarshalJSON renders the entry as its typed frontmatter (TypedFrontmatter) plus
-// its file path under the reserved key `_path`. The underscore prefix keeps
+// its file path under the reserved key `_path`, first, then the keys in file
+// order, maps and lists to any depth. The underscore prefix keeps
 // `_path` off the frontmatter namespace, so a user's own `name:`/`path:` field
 // round-trips untouched (a person's `name:` is their name, not the filename); the
 // basename is just `basename(_path)`, so it is not emitted separately.
@@ -121,26 +123,29 @@ func (e *Entry) Body() (string, error) {
 // stays a scalar. So `list --format json` exposes the full frontmatter (status,
 // assignee, epic, …) that structured tooling needs.
 func (e *Entry) MarshalJSON() ([]byte, error) {
-	m := make(map[string]any, len(e.typed)+1)
-	for k, v := range e.typed {
-		m[k] = v
+	m := make(parse.Map, 0, len(e.typed)+1)
+	m = append(m, parse.Pair{Key: "_path", Value: e.Path})
+	for _, p := range e.typed {
+		if p.Key != "_path" { // the entry's path wins over a frontmatter key
+			m = append(m, p)
+		}
 	}
-	m["_path"] = e.Path
 	return json.Marshal(m)
 }
 
-// MatchProperty reports whether the entry's frontmatter key holds value: a
-// list-valued key (e.g. tags) matches when any element equals value, a scalar
-// matches on equality. A missing key never matches a non-empty value. Comparing
-// against the empty string tests emptiness: `key=` matches when the key has no
-// non-empty value (absent, blank, or an empty list), so its negation `key!=`
-// matches when the key is present and non-empty. Backs the `--where` filter.
+// MatchProperty reports whether the entry's frontmatter key holds value, on the
+// string view: a scalar matches on equal text, a list when any item's text
+// equals value (a list or map item compares as its Flow), and a map only on its
+// whole Flow, keys in file order. Comparing against the empty string tests
+// emptiness: `key=` matches when parse.Empty holds for the key's typed value
+// (absent, null, "", [], {}, or a list of empty items), so its negation `key!=`
+// matches when the key has a value. Backs the `--where` filter.
 func (e *Entry) MatchProperty(key, value string) bool {
-	vals := parse.Strings(e.fm, key)
 	if value == "" {
-		return len(vals) == 0
+		v, _ := e.typed.Get(key)
+		return parse.Empty(v)
 	}
-	return slices.Contains(vals, value)
+	return slices.Contains(parse.Strings(e.fm, key), value)
 }
 
 // Index is the built model of a bundle.
@@ -265,8 +270,7 @@ func parseEntry(root, abs string) (*Entry, error) {
 	}
 	rel, _ := filepath.Rel(root, abs)
 	content := string(data)
-	fm, body := parse.Frontmatter(content)
-	typed, _ := parse.TypedFrontmatter(content)
+	fm, typed, body, fmErr := parse.ReadFrontmatter(content) // one decode for both views
 	// Links/checkboxes/headings are parsed from the frontmatter-stripped body, so
 	// their line numbers are body-relative; offset by the frontmatter's length
 	// to make them file-relative (what `unresolved`/`backlinks`/`tasks` report).
@@ -299,6 +303,7 @@ func parseEntry(root, abs string) (*Entry, error) {
 		root:        root,
 		fm:          fm,
 		typed:       typed,
+		fmErr:       fmErr,
 	}, nil
 }
 
@@ -581,15 +586,37 @@ func (idx *Index) PropertyKeyCounts(pathPrefix string, props []PropFilter) map[s
 
 // PropertyValueCounts returns the distinct values of frontmatter key (optionally
 // narrowed by path prefix and property filters) with the number of entries
-// holding each. A list-valued key (e.g. tags) contributes each element.
+// holding each, on the string view. A list contributes each item (a list or
+// map item as its Flow), counted once per entry; a map is its Flow. A value or
+// item for which parse.Empty holds (null, "", [], {}) is skipped.
 func (idx *Index) PropertyValueCounts(key, pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
 	for _, e := range idx.Filter(pathPrefix, props) {
-		for _, v := range dedupe(parse.Strings(e.fm, key)) {
+		for _, v := range dedupe(e.values(key)) {
 			counts[v]++
 		}
 	}
 	return counts
+}
+
+// values is the string view of key's value or items, without the empty ones.
+func (e *Entry) values(key string) []string {
+	strs := parse.Strings(e.fm, key)
+	typed, _ := e.typed.Get(key)
+	items, isList := typed.([]any)
+	if !isList {
+		if parse.Empty(typed) {
+			return nil
+		}
+		return strs
+	}
+	var out []string
+	for i, item := range items {
+		if !parse.Empty(item) {
+			out = append(out, strs[i])
+		}
+	}
+	return out
 }
 
 // dedupe drops repeated strings, preserving first-seen order, so a value counts
@@ -834,6 +861,10 @@ type MoveResult struct {
 	To       string        `json:"to"`
 	DryRun   bool          `json:"dry_run"`
 	Rewrites []FileRewrite `json:"rewrites"`
+	// Warnings name the files whose frontmatter references --include-frontmatter
+	// left as they were: a header wiki can't edit safely. The CLI prints them on
+	// stderr; they are not part of the result's json.
+	Warnings []string `json:"-"`
 }
 
 // Move relocates the entry at srcArg to dest (a root-absolute path) and rewrites
@@ -868,27 +899,39 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	}
 	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
 
-	// Plan the frontmatter rewrites first: a file whose rewritten key appears
-	// twice stops the move here, before any file is written (dry run included).
-	plans := map[*Entry]map[string][]fmRewrite{}
+	// Plan the frontmatter rewrites first, before any file is written (dry run
+	// included). parse.RewriteValues follows the rules every write does; one
+	// rule here: a file it refuses (a header wiki can't edit safely, a key
+	// written twice, a result that wouldn't read back as planned) keeps its
+	// frontmatter as it is, with a warning naming the file and the reason, and
+	// the move goes on. Only a file with a planned rewrite is checked.
+	type fmPlan struct {
+		text string // the file with its frontmatter rewritten: the text that was checked
+		refs int    // values rewritten
+	}
+	plans := map[*Entry]fmPlan{}
 	if includeFrontmatter {
 		for _, e := range idx.Entries {
+			if e.fmErr != nil {
+				continue // an unreadable header has no fields to rewrite; loading the index warned
+			}
 			raw, err := e.Raw()
 			if err != nil {
 				return nil, err
 			}
-			h, err := parse.Scan(raw)
-			if err != nil {
-				continue // an unterminated header has no frontmatter to rewrite, as a read sees it
-			}
-			rws := idx.frontmatterRewrites(e, h, src.Path, dest)
-			if len(rws) == 0 {
+			text, refs, err := parse.RewriteValues(raw, idx.frontmatterRewrites(e, src.Path, dest))
+			var refused *parse.EditError
+			switch {
+			case errors.As(err, &refused):
+				res.Warnings = append(res.Warnings, fmt.Sprintf("%v; its frontmatter references are left as they are", e.named(err)))
 				continue
-			}
-			if err := duplicateRewrite(e, h, rws); err != nil {
+			case err != nil:
 				return nil, err
 			}
-			plans[e] = rws
+			if refs == 0 {
+				continue
+			}
+			plans[e] = fmPlan{text, refs}
 		}
 	}
 
@@ -923,13 +966,16 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
 		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
-		fmRWs := plans[e]
-		if len(rws) == 0 && len(fmRWs) == 0 {
+		plan, rewritesFM := plans[e]
+		if len(rws) == 0 && !rewritesFM {
 			continue
 		}
-		raw, err := e.Raw()
-		if err != nil {
-			return res, err
+		raw := plan.text // the checked frontmatter rewrite: it changes no line count
+		if !rewritesFM {
+			var err error
+			if raw, err = e.Raw(); err != nil {
+				return res, err
+			}
 		}
 		lines := strings.Split(raw, "\n") // link lines are file-relative
 		n := 0
@@ -949,15 +995,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 				return "](" + nt + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
 			})
 		}
-		fields := 0
-		if len(fmRWs) > 0 {
-			// Spans from the text being rewritten, not from the planning pass.
-			h, err := parse.Scan(raw)
-			if err != nil {
-				return res, fmt.Errorf("move: %s: %w", e.Path, err)
-			}
-			fields = rewriteFrontmatterRefs(lines, h, fmRWs)
-		}
+		fields := plan.refs
 		if n == 0 && fields == 0 {
 			continue
 		}
@@ -983,17 +1021,10 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	return res, nil
 }
 
-// fmRewrite is one frontmatter value respelling: the value exactly as written on
-// disk, what it becomes, and the token-boundary pattern that finds it in a line.
-type fmRewrite struct {
-	oldRaw, newRaw string
-	tok            *regexp.Regexp
-}
-
-// frontmatterRewrites plans the frontmatter respellings a move entails for entry
-// e, keyed by frontmatter key, from every occurrence of each key in h (parse.Scan
-// of e): a read keeps only a duplicated key's last value, and the move must see
-// them all. It is the frontmatter twin of the body-link pass in
+// frontmatterRewrites is the callback parse.RewriteValues asks about every
+// frontmatter value and list item of entry e, in every occurrence of every
+// key: what a move makes of the value, and whether it changes. It is the
+// frontmatter twin of the body-link pass in
 // Move: a value referencing src is repointed at dest, and (only for the moved file
 // itself, whose directory changes, so its relative refs would otherwise dangle) a
 // relative value referencing anything else is normalized in place.
@@ -1012,47 +1043,23 @@ type fmRewrite struct {
 // pass from mangling ordinary metadata: an arbitrary value like `title: Some Note`
 // would otherwise resolve to a perfectly valid in-bundle path and be rewritten as
 // one. Values resolving outside the bundle are left alone, as body links are.
-func (idx *Index) frontmatterRewrites(e *Entry, h parse.Header, srcPath, dest string) map[string][]fmRewrite {
-	var out map[string][]fmRewrite
-	seen := map[string]map[string]bool{} // per key, the values already planned
-	for _, f := range h.Fields {
-		k := f.Key
-		for _, v := range f.Values() {
-			if p, _, _ := strings.Cut(v, "#"); !strings.HasSuffix(p, ".md") {
-				continue
-			}
-			abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, v)
-			if escapes {
-				continue
-			}
-			newRaw := abs // already root-absolute: the canonical frontmatter form
-			switch {
-			case stripAnchor(abs) == srcPath:
-				newRaw = dest + anchorOf(abs)
-			case e.Path != srcPath:
-				continue // only the moved file normalizes its refs to unmoved targets
-			}
-			if newRaw == v || seen[k][v] {
-				continue
-			}
-			if seen[k] == nil {
-				seen[k] = map[string]bool{}
-			}
-			seen[k][v] = true
-			if out == nil {
-				out = map[string][]fmRewrite{}
-			}
-			out[k] = append(out[k], fmRewrite{
-				oldRaw: v,
-				newRaw: newRaw,
-				tok:    regexp.MustCompile(`([:\[,\s"'])` + regexp.QuoteMeta(v) + `([\],\s"']|$)`),
-			})
+func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest string) func(key, v string) (string, bool) {
+	return func(_, v string) (string, bool) {
+		if p, _, _ := strings.Cut(v, "#"); !strings.HasSuffix(p, ".md") {
+			return "", false
 		}
-		// Longest first, so a value that is a suffix-substring of another is never
-		// matched inside it.
-		slices.SortFunc(out[k], func(a, b fmRewrite) int { return len(b.oldRaw) - len(a.oldRaw) })
+		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, v)
+		if escapes {
+			return "", false
+		}
+		switch {
+		case stripAnchor(abs) == srcPath:
+			return dest + anchorOf(abs), true
+		case e.Path == srcPath:
+			return abs, true // already root-absolute: the canonical frontmatter form
+		}
+		return "", false // only the moved file normalizes its refs to unmoved targets
 	}
-	return out
 }
 
 func stripAnchor(p string) string { p, _, _ = strings.Cut(p, "#"); return p }
@@ -1062,52 +1069,6 @@ func anchorOf(p string) string {
 		return "#" + a
 	}
 	return ""
-}
-
-// rewriteFrontmatterRefs applies planned respellings to the lines each key owns
-// (h is parse.Scan of the same lines). Keying by frontmatter key gates the
-// rewrite, so a path that appears only as prose inside some other value is never
-// touched; the token boundaries keep it to whole values (scalar, flow, or block
-// list). Returns the number of values rewritten.
-func rewriteFrontmatterRefs(lines []string, h parse.Header, rewrites map[string][]fmRewrite) int {
-	n := 0
-	for _, f := range h.Fields {
-		rws := rewrites[f.Key]
-		for i := f.Line; i <= f.End && len(rws) > 0; i++ {
-			t := strings.TrimRight(lines[i], "\r")
-			cr := lines[i][len(t):]
-			c := 0
-			for _, rw := range rws {
-				t = rw.tok.ReplaceAllStringFunc(t, func(m string) string {
-					c++
-					sub := rw.tok.FindStringSubmatch(m)
-					return sub[1] + rw.newRaw + sub[2]
-				})
-			}
-			if c > 0 {
-				lines[i] = t + cr
-				n += c
-			}
-		}
-	}
-	return n
-}
-
-// duplicateRewrite refuses a move that would rewrite a key appearing twice in
-// e's frontmatter: which occurrence holds the value is the author's call, so
-// the move stops before writing any file.
-func duplicateRewrite(e *Entry, h parse.Header, rewrites map[string][]fmRewrite) error {
-	seen := map[string]int{}
-	for _, f := range h.Fields {
-		if _, rewritten := rewrites[f.Key]; !rewritten {
-			continue
-		}
-		if line, twice := seen[f.Key]; twice {
-			return fmt.Errorf("move: %s: key %q appears twice in frontmatter (lines %d and %d); fix the file first (wiki check reports it)", e.Path, f.Key, line+1, f.Line+1)
-		}
-		seen[f.Key] = f.Line
-	}
-	return nil
 }
 
 // withinDir reports whether p is dir itself or lexically inside it, guarding
@@ -1143,12 +1104,13 @@ func (idx *Index) Check() []Issue {
 			issues = append(issues, Issue{"error", e.Path, "cannot read entry: " + err.Error()})
 			continue
 		}
-		if err := parse.ValidateFrontmatter(raw); err != nil {
-			issues = append(issues, Issue{"error", e.Path, "invalid frontmatter: " + err.Error()})
+		syntax, shape := parse.CheckFrontmatter(raw)
+		if syntax != nil {
+			issues = append(issues, Issue{"error", e.Path, "invalid frontmatter: " + syntax.Error()})
 			continue // metadata-derived diagnostics would obscure the syntax error
 		}
 		// A shape issue sits next to the entry's other diagnostics, never instead of them.
-		for _, err := range parse.ShapeIssues(raw) {
+		for _, err := range shape {
 			issues = append(issues, Issue{"error", e.Path, err.Error()})
 		}
 		if e.Path == "/index.md" {
@@ -1310,7 +1272,7 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 	}
 	updated, err := parse.SetField(string(raw), "okf_version", want)
 	if err != nil {
-		return nil, err
+		return nil, root.named(err)
 	}
 	if apply {
 		if err := writeFile(root.abs, []byte(updated)); err != nil {
@@ -1485,7 +1447,7 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, body := parse.Frontmatter(raw)
+	body := parse.Body(raw)
 	offset := strings.Count(raw[:len(raw)-len(body)], "\n")
 	abs := parse.Links(body).Absolute
 	if len(abs) == 0 {
@@ -1573,8 +1535,9 @@ func (e *Entry) Field(key string) string { return parse.String(e.fm, key) }
 // subtly different one.
 func (e *Entry) FieldList(key string) []string { return parse.Strings(e.fm, key) }
 
-// Frontmatter returns the entry's frontmatter verbatim, exactly as written, with
-// no per-field coercion.
+// Frontmatter returns the entry's frontmatter in the string view
+// (parse.Frontmatter): each value is its text as YAML reads it, a list its
+// items, a map its Flow, with no per-field coercion.
 //
 // The map is a copy, lists included: the index holds the original, and a caller
 // that could mutate it would be editing the engine's state rather than reading it.
@@ -1590,21 +1553,19 @@ func (e *Entry) Frontmatter() map[string]any {
 	return out
 }
 
-// TypedFrontmatter is Frontmatter with YAML types (parse.TypedFrontmatter): a
-// value is a string, a json.Number, a bool, nil, or a []any of those. It is
-// what `list --format json` emits. The map is a copy, lists included, like
-// Frontmatter's.
-func (e *Entry) TypedFrontmatter() map[string]any {
-	out := make(map[string]any, len(e.typed))
-	for k, v := range e.typed {
-		if list, ok := v.([]any); ok {
-			out[k] = slices.Clone(list)
-			continue
-		}
-		out[k] = v
-	}
-	return out
+// TypedFrontmatter is Frontmatter with YAML types (parse.ReadFrontmatter): a
+// value is a string, a json.Number, a bool, nil, a []any or a parse.Map, keys
+// in file order. It is what `list --format json` emits. It is a deep copy
+// (Map.Clone): the index holds the original.
+func (e *Entry) TypedFrontmatter() parse.Map {
+	return e.typed.Clone()
 }
+
+// FrontmatterErr is why the entry's header couldn't be read (not valid YAML,
+// not a mapping, unterminated, or over a limit), or nil. Such an entry stays
+// in the index with no fields: its type is "", and its body is what follows
+// the closing fence. `wiki check` reports it; every other command warns.
+func (e *Entry) FrontmatterErr() error { return e.fmErr }
 
 // ResolveLink resolves a link target as written in the entry at fromPath to its
 // canonical root-absolute bundle path, the same key the graph is built on.
