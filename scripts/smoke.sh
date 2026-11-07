@@ -216,7 +216,9 @@ contains "$($BIN version)" "wiki"
 echo "--- init scaffolds a check-clean bundle with an operating manual ---"
 mkdir -p "$TMP/fresh"
 ( cd "$TMP/fresh" && $BIN init >/dev/null && $BIN check >/dev/null )
-for f in wiki.toml .gitignore index.md AGENTS.md CLAUDE.md WORKFLOW.md; do test -e "$TMP/fresh/$f"; done
+for f in wiki.toml .gitignore index.md AGENTS.md CLAUDE.md; do test -e "$TMP/fresh/$f"; done
+test ! -e "$TMP/fresh/WORKFLOW.md"                            # each part's section is in AGENTS.md
+printf '@AGENTS.md\n' | cmp -s - "$TMP/fresh/CLAUDE.md"   # one line: Claude Code reads AGENTS.md
 contains "$(cat "$TMP/fresh/wiki.toml")" "ignore"             # meta files declared non-entries
 ( cd "$TMP/fresh" && ! contains "$($BIN list)" "AGENTS" )   # ...so they are not indexed as entries
 

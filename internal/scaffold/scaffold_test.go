@@ -228,7 +228,7 @@ func TestWriteForceOverEarlierInit(t *testing.T) {
 	write(t, filepath.Join(dir, "AGENTS.md"), "old manual\n")
 	write(t, filepath.Join(dir, "WORKFLOW.md"), "old workflow\n")
 	if err := os.Symlink("AGENTS.md", filepath.Join(dir, "CLAUDE.md")); err != nil {
-		t.Fatal(err)
+		t.Skip("cannot make a symlink here (Windows may refuse it):", err)
 	}
 	if _, err := Write(dir, nil, true); err != nil {
 		t.Fatal(err)
