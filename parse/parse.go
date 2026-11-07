@@ -47,7 +47,7 @@ type Table struct {
 // A key written twice keeps its last value. body is what follows the closing
 // fence. err is non-nil when the header can't be read: not valid YAML, not a
 // mapping, or over a limit (header larger than 1 MiB, more than 10,000 values
-// or 1 MiB of text once aliases are expanded). Both views are then empty. An
+// or 1 MiB of text through aliases). Both views are then empty. An
 // unterminated header gives err, and body is all of content.
 func ReadFrontmatter(content string) (strs map[string]any, typed Map, body string, err error) {
 	strs, typed = map[string]any{}, Map{}

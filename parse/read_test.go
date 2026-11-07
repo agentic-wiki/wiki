@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"reflect"
 	"strings"
 	"testing"
@@ -196,9 +198,11 @@ func TestMapJSONFileOrder(t *testing.T) {
 	}
 }
 
-// aliasBomb is the 9-level "billion laughs": 10^9 leaves from 438 bytes.
-func aliasBomb() string {
-	lines := []string{`a: &a ["x","x","x","x","x","x","x","x","x","x"]`}
+// aliasBomb is the 9-level "billion laughs": its first list holds ten copies
+// of leaf, and each level after is a list of ten aliases to the one before,
+// so the last expands to 10^9 leaves.
+func aliasBomb(leaf string) string {
+	lines := []string{"a: &a [" + strings.TrimSuffix(strings.Repeat(leaf+",", 10), ",") + "]"}
 	for i, name := range "bcdefghi" {
 		prev := string("abcdefgh"[i])
 		lines = append(lines, fmt.Sprintf("%c: &%c [*%s,*%s,*%s,*%s,*%s,*%s,*%s,*%s,*%s,*%s]", name, name, prev, prev, prev, prev, prev, prev, prev, prev, prev, prev))
@@ -206,8 +210,15 @@ func aliasBomb() string {
 	return "---\n" + strings.Join(lines, "\n") + "\n---\n"
 }
 
-// Aliases are counted at every use: the bomb and the recursive alias stop at
-// the value budget, and a 10 KB scalar aliased 9,000 times at the byte budget.
+// padded puts n comment lines of 1,000 characters at the top of a header:
+// raw bytes that hold no value and no text.
+func padded(content string, n int) string {
+	return "---\ntype: note\n" + strings.Repeat("# "+strings.Repeat("0", 998)+"\n", n) + strings.TrimPrefix(content, "---\n")
+}
+
+// Only what aliases produce is budgeted, at every use: bombs (whatever their
+// leaves, padded or not) and the recursive alias stop at the value budget, and
+// a 10 KB scalar aliased 9,000 times at the text budget.
 func TestReadAliasBudget(t *testing.T) {
 	big := strings.Repeat("x", 10<<10)
 	aliases := strings.TrimSuffix(strings.Repeat("*s, ", 9000), ", ")
@@ -215,9 +226,14 @@ func TestReadAliasBudget(t *testing.T) {
 		content string
 		want    error
 	}{
-		"9-level bomb":    {aliasBomb(), errTooManyValues},
-		"recursive alias": {"---\nk: &a [*a]\n---\n", errTooManyValues},
-		"9,000 × 10 KB":   {"---\ns: &s " + big + "\nl: [" + aliases + "]\n---\n", errTooManyBytes},
+		"9-level bomb":             {aliasBomb(`"x"`), errTooManyValues},
+		"9-level bomb of []":       {aliasBomb("[]"), errTooManyValues},
+		"9-level bomb of {}":       {aliasBomb("{}"), errTooManyValues},
+		"9-level bomb of ~":        {aliasBomb("~"), errTooManyValues},
+		"padded 9-level bomb":      {padded(aliasBomb("x"), 1000), errTooManyValues},
+		"recursive alias":          {"---\nk: &a [*a]\n---\n", errTooManyValues},
+		"recursive alias in a map": {"---\nk: &a {k: *a}\n---\n", errTooManyValues},
+		"9,000 × 10 KB":            {"---\ns: &s " + big + "\nl: [" + aliases + "]\n---\n", errTooManyBytes},
 	} {
 		strs, typed, _, err := ReadFrontmatter(tc.content)
 		if !errors.Is(err, tc.want) || len(strs) != 0 || len(typed) != 0 {
@@ -231,23 +247,72 @@ func TestReadAliasBudget(t *testing.T) {
 	}
 }
 
-// The flow text the read writes counts in the same 1 MiB budget: a header
-// whose scalars fit, but whose map's Flow pushes the total past 1 MiB, can't
-// be read. The same scalar as a top-level value, with no Flow, reads.
-func TestFlowCountsInBudget(t *testing.T) {
+// Each alias use is counted, the written definition never: a written list of
+// 6,000 values, anchored, reads when used once (6,001 values through the
+// alias, the list included) and is refused when used twice (12,002).
+func TestAliasBudgetCountsEachUse(t *testing.T) {
+	list := "a: &a [" + strings.TrimSuffix(strings.Repeat("0,", 6000), ",") + "]"
+	if _, typed := readKey(t, "b", list, "b: *a"); len(typed.([]any)) != 6000 {
+		t.Errorf("used once: %d values, want 6000", len(typed.([]any)))
+	}
+	if _, _, _, err := ReadFrontmatter("---\n" + list + "\nb: [*a, *a]\n---\n"); !errors.Is(err, errTooManyValues) {
+		t.Errorf("used twice: %v, want %v", err, errTooManyValues)
+	}
+}
+
+// What is written in the file has no budget of its own, only the 1 MiB raw
+// cap: a map or a list item of 600 KB reads with its Flow, and so does the
+// densest written header, 1 MiB of `[0,0,…]` (over 500,000 values). The same
+// header through check reports nothing.
+func TestWrittenContentHasNoBudget(t *testing.T) {
 	big := strings.Repeat("x", 600<<10)
-	if _, _, _, err := ReadFrontmatter("---\nm:\n  k: " + big + "\n---\n"); !errors.Is(err, errTooManyBytes) {
-		t.Errorf("map of 600 KB: %v, want %v", err, errTooManyBytes)
+	if str, _ := readKey(t, "m", "m:", "  k: "+big); str != "{k: "+big+"}" {
+		t.Error("a map of 600 KB didn't read")
 	}
-	if _, _, _, err := ReadFrontmatter("---\nl:\n  - [" + big + "]\n---\n"); !errors.Is(err, errTooManyBytes) {
-		t.Errorf("list item of 600 KB: %v, want %v", err, errTooManyBytes)
-	}
-	if str, _ := readKey(t, "k", "k: "+big); str != big {
-		t.Error("a 600 KB scalar didn't read")
+	if str, _ := readKey(t, "l", "l:", "  - ["+big+"]"); !reflect.DeepEqual(str, []string{"[" + big + "]"}) {
+		t.Error("a list item of 600 KB didn't read")
 	}
 	if _, _, _, err := ReadFrontmatter(requesterHeader(6)); err != nil {
 		t.Errorf("requester shape: %v", err)
 	}
+
+	n := (1<<20 - len("---\nk: []\n")) / 2 // header text, fence included, just under 1 MiB
+	zeros := "---\nk: [" + strings.TrimSuffix(strings.Repeat("0,", n), ",") + "]\n---\n"
+	_, typed, _, err := ReadFrontmatter(zeros)
+	if err != nil {
+		t.Fatalf("1 MiB of [0,0,…]: %v", err)
+	}
+	if got := len(get(typed, "k").([]any)); got != n {
+		t.Errorf("1 MiB of [0,0,…]: %d values, want %d", got, n)
+	}
+	if syntax, shape := CheckFrontmatter(zeros); syntax != nil || len(shape) != 0 {
+		t.Errorf("check of 1 MiB of [0,0,…]: %v %v", syntax, shape)
+	}
+}
+
+// Shade's C-1, in a child process, since a stack overflow can't be recovered
+// and would kill the test binary: a recursive alias (`a: &a [*a]`) behind
+// 1,040 comment lines of 1,000 characters, just under the 1 MiB raw cap. The
+// alias budget refuses it at 10,000 levels, in the read and in check.
+func TestPaddedRecursiveAliasIsRefused(t *testing.T) {
+	if os.Getenv("PARSE_TEST_C1") != "" {
+		content := padded("---\na: &a [*a]\n---\n", 1040)
+		_, _, _, err := ReadFrontmatter(content)
+		syntax, _ := CheckFrontmatter(content)
+		fmt.Printf("%d bytes; read: %v; check: %v\n", len(content), err, syntax)
+		os.Exit(0)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestPaddedRecursiveAliasIsRefused$")
+	cmd.Env = append(os.Environ(), "PARSE_TEST_C1=1")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("the child died: %v\n%.2000s", err, out)
+	}
+	want := fmt.Sprintf("read: %v; check: %v\n", errTooManyValues, errTooManyValues)
+	if !strings.Contains(string(out), want) {
+		t.Errorf("child output %q, want it to end %q", out, want)
+	}
+	t.Logf("%s", out)
 }
 
 // A header over 1 MiB is refused before yaml.v3 sees it: this one isn't valid
@@ -298,7 +363,7 @@ func TestBodyDoesNotDecode(t *testing.T) {
 	if splits > 30 || splits*50 > decodes {
 		t.Errorf("Body allocates %.0f times, a decode %.0f", splits, decodes)
 	}
-	for _, c := range []string{"no header\n", "---\nk: v\n", aliasBomb() + "body"} {
+	for _, c := range []string{"no header\n", "---\nk: v\n", aliasBomb(`"x"`) + "body"} {
 		_, _, want, _ := ReadFrontmatter(c)
 		if got := Body(c); got != want {
 			t.Errorf("%q: Body %q, ReadFrontmatter's body %q", c, got, want)

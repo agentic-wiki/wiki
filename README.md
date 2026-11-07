@@ -166,6 +166,8 @@ Three axes, kept separate, are what keep it friction-free:
 
 Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists and nested maps. `--format json` gives lists and maps as JSON, and it is the exact view. Everywhere else, a list or map is one line of YAML in flow style (`[a, b]`, `{k: v}`), and types are lost: the text `"{a: 1}"` and the map `{a: 1}` both read `{a: 1}` there. `wiki check` reports what wiki can't read or edit safely.
 
+**Limits.** A header can be up to 1 MiB, with any number of values written in it: an index of thousands of records reads. What aliases (`&a` ... `*a`) produce is limited to 10,000 values and 1 MiB of text, each use counted again, so a file can't expand without bound. Beyond these limits a header is refused: `check` reports it, and other commands warn and read the file without its frontmatter. Known limit: a 1 MiB header of about 500,000 tiny values takes about 25 MB of memory once read, for as long as it is held (wikiview's index holds every file).
+
 Entries link with relative Markdown links, `[Income](../finance/income.md)`, so they work in any Markdown viewer. A link from the root (`/finance/income.md`) resolves too, and `wiki tidy --links` rewrites it relative. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 
 ```

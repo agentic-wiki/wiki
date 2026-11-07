@@ -27,7 +27,7 @@ func TestReadAndCheckAgree(t *testing.T) {
 	}{
 		"invalid YAML":        {"---\ntitle: Fix: x\n---\n", false},
 		"not a mapping":       {"---\n- a\n- b\n---\n", false},
-		"the value bomb":      {aliasBomb(), false},
+		"the value bomb":      {aliasBomb(`"x"`), false},
 		"the byte bomb":       {"---\ns: &s " + big + "\nl: [" + strings.TrimSuffix(strings.Repeat("*s, ", 9000), ", ") + "]\n---\n", false},
 		"a recursive alias":   {"---\nk: &a [*a]\n---\n", false},
 		"1 MiB + 1 byte":      {"---\nk: " + strings.Repeat("a", 1<<20) + "\n---\n", false},

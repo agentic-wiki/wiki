@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -330,5 +331,44 @@ func TestMoveFrontmatterPlansFromYAML(t *testing.T) {
 	}
 	if _, err := os.Stat("b.md"); err != nil {
 		t.Errorf("not moved: %v", err)
+	}
+}
+
+// indexPage is a real-shaped frontmatter index: records of five fields in
+// block maps, about 122 bytes each, as in the requesting team's
+// datasets/company-index.md.
+func indexPage(records int) string {
+	var b strings.Builder
+	b.WriteString("---\ntype: dataset\ncompanies:\n")
+	for i := range records {
+		fmt.Fprintf(&b, "  - id: c%05d\n    name: Company %05d Holdings International\n    sector: industrials\n    cap: %d\n    listed: true\n", i, i, 1000000+i)
+	}
+	return b.String() + "---\n# Company index\n"
+}
+
+// An index far over 10,000 written values passes check and list, with no
+// warning: 2,300 records (the team's page, about 13,800 values) and 7,500
+// records (about 45,000 values and 920 KB, whose flow text alone is over the
+// old 1 MiB text budget).
+func TestIndexPagePassesCheckAndList(t *testing.T) {
+	for _, records := range []int{2300, 7500} {
+		page := indexPage(records)
+		writeFiles(t, map[string]string{
+			"wiki.toml": "spec=\"0.1\"\ntypes=[\"dataset\"]\nignore_orphans=[\"**\"]\n",
+			"index.md":  "---\nokf_version: \"0.1\"\n---\n# Home\n",
+			"data.md":   page,
+		})
+		t.Logf("%d records: %d bytes", records, len(page))
+		if out, errOut, code := captureAll(t, func() int { return cmdCheck(nil) }); code != 0 || errOut != "" || !strings.Contains(out, "no issues") {
+			t.Errorf("%d records: check exit %d\n%s%s", records, code, out, errOut)
+		}
+		out, errOut, code := captureAll(t, func() int { return cmdList([]string{"--where", "type=dataset", "--format", "json"}) })
+		var rows []map[string]any
+		if code != 0 || errOut != "" || json.Unmarshal([]byte(out), &rows) != nil || len(rows) != 1 {
+			t.Fatalf("%d records: list exit %d, stderr %q", records, code, errOut)
+		}
+		if got := len(rows[0]["companies"].([]any)); got != records {
+			t.Errorf("%d records: list gives %d", records, got)
+		}
 	}
 }

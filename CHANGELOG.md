@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.15.2
+
+### Fixed
+
+- **A header with more than 10,000 values written in it reads.** Only what aliases produce is budgeted now: 10,000 values and 1 MiB of text through aliases, each use counted again, as before. What is written in the file is bounded by the 1 MiB header cap alone, so a frontmatter index of thousands of records passes `check` and `list`. The errors say `more than 10000 values through aliases` and `more than 1 MiB of text through aliases`. A header of about 500,000 tiny values (1 MiB of `[0,0,...]`) reads, and keeps about 25 MB in memory.
+
 ## v0.15.1
 
 ### Fixed

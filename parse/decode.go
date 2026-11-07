@@ -10,17 +10,22 @@ import (
 )
 
 // The limits on one header, which comes from a file anyone may have written
-// (wiki/research/one-parser-adr.md, Decision 5).
+// (wiki/research/one-parser-adr.md, Decision 5, and the value-budget-scales
+// card). Only what aliases produce is budgeted: what is written in the file is
+// bounded by the raw cap (fewer values than bytes) and by yaml.v3's nesting
+// limit, so an honest header is never refused for its number of values. The
+// two alias budgets bound alias bombs and alias recursion, whose depth is
+// at most maxValues.
 const (
 	maxHeaderBytes = 1 << 20 // raw header text, checked before yaml.v3 sees it
-	maxValues      = 10000   // values built, each alias use counted again
-	maxTextBytes   = 1 << 20 // scalar and key text built, plus the flow text of the string view
+	maxValues      = 10000   // values built through aliases, each alias use counted again
+	maxTextBytes   = 1 << 20 // scalar and key text built through aliases, each use counted again
 )
 
 var (
 	errHeaderTooLarge = errors.New("header larger than 1 MiB")
-	errTooManyValues  = fmt.Errorf("more than %d values once aliases are expanded", maxValues)
-	errTooManyBytes   = errors.New("more than 1 MiB once aliases are expanded")
+	errTooManyValues  = fmt.Errorf("more than %d values through aliases", maxValues)
+	errTooManyBytes   = errors.New("more than 1 MiB of text through aliases")
 )
 
 // header is a decoded frontmatter header: its top-level keys in file order,
@@ -56,10 +61,11 @@ type headerKey struct {
 }
 
 // decode refuses a header over 1 MiB before yaml.v3 sees it, decodes it once,
-// and walks the node tree once, under two budgets: 10,000 values and 1 MiB of
-// scalar, key and flow text, aliases counted at every use. headerText is the
-// opening fence and the lines up to the closing one, so yaml.v3's line numbers
-// are the file's. An empty or comment-only header has no keys.
+// and walks the node tree once, with two budgets on what aliases produce:
+// 10,000 values and 1 MiB of scalar and key text, counted at every use.
+// headerText is the opening fence and the lines up to the closing one, so
+// yaml.v3's line numbers are the file's. An empty or comment-only header has
+// no keys.
 //
 // The same walk notes what check reports: the shape issues and the first key
 // written twice. It is the only code in parse that walks a yaml.Node and
@@ -77,15 +83,10 @@ func decode(headerText string) (header, error) {
 		text, scalarKey := w.key(written, seen)
 		hk := headerKey{key: text, line: written.Line, col: written.Column, scalarKey: scalarKey, kNode: written, vNode: v}
 		if scalarKey {
-			if err := w.text(len(text)); err != nil {
-				return header{}, err
-			}
 			if hk.typed, err = w.value(v); err != nil {
 				return header{}, err
 			}
-			if hk.str, err = w.strs(v, hk.typed); err != nil {
-				return header{}, err
-			}
+			hk.str = stringView(v, hk.typed)
 		}
 		keys = append(keys, hk)
 	}
@@ -126,19 +127,25 @@ func yamlRoot(headerText string) (*yaml.Node, error) {
 	return node, nil
 }
 
-// walker builds typed values from nodes, keeps one header's budgets, and
-// notes what check reports where the nodes are written.
+// walker builds typed values from nodes, keeps one header's alias budgets,
+// and notes what check reports where the nodes are written.
 type walker struct {
-	values, bytes int
+	values, bytes int      // built through aliases so far
 	headerText    string   // the header, for how a key is written
 	cols          *columns // its lines and their columns, built when escaped first needs them
-	aliases       int      // how many alias uses the walk is inside: check notes nothing there
-	issues        []issue
-	duplicate     error
+	// aliases is how many alias uses the walk is inside: what it builds there
+	// counts against the budgets, and check notes nothing there.
+	aliases   int
+	issues    []issue
+	duplicate error
 }
 
-// text counts n bytes of text against the budget.
+// text counts n bytes of text against the budget, when the walk is inside an
+// alias use.
 func (w *walker) text(n int) error {
+	if w.aliases == 0 {
+		return nil
+	}
 	if w.bytes += n; w.bytes > maxTextBytes {
 		return errTooManyBytes
 	}
@@ -223,8 +230,10 @@ func (w *walker) value(n *yaml.Node) (any, error) {
 		w.aliases--
 		return v, err
 	}
-	if w.values++; w.values > maxValues {
-		return nil, errTooManyValues
+	if w.aliases > 0 {
+		if w.values++; w.values > maxValues {
+			return nil, errTooManyValues
+		}
 	}
 	switch n.Kind {
 	case yaml.SequenceNode:
@@ -265,11 +274,13 @@ func (w *walker) value(n *yaml.Node) (any, error) {
 	return scalar(n), nil
 }
 
-// strs is the string view of a top-level value, from its node and its typed
+// stringView is the string view of a top-level value, from its node and its typed
 // value: a scalar's decoded text; a list's items, each a scalar item's text or
-// a list or map item's Flow; a map's Flow. The flow text counts against the
-// budget.
-func (w *walker) strs(n *yaml.Node, typed any) (any, error) {
+// a list or map item's Flow; a map's Flow. The flow text needs no budget of
+// its own: it is written from the typed value, whose written part the raw cap
+// bounds and whose aliased part the budgets bound, and quoting at most
+// quadruples a string (strconv.Quote's \xNN).
+func stringView(n *yaml.Node, typed any) any {
 	n = resolve(n)
 	switch n.Kind {
 	case yaml.SequenceNode:
@@ -281,16 +292,12 @@ func (w *walker) strs(n *yaml.Node, typed any) (any, error) {
 				continue
 			}
 			out[i] = Flow(item)
-			if err := w.text(len(out[i])); err != nil {
-				return nil, err
-			}
 		}
-		return out, nil
+		return out
 	case yaml.MappingNode:
-		s := Flow(typed)
-		return s, w.text(len(s))
+		return Flow(typed)
 	}
-	return n.Value, nil
+	return n.Value
 }
 
 // scalar types one scalar node by rule T. A quoted scalar, a | or > block,

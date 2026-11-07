@@ -36,20 +36,36 @@ func writeBundle(t *testing.T) string {
 	return dir
 }
 
-// capture runs f with os.Stdout redirected and returns its stdout and exit code.
-func capture(t *testing.T, f func() int) (string, int) {
+// pipe returns a pipe's write end, and a function that closes it and returns
+// all that was written. The pipe is read as it is written, so output larger
+// than its buffer doesn't block the writer.
+func pipe(t *testing.T) (*os.File, func() string) {
 	t.Helper()
-	old := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	out := make(chan string)
+	go func() {
+		data, _ := io.ReadAll(r)
+		r.Close()
+		out <- string(data)
+	}()
+	return w, func() string {
+		w.Close()
+		return <-out
+	}
+}
+
+// capture runs f with os.Stdout redirected and returns its stdout and exit code.
+func capture(t *testing.T, f func() int) (string, int) {
+	t.Helper()
+	w, read := pipe(t)
+	old := os.Stdout
 	os.Stdout = w
 	code := f()
-	w.Close()
 	os.Stdout = old
-	out, _ := io.ReadAll(r)
-	return string(out), code
+	return read(), code
 }
 
 func TestCmdRead(t *testing.T) {
@@ -1002,17 +1018,12 @@ func TestVocabularyCommandsAcceptWhere(t *testing.T) {
 // the exit code.
 func captureAll(t *testing.T, f func() int) (stdout, stderr string, code int) {
 	t.Helper()
+	w, read := pipe(t)
 	old := os.Stderr
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
 	os.Stderr = w
 	stdout, code = capture(t, f)
-	w.Close()
 	os.Stderr = old
-	errOut, _ := io.ReadAll(r)
-	return stdout, string(errOut), code
+	return stdout, read(), code
 }
 
 func TestCmdDump(t *testing.T) {
