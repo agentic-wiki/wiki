@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/agentic-wiki/wiki/index"
-	"github.com/agentic-wiki/wiki/internal/scaffold"
 )
 
 // writeBundle creates a minimal bundle in a temp dir and returns its path.
@@ -331,7 +330,7 @@ func TestCmdInit(t *testing.T) {
 	if _, code := capture(t, func() int { return cmdInit(nil) }); code != 0 {
 		t.Fatalf("init exit %d", code)
 	}
-	for _, f := range []string{"wiki.toml", ".gitignore", "index.md", "AGENTS.md", "CLAUDE.md", "WORKFLOW.md"} {
+	for _, f := range []string{"wiki.toml", ".gitignore", "index.md", "AGENTS.md", "CLAUDE.md"} { // no --shape: the minimal starter
 		if _, err := os.Stat(f); err != nil {
 			t.Errorf("missing %s: %v", f, err)
 		}
@@ -349,22 +348,6 @@ func TestCmdInit(t *testing.T) {
 	}
 	if _, code := capture(t, func() int { return cmdInit([]string{"--force"}) }); code != 0 {
 		t.Errorf("init --force exit=%d want 0", code)
-	}
-}
-
-// Every shipped workflow must scaffold a bundle that passes `wiki check` cleanly
-// (exit 0), so a new starter can't ship a broken seed.
-func TestInitAllWorkflowsCheckClean(t *testing.T) {
-	for _, wf := range scaffold.Workflows() {
-		t.Run(wf, func(t *testing.T) {
-			t.Chdir(t.TempDir())
-			if _, code := capture(t, func() int { return cmdInit([]string{"--workflow", wf}) }); code != 0 {
-				t.Fatalf("init --workflow %s exit=%d", wf, code)
-			}
-			if _, code := capture(t, func() int { return cmdCheck(nil) }); code != 0 {
-				t.Errorf("%s scaffold should pass check, exit=%d", wf, code)
-			}
-		})
 	}
 }
 

@@ -135,13 +135,13 @@ func TestRowsCheckFix(t *testing.T) {
 func TestRowsInit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	out, code := capture(t, func() int { return cmdInit([]string{"--format", "csv"}) })
-	want := "dir,files\n.,\"[AGENTS.md, .gitignore, WORKFLOW.md, index.md, wiki.toml, CLAUDE.md]\"\n" // a list is its Flow
+	want := "dir,files\n.,\"[AGENTS.md, .gitignore, CLAUDE.md, index.md, wiki.toml]\"\n" // a list is its Flow
 	if out != want || code != 0 {
 		t.Errorf("init: exit %d\n got %q\nwant %q", code, out, want)
 	}
 	t.Chdir(t.TempDir())
 	out, code = capture(t, func() int { return cmdInit([]string{"--format", "jsonl"}) })
-	want = `{"dir":".","files":["AGENTS.md",".gitignore","WORKFLOW.md","index.md","wiki.toml","CLAUDE.md"]}` + "\n"
+	want = `{"dir":".","files":["AGENTS.md",".gitignore","CLAUDE.md","index.md","wiki.toml"]}` + "\n"
 	if out != want || code != 0 {
 		t.Errorf("init jsonl: exit %d\n got %q\nwant %q", code, out, want)
 	}

@@ -1,0 +1,10 @@
+# A board view for wikiview: uncomment it to see the tasks as a board.
+# [[tool.wikiview.board]]
+# id      = "board"
+# path    = "/{dir}"
+# name    = "Board"
+# where   = ["type=task"]
+# status  = "status"
+# columns = ["backlog", "todo", "in-progress", "blocked", "done"]
+# lane    = "priority"
+# lanes   = ["high", "medium", "low"]

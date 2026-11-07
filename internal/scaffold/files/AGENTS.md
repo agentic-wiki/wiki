@@ -1,150 +1,102 @@
-# Operating this knowledge base
+# Operating this wiki
 
-This folder is an **agentic wiki bundle**: plain Markdown (someone's notes, documents, datasets, and tasks) that you operate with the `wiki` CLI. The goal is knowledge that stays plain and human-readable (portable, greppable, diffable, open in any editor or by any LLM, the user's forever) yet is **structured well enough to answer questions like a database**. Three things make that work, and upholding them is your job:
+This folder is a wiki: Markdown files with YAML frontmatter, written by people and agents, and queried with the `wiki` command. The files are the source: edit them, and use `wiki` to find, follow and check them. This file is how to work in it. Change it when the way you work changes.
 
-- **Every entry has one home** (a folder), **one kind** (`type`), and **tags** for what cuts across. So the base is never a loose pile: you can ask for every dataset, everything tagged `2026`, everything under `finance/`.
-- **Entries link to what they relate to**, with relative Markdown links (`../finance/income.md`), so they navigate in any tool (GitHub, an editor, Obsidian). Those links form a **graph** (you can see what points at a page), what has no home (orphans), and what's been promised but not yet written (unresolved). A well-kept base can be *navigated* from `index.md` top-down, not grepped blindly.
-- **The structure is the value.** The better everything is filed and linked, the more findable it all becomes. Filing precisely, linking generously, and never leaving a dangling reference is the point, not overhead.
+## Setting up
 
-`grep` and `ls` can't compute that graph or answer "which notes have no home." `wiki` indexes the folder and does, deterministically. The files are the source (the index `wiki` builds is derived and disposable): **you are the librarian, `wiki` is your database engine.** So for anything structural (finding, moving, checking) call `wiki` rather than guessing or hand-editing paths.
+This wiki is new. Do these steps with the user, not alone. If they asked you for something else, do that first, then offer this setup once.
 
-`wiki` runs within the bundle (it walks up to find `wiki.toml`) or from anywhere with `wiki --root <dir>`. This file teaches *how to operate it*; run `wiki <command> -h` for a command's exact flags, and `wiki help` for the full list.
-
-**How *this* base is organized (its types, folders, and the loop you follow) lives in [WORKFLOW.md](./WORKFLOW.md); read it next.**
-
-On a brand-new base, treat `WORKFLOW.md` as the starting point, not the final spec: before populating the base, help the user commit its conventions (prune it to what they will actually use), scaffold a small skeleton, and have them validate it. Consolidate first, populate second. (This base came from a `--workflow` starter; `wiki init -h` lists the others, and both this file and `WORKFLOW.md` are yours to reshape.)
+1. Agree what the wiki is for and who reads it, and write that in a sentence or two at the top of `index.md` (in its **Goal:** line, when it has one).
+2. Read the rest of this file together, and delete what they won't use: a rule, a section, or a part's section with its folder and its types.
+3. Set `types` in `wiki.toml` to the kinds of entry they need, and no others (uncomment the line if it is commented out).
+4. Make the first folders, each with an `index.md`, and link each one from the root `index.md`.
+5. Run `wiki check`, delete this section, and commit.
 
 ## The model
 
-Three orthogonal axes classify every entry (keep them separate and the base stays friction-free):
+- **Folder, `type`, tags.** The folder is where an entry lives, by topic (`billing/`). The `type` is what it is (`note`, `task`), and every entry has one. Tags, when you need them, are what cuts across folders (`2026`, `needs-review`). A thing that would belong in two folders gets a tag instead.
+- **When `wiki.toml` lists `types`, use only those.** Add a type there before you use it.
+- **One thing per entry.** Similar but distinct things (a product and its pricing, a person and their team) get their own entries, linked to each other: being related is a reason to link, not to merge. Merge only true duplicates, two entries for the same thing.
+- **Search before you write**: update the entry that exists rather than write a second one.
 
-- **Folder** = one stable home, by domain (`finance/`, `tech/infra/`). Moving is `wiki move` (it rewrites the links for you); never hand-move a file.
-- **`type`** = what an entry *is* (`note`, `concept`, `dataset`, `task`, …), required on every entry. Free-form by default; declare a `types` vocabulary in `wiki.toml` to enforce a fixed set (`wiki check` then errors on any undeclared type). `wiki property type --counts` shows what's in use.
-- **Tags** = everything cross-cutting (`2026`, `needs-review`, a task's `feature`/`bug`). If a thing would ever live in two folders, it's a tag, not a folder.
+## Frontmatter
 
-**One thing per entry.** Similar-but-distinct things (a `type` and its factory) each get their own entry, linked to each other, never folded into one. Being adjacent or similarly named is a reason to link, not to merge. Merge only true duplicates: two entries for the *same* thing.
+Frontmatter is YAML. Values can be text, numbers, `true`/`false`, lists and nested maps:
 
-**A pile of records is one entry, not many.** "One thing per entry" governs *knowledge* you link to and reason about. Its opposite is *uniform records* you mostly count, sum, or filter in bulk (invoices, expenses, transactions, sensor readings): those go in a single `type: dataset` entry as one Markdown table, one row per record, queried with `wiki table <file> --format csv | duckdb` (or `jq` over `--format json`). The test is whether you want `backlinks` to each one or `SUM`/`GROUP BY` over all of them: individual identity wants entries, aggregation wants a dataset. **Store each cell raw and machine-readable** from the first row (an unformatted number `1234.55`, an ISO date `2026-02-05`, any unit such as a currency in its own column), never display-formatted (`1,234.55 USD`): `wiki table` then feeds `duckdb`/`jq` with no cleanup, and formatting stays a presentation concern rather than something baked into the stored data (a formatted `"1,234.55"` is a string that won't sum, and forces a fragile `gsub` at query time). A table row is data, not a graph node (a cell may name `/clients/acme.md`, but that is text, not an edge `backlinks` follows); if one table grows unwieldy, partition it by year or owner (`finance/invoices/2026.md`). And since a dataset needs a `type`, it is always a typed file (`invoices.md`), never an `index.md` (which carries no frontmatter): a folder of yearly tables is a collection fronted by a typeless `invoices/index.md` that *links* the dataset files, it cannot *be* one.
-
-Entries link with standard Markdown, relative to the linking file: `[Income](../finance/income.md)`, so they navigate in any renderer. Two conveniences, both normalized by `wiki tidy`: a hand-written root-absolute link (`/finance/income.md`) still resolves and `tidy --links` respells it relative; an Obsidian `[[wikilink]]` resolves too and `tidy --wikilinks` converts it to a standard Markdown link. Two reserved filenames carry no frontmatter at all (so no `type`): `index.md` (a folder's navigation surface) and the optional `log.md` (a dated chronicle); the one exception is the bundle-root `index.md`, which carries `okf_version`.
-
-Since an `index.md` holds no frontmatter (no `type`, so no concept of its own), the two serve different jobs, and the deciding question is what the folder *is*.
-
-- A **`thing.md` is load-bearing**: when a folder's contents are the parts of one thing (a project, a product, a plugin), that thing needs a home that can be typed, linked to, and found, so it gets a `thing.md` beside its `thing/` folder, never a typeless `thing/index.md`. 
-- A **folder `index.md` is only the entry point into a collection**: it fronts a folder of otherwise-independent entries (the bundle root, `projects/`, `people/`) to navigate what's inside, and carries no concept of its own.
-
-Ask which the folder is: one concept with parts (`thing.md`), or a bag of separate entries (`index.md`).
-
-`wiki` only indexes `.md` files. Files matched by `wiki.toml`'s `ignore` list (this manual, `WORKFLOW.md`) are operating docs, not wiki entries: absent from the index and from `check`. Paths matched by `ignore_orphans` stay full entries (indexed and `check`ed), only kept out of the `orphans` report (a parked backlog, say). So a file you want left out entirely (a `LEARNINGS.md`, a `README.md`) goes in `ignore`, not `ignore_orphans`. Both accept an exact path or a glob (`*`, `?`, `**`), so a single file (`AGENTS.md`) and a subtree (`archive/**`) both work.
-
-## Get oriented
-
-On a base you don't already know, look around first, and the fastest way to learn its shape, vocabulary, and health:
-
-```sh
-wiki status                                # entries, links, tags, tasks, broken, orphans
-wiki list --sort=timestamp | head -n 40    # what changed recently (--reverse for the stalest)
-wiki property type --counts                # what kinds of entries exist
-wiki tags --counts --sort=count            # dominant topics
-find -maxdepth 2 -type d | grep -v .git/
+```yaml
+---
+type: note
+title: "Late fees: how they're charged"
+tags: [billing, 2026]
+---
 ```
 
-Then follow `/index.md` and its links down, rather than grepping in the dark.
+- Quote a text value that holds `: ` or ` #`, or starts with anything but a letter or digit, as `title` does above.
+- An entry's title is its `title:` when this file's template for its type has one, and otherwise its first `# heading`. Use one, not both.
+- An entry whose frontmatter isn't valid YAML has no fields until it's fixed, and `wiki check` names it.
 
-## Division of labor
+## Structure
 
-- **You** read, write, and edit Markdown directly: create entries, compose frontmatter, draft content, add links. This is the judgment work `wiki` can't do.
-- **`wiki`** is the deterministic engine: queries, the link graph, moves, tidying, health. It never creates content.
+- **`index.md` is a collection's entry point**: the root, or a folder of separate entries (`people/`). It links what's inside, and carries no frontmatter (the root one carries only `okf_version`). Link each entry from its folder's `index.md`, unless this file says nothing has to link to it.
+- **One thing with parts is `thing.md` beside `thing/`.** `thing.md` is the typed entry that others link to; `thing/` holds its parts. A typeless `thing/index.md` can't stand for the thing. Ask: is the folder one concept with parts (`thing.md`), or a bag of separate entries (`index.md`)?
+- **Keep folders shallow**, two or three levels (`wiki check` warns past three). File names are lowercase hyphenated slugs (`late-fees.md`), with no spaces.
+- **`log.md`** is an optional dated chronicle, in any folder: no frontmatter, one `## 2026-11-07` heading per day. It records what happened; entries say what is.
 
-A query is only as good as the indexing preceding it: an entry nothing links to is invisible to `backlinks`; a task never added to a board won't show in `tasks`. The tool reflects what is *indexed*, not what exists. Using `ls`, `find` or `grep` is the last resort.
+## Links
 
-## Recipes: a need, and the command that meets it
+- **Link with relative Markdown links**: `[Late fees](../billing/late-fees.md)`, with a `#heading` anchor when you need one. `wiki tidy` turns root-absolute links and `[[wikilinks]]` into this form.
+- **The links are a graph.** `wiki backlinks` shows what points at an entry, `wiki orphans` what nothing points at (link it, or it's lost), and `wiki unresolved` the links to entries not written yet: a list of what to write. A link to a missing entry is allowed, as a promise: `check` warns about it until the entry is written.
+- **Never move or rename a file by hand**: `wiki move` rewrites every link to it (add `--dry-run` to preview, and `--include-frontmatter` for paths in frontmatter). Before deleting an entry, run `wiki backlinks` on it and fix what links there.
 
-### Find and recall
+## Work
 
-```sh
-wiki search "docker networking"                # every word by default (AND), case-insensitive, over frontmatter + body
-wiki search "docker networking" --any          # any word (OR): broadens the net
-wiki search "docker networking" --exact        # the verbatim phrase (contiguous)
-wiki search "docker" --lines                   # matching lines as file:line
-wiki list --where type=concept --where tags=docker   # filter by kind and topic (repeatable = AND)
-wiki list --where type=task --where status=done       # any frontmatter field, one flag
-wiki list --where type=task --where status!=done      # key!=value negates (here: still-open work)
-wiki list --where type=note --prefix personal/       # scope to a subtree
-wiki read /tech/infra/docker.md                # an entry's body, frontmatter stripped
-wiki outline /tech/infra/docker.md             # its heading map
-wiki table /finance/expenses.md --format csv   # extract a dataset's table, for jq/duckdb
-```
+- **A task is an entry that owns its state**: its `status` field is the truth, wherever the task is filed.
+- **A `- [ ]` checkbox is a step of the entry it lives in**, and only that entry owns it. Never use one to track another entry's state: that copy drifts. `wiki checkboxes` gathers the open ones.
+- **Boards are queries, not lists.** Find work by query (`wiki list --where type=task …`). Never list tasks in an entry or an `index.md`: queries find them, so nothing has to link to them.
 
-`--prefix <path>` scopes to a subtree and works on `list`, `search`, `checkboxes`, `tags`, `properties`, and `property`: reach for it to narrow any query in a large base. When the user asks something, check the base first: it may hold the answer, or reveal a gap worth a new entry. For structured questions ("all blocked tasks"), prefer `list --where status=blocked` (exact frontmatter-value match, repeatable for AND) over `search`, which matches query words as substrings anywhere in the file (frontmatter + body): by default every word must appear, in any order (broaden with `--any`, or narrow to a verbatim phrase with `--exact`). Use `key!=value` for negation (`status!=done` is everything still open, including entries with no `status` yet). Compare against the empty string to test emptiness: `--where assignee=` is entries with no assignee (unset or blank), and `--where assignee!=` is those that have one. It stays equality/inequality only; richer reporting is a skill over `--format json`.
+## Data
 
-### Follow the graph (what grep can't do)
+Data takes one of two shapes, by what you do with it:
 
-```sh
-wiki links /index.md                  # what it points to
-wiki backlinks /tech/infra/docker.md  # what points here
-wiki unresolved                       # promised but not yet written: a to-write list
-wiki orphans                          # nothing links in: knowledge to index
-```
+- **Records**, things you look up, link to and reason about one by one (companies, people, products): one entry per record, with its frontmatter as the columns. Every record of a kind carries the same keys, with values of the same shape. Write an unknown value as `key:` (null): don't leave the key out, and don't write `n/a`. Query them with `wiki list --where … --format csv` or `--format json`.
+- **A dataset**, uniform rows you only count, sum or filter (transactions, readings): one entry (`type: dataset`, added to `types`) holding one Markdown table, one row per record, read with `wiki table <file> --format csv`. A cell that names an entry is text, not a link: when you need backlinks to each row, use records.
 
-### Capture → refine → promote
+For both:
 
-Knowledge often arrives rough and matures in place. You write the file; `wiki` only queries it.
+- **Store values raw and machine-readable**: `1234.55`, not `1,234.55 USD` (the unit gets its own column or key); dates as `2026-02-05`; numbers unquoted in frontmatter.
+- **Partition a dataset that grows**, by year or by owner (`invoices/2026.md`), with an `invoices/index.md` that links the parts. An `index.md` can't hold a dataset: it has no frontmatter, so no type.
 
-1. **Capture** the rough thought as an entry now (don't lose it to a scratchpad).
-2. **Refine**: read it back (`wiki read`), ask the user a sharpening question or two, fill it in.
-3. **Promote**: give it a real `type`, `wiki move` it into its domain, and **link it in** from the domain's `index.md` and related entries. An unlinked entry is lost knowledge.
+## Capture, refine, promote
 
-*(How this base holds unclassified thoughts, such as an inbox or a `draft` type, is a [WORKFLOW.md](./WORKFLOW.md) choice.)*
+Knowledge often arrives rough. Don't lose it, and don't leave it rough:
 
-### Reshape safely
+1. **Capture**: write the thought down now, as an entry with the closest type you have, where this wiki keeps unsorted entries (a section below names the place; with none, next to the root `index.md`, linked from it).
+2. **Refine**: read it back, ask the user a question or two, and fill it in.
+3. **Promote**: give it its real `type`, `wiki move` it into its folder, and link it from related entries and, as Structure says, from its folder's `index.md`.
 
-```sh
-wiki move --dry-run /a.md /archive/a.md   # preview the link rewrites
-wiki move /a.md /archive/a.md             # relocate + rewrite every inbound link in one pass
-wiki tidy                                 # preview canonicalization; `tidy --all` applies (links→relative, names→slugs)
-```
+## Health
 
-Prefer `wiki move` over read-delete-rewrite by hand: hand-moving strands every backlink.
+- **Before you finish, run `wiki check`** and fix every error and warning. The one exception is a link to an entry not written yet that you mean to keep as a promise: `wiki unresolved` lists those.
+- **Groom in small steps**: write what `unresolved` promises, link `orphans`, merge true duplicates, fold redundant tags, and keep each `index.md` current. Change something only when it makes things easier to find. Never restructure for its own sake.
+- **Commit the wiki with the work that changed it**, after `wiki check` passes. Pull before you edit, when there is a remote. Without git there is no undo: make only the change you were asked for, and leave grooming for when the user is there.
 
-### Track work
+## Commands
 
-Two things wear a checkbox-ish shape; the model separates them by **who owns the state**:
-
-- A **`type: task` entry** is a first-class thing that owns its own state (`status` frontmatter is the source of truth). List them with `wiki list --where type=task`.
-- A **`- [ ]` checklist item** is a *subtask or step of the entry it lives in* (a task's steps, a note's to-dos), owned by that entry and nothing else. `wiki checkboxes` gathers open checklist items across the base, a `--prefix` subtree, or one `[file]`. (The command is `checkboxes`, not `tasks`: it scans the `- [ ]` construct, it does not list `type: task` entries.)
+Run them inside the wiki, or from anywhere with `wiki --root <dir>`. `wiki <command> -h` gives a command's flags; `wiki help` lists them all.
 
 ```sh
-wiki checkboxes                 # open '- [ ]' items across the base
-wiki checkboxes /active/login.md  # just that entry's own subtasks
-wiki list --where type=task     # the task entries themselves
+wiki status                                        # what's here, and what's broken
+wiki search "late fee"                             # every word must match; --exact for a phrase
+wiki read billing/late-fees.md                     # an entry, without its frontmatter
+wiki outline billing/late-fees.md                  # its headings
+wiki list --where type=task --where status!=done   # entries, by their frontmatter
+wiki property status --counts                      # the values a key takes, and how often
+wiki backlinks billing/late-fees.md                # what links here
+wiki unresolved                                    # links to entries not written yet
+wiki orphans                                       # entries nothing links to
+wiki move old.md billing/new.md                    # move or rename, rewriting every link
+wiki tidy                                          # links and file names to fix; --all fixes them
+wiki check                                         # errors and warnings; --fix repairs the safe ones
 ```
 
-A **board** (`index.md`) references task entries with **plain links**, not by checkboxing them: a link is an external reference and never carries the target's state (the entry owns that, so a board checkbox would just be a second copy that drifts). A genuinely trivial to-do not worth its own entry can sit as a bare `- [ ]` on the board, but then it is a checklist item, not a queryable entry, that is the trade-off. The board is **authored, not generated**: `wiki` never edits it, you keep it current; a task the board omits shows up under `wiki orphans` if nothing else links it.
-
-*(How this base runs a board (columns, priorities, pruning) is in [WORKFLOW.md](./WORKFLOW.md).)*
-
-## Keep it healthy
-
-**After any batch of edits, run `wiki check` before you're done.** It's the gate:
-
-```sh
-wiki check        # warnings (e.g. a broken link) exit 0; errors (missing/unknown type) exit 1
-wiki check --fix  # apply the safe auto-repairs (e.g. okf_version sync)
-```
-
-Groom in small steps that compound: turn `unresolved` links into entries when it helps, re-home `orphans`, surface and merge true duplicates (two entries for one thing; similar-but-distinct entries stay separate and linked), consolidate redundant tags, link related entries, and keep each folder's `index.md` current. **Change something only when it makes the base more findable, never restructure for its own sake.** A broken link is tolerated (it's future knowledge, and `unresolved` lists it); `check` likewise warns on a `#anchor` link whose target has no such heading.
-
-## Git and safety
-
-Git is optional but highly recommended: it is the undo for a base an agent edits. When the base is at the root of a repo: pull before editing (otherwise ask the user), and after `wiki check` passes, commit the batch with a clear message; resolve conflicts by preserving both sides' intent and merging frontmatter sensibly. **Without git there is no undo, so don't groom or restructure unattended; make the change you were asked for and leave sweeping grooming for when the user is present.**
-
-## Conventions
-
-- Every entry has a `type` (reserved `index.md`/`log.md`); slug filenames (lowercase, hyphenated, no spaces); shallow folders (2–3 levels).
-- Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists and nested maps. `--format json` gives lists and maps as JSON, and it is the exact view. Everywhere else, a list or map is one line of YAML in flow style (`[a, b]`, `{k: v}`), and types are lost: the text `"{a: 1}"` and the map `{a: 1}` both read `{a: 1}` there. `wiki check` reports what wiki can't read or edit safely.
-- Root-absolute links, no wikilinks: `wiki check` flags any `[[wikilink]]` (they're resolved into the graph for compatibility, but aren't part of the format), so rewrite them as standard Markdown links (or run `wiki tidy --wikilinks` to convert them).
-- Every command that reports results takes `--format text|json|jsonl|csv|tsv` (`json`/`jsonl`/`csv`/`tsv` for structured output you can pipe; `version` prints a bare string). `list --format json` carries each entry's full frontmatter, with YAML types: an unquoted number, `true`/`false` or `null` is a JSON value, and a quoted value is a string. So `wiki list --where type=task --format json | jq …` is the reporting surface for rollups the CLI does not compute itself. `list` and `orphans` with `--format csv|tsv` add one column per frontmatter key after `_path,type`; name the columns you need, in order, with `--fields a,b,c`. Every command gives rows in jsonl/csv/tsv: one per item of a list result, or one for any other result; jsonl holds the same rows as csv, one JSON object per line. text shows only the entry's path and `type` (the two fields every entry is guaranteed to have).
-- json keys follow the shape of what is being reported. `list` and `orphans` merge your frontmatter into each row, so the entry's own path is under the **reserved key `_path`** (leading underscore; the basename is just `basename(_path)`) and a frontmatter field named `name:` or `path:` round-trips untouched — every other key is your frontmatter, typed as above. Rows *about* an entry (`check`, `checkboxes`) name it `entry`. Link rows (`links`, `backlinks`, `unresolved`) name their two ends `from` and `to`.
-- Exit codes: `0` ok (enumerations return `0` even when empty), `1` no match (`search`/`table`) or `check` errors, `2` a real error.
-- `wiki` not installed? `brew install agentic-wiki/tap/wiki`, or see the [wiki repo](https://github.com/agentic-wiki/wiki).
+Every query command takes `--format json` (or `jsonl`, `csv`, `tsv`) for scripts: `wiki list --format json | jq`.

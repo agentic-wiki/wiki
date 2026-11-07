@@ -1,9 +1,0 @@
-spec = "0.1"
-# Optional: declare a `types` vocabulary to enforce it (`wiki check` errors on any undeclared type)
-# types = ["concept", "reference", "guide", "example", "note", "decision", "source"]
-
-# Files that are NOT wiki entries (excluded from index and check; globs supported)
-ignore = ["AGENTS.md", "CLAUDE.md", "WORKFLOW.md", "raw/**"]
-
-# Optionally keep a subtree indexed but out of the `wiki orphans` report, e.g. a parked backlog (globs supported)
-# ignore_orphans = ["archive/**"]

@@ -50,13 +50,13 @@ With a Go toolchain on any OS: `go install github.com/agentic-wiki/wiki/cmd/wiki
 ## Sixty seconds
 
 ```sh
-wiki init                     # a bare, ready-to-use knowledge base
-wiki status                   # what is here
-wiki check                    # is it healthy? (links resolve, entries typed)
-wiki list                     # every entry
+wiki init --shape specs,kanban  # a product map and its backlog
+wiki status                     # what is here
+wiki check                      # is it healthy? (links resolve, entries typed)
+wiki list                       # every entry
 ```
 
-`wiki init` scaffolds a general purpose knowledge base with a light backlog. It can also start from other shapes (a kanban tracker, an org knowledge base, product docs): see [Starter workflows](#starter-workflows).
+`wiki init` alone writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. Add `--shape` to start from parts: see [Starter shapes](#starter-shapes).
 
 That's the whole thing: a folder of plain Markdown. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
@@ -106,7 +106,7 @@ That last one is quietly the favorite: a broken link is not an error here, it is
 wiki checkboxes                    # every open - [ ] checkbox, across the whole base
 wiki list --where type=task        # list task entries (detailed entries)
 wiki tags --counts --sort=count    # what you write about most
-wiki property status --counts      # how many open vs done, draft vs final
+wiki property status --counts      # how many in each status: todo vs done, planned vs built
 wiki property status --counts --where type=task   # …only the tasks', if the folder mixes kinds
 ```
 
@@ -166,7 +166,7 @@ Three axes, kept separate, are what keep it friction-free:
 
 Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists and nested maps. `--format json` gives lists and maps as JSON, and it is the exact view. Everywhere else, a list or map is one line of YAML in flow style (`[a, b]`, `{k: v}`), and types are lost: the text `"{a: 1}"` and the map `{a: 1}` both read `{a: 1}` there. `wiki check` reports what wiki can't read or edit safely.
 
-Entries link with ordinary Markdown links from the base root, `[Income](/finance/income.md)`. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
+Entries link with relative Markdown links, `[Income](../finance/income.md)`, so they work in any Markdown viewer. A link from the root (`/finance/income.md`) resolves too, and `wiki tidy --links` rewrites it relative. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 
 ```
 my-wiki/
@@ -181,22 +181,26 @@ my-wiki/
     └── wiki-cli.md        (type: tool)
 ```
 
-## Starter workflows
+## Starter shapes
 
-`wiki init --workflow <name>` scaffolds a ready-made shape (`wiki init -h` lists them; omit it for `default`). Each is a starting point you then edit to fit.
+With no `--shape`, `wiki init` writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. `AGENTS.md` is the rules and commands an agent works by, and `CLAUDE.md` holds one line, `@AGENTS.md`, so Claude Code reads the same file.
 
-| Workflow | What it is |
-|---|---|
-| `default` | A general knowledge base with a light backlog. |
-| `project-backlog` | A plain-Markdown kanban tracker. |
-| `org-base` | An organization's internal knowledge and data: projects, clients, products, people, plus datasets like invoices and expenses. |
-| `product-docs` | Wiki-first product documentation: a linked concept graph plus an optional guides layer. |
+`wiki init --shape a,b` adds parts. One part fills the wiki's root; two or more each get their own folder, linked from the root `index.md`. Each part adds its section to `AGENTS.md` and its types to `wiki.toml`.
+
+| Part | Folder | What it holds |
+|---|---|---|
+| `notes` | `notes/` | what we know, filed by topic and linked |
+| `kanban` | `backlog/` | the work, one task per file |
+| `records` | `records/` | one entry per record, its frontmatter the columns |
+| `specs` | `product/` | what the product is, one spec per concept |
+
+Each part's section in `AGENTS.md` and its lines in `wiki.toml` are yours to edit.
 
 ## Run by an agent
 
 The `wiki` CLI is built for an AI agent to operate the whole base, end to end. An agent is probabilistic; your knowledge base must not be. `wiki` is the deterministic engine in between, so every query, move, and check is exact and repeatable: an agent runs your base with the reliability of a database, not the guesswork of a prompt.
 
-You capture a rough thought on the go, and the agent files it as a `draft`. Later it reads your drafts back to you, asks the one or two questions that sharpen each, then files it into a real entry in the right place, linked to what it relates to. It keeps the indexes current, finds the orphans, grooms the links, and tells you what is still unwritten. You think and decide; it does the filing.
+You capture a rough thought on the go, and the agent puts it in the inbox. Later it reads the inbox back to you, asks the one or two questions that sharpen each thought, then files it as a real entry in the right place, linked to what it relates to. It keeps the indexes current, finds the orphans, grooms the links, and tells you what is still unwritten. You think and decide; it does the filing.
 
 The loop, in the tool's own verbs: capture, refine, promote, index, retrieve, maintain. Two skills live in the [skills repo](https://github.com/agentic-wiki/skills):
 
@@ -219,7 +223,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 
 | Command | What it does |
 |---|---|
-| `init [dir]` | Scaffold a new bundle from a `--workflow` starter (`--force` to write into a non-empty dir) |
+| `init [dir]` | Write a new wiki: the minimal starter, or `--shape` parts (`--force` to write into a non-empty dir) |
 | `status` | Bundle counts: entries, links, tags, checkboxes, broken links, orphans |
 | `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body; every word by default (`--any` any word, `--exact` verbatim phrase, `--lines` for file:line) |

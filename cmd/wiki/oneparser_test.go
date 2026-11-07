@@ -218,7 +218,7 @@ func TestCSVListCellIsFlowYAML(t *testing.T) {
 	}
 	t.Chdir(t.TempDir())
 	out, code = capture(t, func() int { return cmdInit([]string{"--format", "tsv"}) })
-	if want := "dir\tfiles\n.\t[AGENTS.md, .gitignore, WORKFLOW.md, index.md, wiki.toml, CLAUDE.md]\n"; code != 0 || out != want {
+	if want := "dir\tfiles\n.\t[AGENTS.md, .gitignore, CLAUDE.md, index.md, wiki.toml]\n"; code != 0 || out != want {
 		t.Errorf("init tsv:\n got %q\nwant %q", out, want)
 	}
 }

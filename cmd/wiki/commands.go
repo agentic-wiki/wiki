@@ -19,9 +19,15 @@ import (
 
 func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	force := fs.Bool("force", false, "write into a non-empty directory")
-	workflow := fs.String("workflow", "", fmt.Sprintf("starter workflow: %s (default: %s)", strings.Join(scaffold.Workflows(), ", "), scaffold.DefaultWorkflow))
+	force := fs.Bool("force", false, "write into a directory that isn't empty")
+	shape := fs.String("shape", "", "the parts to start with, comma-separated (see above); none gives the minimal starter")
 	format := formatFlag(fs)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "usage: wiki init [dir] [--shape part,part] [--force]\n\n"+
+			"Writes a new wiki in dir (default: the current directory).\n\n"+
+			"Parts (one fills the wiki; two or more get a folder each):\n%s\n", scaffold.PartsTable())
+		fs.PrintDefaults()
+	}
 	fs.Parse(args)
 	if rootDir != "" {
 		// --root finds an existing bundle; init makes one, so honoring it would
@@ -34,11 +40,13 @@ func cmdInit(args []string) int {
 		dir = fs.Arg(0)
 		fs.Parse(fs.Args()[1:]) // pick up flags that followed the path
 	}
-	if *workflow == "" {
-		*workflow = scaffold.DefaultWorkflow
-		fmt.Fprintf(os.Stderr, "Using '%s' workflow.\n", *workflow)
+	var parts []string
+	if *shape != "" {
+		for _, p := range strings.Split(*shape, ",") {
+			parts = append(parts, strings.TrimSpace(p))
+		}
 	}
-	written, err := scaffold.Write(dir, *workflow, *force)
+	written, err := scaffold.Write(dir, parts, *force)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
@@ -47,7 +55,7 @@ func cmdInit(args []string) int {
 		Dir   string   `json:"dir"`
 		Files []string `json:"files"`
 	}{dir, written}
-	lines := []string{"initialized agentic-wiki bundle in " + dir}
+	lines := []string{"wrote a new wiki in " + dir}
 	for _, f := range written {
 		lines = append(lines, "  "+f)
 	}

@@ -28,6 +28,13 @@ All notable changes to `wiki` are documented here. This project follows [semanti
   - `Entry.TypedFrontmatter` returns `parse.Map`, with keys in file order, as a deep copy;
   - `parse.Scan`, `Header`, `Field` and `TypedFrontmatter` are removed;
   - a write's refusal is a `*parse.EditError`.
+- **`wiki init --shape` replaces `--workflow`.** A wiki is composed from parts:
+  - `notes`: what we know, filed by topic;
+  - `kanban`: tasks with a status;
+  - `records`: one entry per record;
+  - `specs`: a product map.
+
+  `--shape specs,kanban` gives both. One part fills the wiki; two or more each get a folder (`notes/`, `backlog/`, `records/`, `product/`), linked from the root `index.md`. `wiki.toml` gets the parts' `types` and `ignore_orphans`. The `default`, `org-base`, `product-docs` and `project-backlog` starters are removed, and without `--shape`, `init` writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. `WORKFLOW.md` is no longer written: each part's section is in `AGENTS.md`, and `CLAUDE.md` is one line, `@AGENTS.md`. A `WORKFLOW.md` from an earlier `init` is left in place: fold what you still need into `AGENTS.md`, then delete it.
 
 ### Added
 
@@ -53,6 +60,7 @@ All notable changes to `wiki` are documented here. This project follows [semanti
 - A key such as `a:b` can be written.
 - A key that YAML wouldn't read back as itself can't be written: one starting with a YAML indicator (`[`, `{`, `*`, `'`, `%`, `@`, `|`), and `~`, `null` or `<<`.
 - `check --fix` names the file when it can't edit the root `index.md`.
+- **The scaffolded `AGENTS.md` teaches the practice in every wiki**: a setting-up block to work through with the user and then delete, the model, structure (`index.md`, `thing.md` beside `thing/`), links, work, data (records and datasets), capture, health and the everyday commands, then one short section per part. The kanban part's wikiview board view is in `wiki.toml`, commented out. A test runs every command the scaffolded docs show, so they can't drift from the CLI.
 
 ### Fixed
 
