@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -32,6 +33,7 @@ func writeRowsBundle(t *testing.T) string {
 // result. One golden per row of the ADR's table (revision 6, D1).
 func TestRowsPerCommand(t *testing.T) {
 	dir := writeRowsBundle(t)
+	dirJSON, _ := json.Marshal(dir) // a Windows path has backslashes, which JSON escapes
 	for _, tc := range []struct {
 		name       string
 		run        func([]string) int
@@ -66,7 +68,7 @@ func TestRowsPerCommand(t *testing.T) {
 		{"outline", cmdOutline, []string{"guide.md"}, "_path,level,text,line\n/guide.md,1,Guide,7\n/guide.md,2,Setup,9\n",
 			`{"_path":"/guide.md","level":1,"text":"Guide","line":7}` + "\n" + `{"_path":"/guide.md","level":2,"text":"Setup","line":9}` + "\n", 0},
 		{"status", cmdStatus, nil, "dir,spec,entries,links,tags,checkboxes,broken,orphans\n" + dir + ",0.1,4,4,2,2,1,1\n",
-			`{"dir":"` + dir + `","spec":"0.1","entries":4,"links":4,"tags":2,"checkboxes":2,"broken":1,"orphans":1}` + "\n", 0},
+			`{"dir":` + string(dirJSON) + `,"spec":"0.1","entries":4,"links":4,"tags":2,"checkboxes":2,"broken":1,"orphans":1}` + "\n", 0},
 		{"read", cmdRead, []string{"flat.md"}, "_path,type,body\n/flat.md,note,\"flat body, see [g](/guide.md)\n\"\n",
 			`{"_path":"/flat.md","type":"note","body":"flat body, see [g](/guide.md)\n"}` + "\n", 0},
 	} {

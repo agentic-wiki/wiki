@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## Unreleased
+
+### Fixed
+
+- **A `move` whose rename fails changes nothing.** It used to rewrite the links first, so a refused rename (a name the system won't take, a locked file, no permission) left them pointing at a file that never moved. The rename now comes first, and a folder made for it is removed again if it fails. If a rewrite fails after the rename, the other files are still rewritten, and the error names each file left pointing at the old path.
+
 ## v0.15.0
 
 ### Breaking

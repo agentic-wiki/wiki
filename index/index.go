@@ -877,9 +877,14 @@ type MoveResult struct {
 // way but writing them root-absolute, the stable-key form a metadata field needs
 // (an opt-in: frontmatter is otherwise opaque, since the tool cannot know a
 // path-shaped value is a reference rather than a snapshot).
-// With dryRun it computes the plan without writing. There is no rollback: on
-// a mid-way write error it returns what was already done so `unresolved` can surface
-// any leftovers.
+// With dryRun it computes the plan without writing. Otherwise it renames first
+// and rewrites after, so a failed rename leaves the wiki as it was. A rewrite
+// that fails after the rename leaves that file's references at the old path:
+// the others are still written, and the error names each file, for
+// `unresolved` to surface what is left.
+//
+// So a nil result with an error means nothing changed; a result with an error
+// means the file moved, and the error joins one error per file not rewritten.
 func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*MoveResult, error) {
 	src, err := idx.Resolve(srcArg)
 	if err != nil {
@@ -940,7 +945,13 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	// jobs: every link whose resolved target is src is respelled to point at dest
 	// (relative from the *linking* file), and the moved file's own outgoing links
 	// are respelled relative from its new directory (its dir changed, so its
-	// relative links would otherwise dangle).
+	// relative links would otherwise dangle). Nothing is written yet: each
+	// file's new text is kept until the rename has succeeded.
+	type write struct {
+		e    *Entry
+		text string
+	}
+	var writes []write
 	for _, e := range idx.Entries {
 		epath := e.Path
 		if e == src {
@@ -974,7 +985,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		if !rewritesFM {
 			var err error
 			if raw, err = e.Raw(); err != nil {
-				return res, err
+				return nil, err
 			}
 		}
 		lines := strings.Split(raw, "\n") // link lines are file-relative
@@ -1000,25 +1011,63 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 			continue
 		}
 		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n, FrontmatterRefs: fields})
-		if !dryRun {
-			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
-				return res, err
-			}
-		}
+		writes = append(writes, write{e, strings.Join(lines, "\n")})
+	}
+	if dryRun {
+		return res, nil
 	}
 
-	if !dryRun {
-		if err := os.MkdirAll(filepath.Dir(destAbs), 0o755); err != nil {
-			return res, err
-		}
-		// Through rename, not os.Rename: a move needs delete access to the
-		// source, so it meets the same contention a replace does even though the
-		// destination is known not to exist.
-		if err := rename(src.abs, destAbs); err != nil {
-			return res, err
+	// Rename first, then rewrite: a move whose rename fails leaves the wiki as
+	// it was. The moved file's own text goes to its new path, or, when it is a
+	// symlink, to the file it points to, which doesn't move.
+	movedAbs := destAbs
+	if fi, err := os.Lstat(src.abs); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if real, err := filepath.EvalSymlinks(src.abs); err == nil {
+			movedAbs = real
 		}
 	}
-	return res, nil
+	made := missingDirs(filepath.Dir(destAbs))
+	err = os.MkdirAll(filepath.Dir(destAbs), 0o755)
+	if err == nil {
+		// Through rename, not os.Rename: a move needs delete access to the
+		// source, so it meets the same contention a replace does even though
+		// the destination is known not to exist.
+		err = rename(src.abs, destAbs)
+	}
+	if err != nil {
+		for _, d := range made {
+			os.Remove(d) // only an empty folder goes, so nothing else is lost
+		}
+		return nil, err
+	}
+
+	// The file has moved. A rewrite that fails now leaves links pointing at the
+	// old path; the others are still written, and the error names each file
+	// left as it was, for `wiki unresolved` to find its links.
+	var errs []error
+	for _, w := range writes {
+		abs := w.e.abs
+		if w.e == src {
+			abs = movedAbs
+		}
+		if err := writeFile(abs, []byte(w.text)); err != nil {
+			errs = append(errs, fmt.Errorf("moved %s to %s, but %s was not rewritten (run wiki unresolved): %w", src.Path, dest, w.e.Path, err))
+		}
+	}
+	return res, errors.Join(errs...)
+}
+
+// missingDirs is dir and each of its parents that doesn't exist yet, deepest
+// first: the folders os.MkdirAll(dir) would make.
+func missingDirs(dir string) []string {
+	var missing []string
+	for d := dir; d != filepath.Dir(d); d = filepath.Dir(d) {
+		if _, err := os.Lstat(d); err == nil {
+			break
+		}
+		missing = append(missing, d)
+	}
+	return missing
 }
 
 // frontmatterRewrites is the callback parse.RewriteValues asks about every

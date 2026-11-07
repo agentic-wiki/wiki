@@ -1218,3 +1218,49 @@ func TestEveryCommandRejectsUnknownFormat(t *testing.T) {
 		}
 	}
 }
+
+// tree is every file's content and every directory under the current one,
+// keyed by slash path, so a test can assert a command changed nothing.
+func tree(t *testing.T) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
+		if err != nil || p == "." {
+			return err
+		}
+		if d.IsDir() {
+			files[filepath.ToSlash(p)+"/"] = ""
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		files[filepath.ToSlash(p)] = string(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// A move whose rename fails changes nothing: no link or frontmatter reference
+// is rewritten, the source stays, and no folder is left behind. Here the
+// rename fails because the destination's parent is a file, or because its name
+// is longer than any file system allows (its new folder is made first).
+func TestMoveRenameFailsChangesNothing(t *testing.T) {
+	for _, dest := range []string{"blocker/a.md", "new/" + strings.Repeat("x", 300) + ".md"} {
+		writeFiles(t, map[string]string{
+			"wiki.toml": "spec=\"0.1\"\ntypes=[\"note\"]\n",
+			"a.md":      "---\ntype: note\n---\n# A\nsee [ref](ref.md)\n",
+			"ref.md":    "---\ntype: note\nrelated: /a.md\n---\n# Ref\nsee [a](a.md)\n",
+			"blocker":   "a file, not a folder\n",
+		})
+		before := tree(t)
+		_, errOut, code := captureAll(t, func() int { return cmdMove([]string{"a.md", dest, "--include-frontmatter"}) })
+		if code != 2 || !strings.HasPrefix(errOut, "wiki: ") {
+			t.Errorf("move to %.20s: exit %d, stderr %q; want 2 and an error", dest, code, errOut)
+		}
+		if after := tree(t); !reflect.DeepEqual(after, before) {
+			t.Errorf("move to %.20s changed the wiki:\n got %q\nwant %q", dest, after, before)
+		}
+	}
+}
