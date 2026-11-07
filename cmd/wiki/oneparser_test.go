@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -267,19 +268,21 @@ func TestMoveFrontmatterFollowsWriteRules(t *testing.T) {
 }
 
 // A new value that needs quotes is written quoted, and reads back: here a
-// destination with ": " in its name.
+// destination with ", " in its name, inside a flow list, where an unquoted
+// comma would split it into two items. The name is legal on every OS.
 func TestMoveFrontmatterReadsBack(t *testing.T) {
 	writeFiles(t, map[string]string{
 		"wiki.toml": "spec=\"0.1\"\ntypes=[\"note\"]\n",
 		"a.md":      "---\ntype: note\n---\n# A\n",
-		"ref.md":    "---\ntype: note\nrelated: /a.md\n---\n# Ref\n",
+		"c.md":      "---\ntype: note\n---\n# C\n",
+		"ref.md":    "---\ntype: note\nrelated: [/a.md, /c.md]\n---\n# Ref\n",
 	})
-	_, errOut, code := captureAll(t, func() int { return cmdMove([]string{"a.md", "x: y.md", "--include-frontmatter"}) })
+	_, errOut, code := captureAll(t, func() int { return cmdMove([]string{"a.md", "x, y.md", "--include-frontmatter"}) })
 	got, _ := os.ReadFile("ref.md")
-	if code != 0 || errOut != "" || string(got) != "---\ntype: note\nrelated: \"/x: y.md\"\n---\n# Ref\n" {
+	if code != 0 || errOut != "" || string(got) != "---\ntype: note\nrelated: [\"/x, y.md\", /c.md]\n---\n# Ref\n" {
 		t.Fatalf("exit %d, stderr %q, ref.md %q", code, errOut, got)
 	}
-	if fm, _ := parse.Frontmatter(string(got)); fm["related"] != "/x: y.md" {
+	if fm, _ := parse.Frontmatter(string(got)); !slices.Equal(parse.Strings(fm, "related"), []string{"/x, y.md", "/c.md"}) {
 		t.Errorf("reads back %q", fm["related"])
 	}
 }

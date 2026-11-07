@@ -844,14 +844,26 @@ func cmdMove(args []string) int {
 		return code
 	}
 	res, err := idx.Move(src, dest, *dryRun, *includeFM)
-	if err != nil {
+	if res == nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}
 	for _, w := range res.Warnings {
 		fmt.Fprintln(os.Stderr, "wiki: warning:", w)
 	}
-	return emitMove(res, *dryRun, *format)
+	code = emitMove(res, *dryRun, *format)
+	if err != nil {
+		// The file moved, but some files weren't rewritten: one line each.
+		errs := []error{err}
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			errs = joined.Unwrap()
+		}
+		for _, e := range errs {
+			fmt.Fprintln(os.Stderr, "wiki:", e)
+		}
+		return 2
+	}
+	return code
 }
 
 func emitMove(res *index.MoveResult, dryRun bool, format string) int {
