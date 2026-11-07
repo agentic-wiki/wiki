@@ -37,8 +37,8 @@ tags: [billing, 2026]
 
 ## Structure
 
-- **`index.md` is a collection's entry point**: the root, or a folder of separate entries (`people/`). It links what's inside, and carries no frontmatter (the root one carries only `okf_version`). Link each entry from its folder's `index.md`, unless this file says nothing has to link to it.
-- **One thing with parts is `thing.md` beside `thing/`.** `thing.md` is the typed entry that others link to; `thing/` holds its parts. A typeless `thing/index.md` can't stand for the thing. Ask: is the folder one concept with parts (`thing.md`), or a bag of separate entries (`index.md`)?
+- **Each name is a file or a folder, never both.** A file (`late-fees.md`) is one thing. A folder with an `index.md` (`people/`) is a bag of separate entries: its `index.md` links them, unless this file says nothing has to link to them. An `index.md` is navigation, so it carries no frontmatter and no type (a type is what queries find); the root one carries only `okf_version`. Never write `expenses.md` and `expenses/index.md` together.
+- **One thing with parts is the only exception: `thing.md` beside `thing/`.** `thing.md` is the typed entry that others link to, and `thing/` holds its parts, with no `index.md`. Ask: is the folder one thing with parts (`thing.md`), or a bag of separate entries (`index.md`)?
 - **Keep folders shallow**, two or three levels (`wiki check` warns past three). File names are lowercase hyphenated slugs (`late-fees.md`), with no spaces.
 - **`log.md`** is an optional dated chronicle, in any folder: no frontmatter, one `## 2026-11-07` heading per day. It records what happened; entries say what is.
 
@@ -58,13 +58,13 @@ tags: [billing, 2026]
 
 Data takes one of two shapes, by what you do with it:
 
-- **Records**, things you look up, link to and reason about one by one (companies, people, products): one entry per record, with its frontmatter as the columns. Every record of a kind carries the same keys, with values of the same shape. Write an unknown value as `key:` (null): don't leave the key out, and don't write `n/a`. Query them with `wiki list --where … --format csv` or `--format json`.
+- **Records**, things you look up, link to and reason about one by one (companies, people, products): one entry per record, in a folder per kind (`companies/`), with its frontmatter as the columns. Every record of a kind carries the same keys, with values of the same shape. Write an unknown value as `key:` (null): don't leave the key out, and don't write `n/a`. Query them with `wiki list --where … --format csv` or `--format json`.
 - **A dataset**, uniform rows you only count, sum or filter (transactions, readings): one entry (`type: dataset`, added to `types`) holding one Markdown table, one row per record, read with `wiki table <file> --format csv`. A cell that names an entry is text, not a link: when you need backlinks to each row, use records.
 
 For both:
 
 - **Store values raw and machine-readable**: `1234.55`, not `1,234.55 USD` (the unit gets its own column or key); dates as `2026-02-05`; numbers unquoted in frontmatter.
-- **Partition a dataset that grows**, by year or by owner (`invoices/2026.md`), with an `invoices/index.md` that links the parts. An `index.md` can't hold a dataset: it has no frontmatter, so no type.
+- **A dataset that grows becomes a bag**: `wiki move expenses.md expenses/2025.md`, add `expenses/2026.md`, and write an `expenses/index.md` that links them.
 
 ## Capture, refine, promote
 

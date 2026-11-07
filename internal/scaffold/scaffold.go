@@ -34,10 +34,19 @@ type part struct {
 
 // parts, in the order `init -h` lists them.
 var parts = []part{
-	{"notes", "notes", "Notes", "what we know, filed by topic and linked", []string{"note", "source"}, []string{"inbox/**"}},
+	{"knowledge", "topics", "Topics", "what we know, filed by topic and linked", []string{"note", "source"}, []string{"inbox/**"}},
 	{"kanban", "backlog", "Backlog", "the work, one task per file", []string{"task"}, []string{"**"}},
-	{"records", "records", "Records", "one entry per record, its frontmatter the columns", []string{"record"}, []string{"*/**"}},
+	{"data", "data", "Data", "records and datasets, with an example of each", []string{"company", "dataset"}, []string{"*/**"}},
 	{"specs", "product", "Product", "what the product is, one spec per concept", []string{"spec", "note"}, nil},
+}
+
+// Full is every part's name, in order: the shape `init --full` writes.
+func Full() []string {
+	names := make([]string, len(parts))
+	for i, p := range parts {
+		names[i] = p.name
+	}
+	return names
 }
 
 // PartsTable is the parts as `init -h` lists them: name, folder, and what each holds.
@@ -167,10 +176,7 @@ func choose(shape []string) ([]part, error) {
 		case name == "":
 			return nil, errors.New("empty part in --shape")
 		case i < 0:
-			var names []string
-			for _, p := range parts {
-				names = append(names, p.name)
-			}
+			names := Full()
 			list := strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
 			return nil, fmt.Errorf("unknown part %q in --shape (use %s)", name, list)
 		case slices.ContainsFunc(chosen, func(p part) bool { return p.name == name }):

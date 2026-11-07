@@ -56,7 +56,7 @@ wiki check                      # is it healthy? (links resolve, entries typed)
 wiki list                       # every entry
 ```
 
-`wiki init` alone writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. Add `--shape` to start from parts: see [Starter shapes](#starter-shapes).
+`wiki init` alone writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. Add `--shape` to start from parts, or `--full` for all of them: see [Starter shapes](#starter-shapes).
 
 That's the whole thing: a folder of plain Markdown. Open it in any editor, commit it to git, point Obsidian at it, point an agent at it. `wiki` simply makes it queryable and keeps it honest.
 
@@ -187,13 +187,13 @@ my-wiki/
 
 With no `--shape`, `wiki init` writes the minimal starter: `index.md`, `wiki.toml` and `AGENTS.md`, with `CLAUDE.md` and `.gitignore`. `AGENTS.md` is the rules and commands an agent works by, and `CLAUDE.md` holds one line, `@AGENTS.md`, so Claude Code reads the same file.
 
-`wiki init --shape a,b` adds parts. One part fills the wiki's root; two or more each get their own folder, linked from the root `index.md`. Each part adds its section to `AGENTS.md` and its types to `wiki.toml`.
+`wiki init --shape a,b` adds parts. One part fills the wiki's root; two or more each get their own folder, linked from the root `index.md`. Each part adds its section to `AGENTS.md` and its types to `wiki.toml`. `wiki init --full` writes every part.
 
 | Part | Folder | What it holds |
 |---|---|---|
-| `notes` | `notes/` | what we know, filed by topic and linked |
+| `knowledge` | `topics/` | what we know, filed by topic: `people/`, `processes/` and `decisions/` to start, and an `inbox/` |
 | `kanban` | `backlog/` | the work, one task per file |
-| `records` | `records/` | one entry per record, its frontmatter the columns |
+| `data` | `data/` | one example of each form of data: records in `companies/`, a dataset in `expenses.md` |
 | `specs` | `product/` | what the product is, one spec per concept |
 
 Each part's section in `AGENTS.md` and its lines in `wiki.toml` are yours to edit.
@@ -225,7 +225,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 
 | Command | What it does |
 |---|---|
-| `init [dir]` | Write a new wiki: the minimal starter, or `--shape` parts (`--force` to write into a non-empty dir) |
+| `init [dir]` | Write a new wiki: the minimal starter, `--shape` parts or `--full` (`--force` to write into a non-empty dir) |
 | `status` | Bundle counts: entries, links, tags, checkboxes, broken links, orphans |
 | `list` | Entries, filtered by `--where key=value` (or `key!=value`) / `--prefix` |
 | `search <q>` | Full-text over frontmatter and body; every word by default (`--any` any word, `--exact` verbatim phrase, `--lines` for file:line) |

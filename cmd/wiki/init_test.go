@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -70,7 +74,7 @@ func TestInitShapeErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--shape", "nope"}, `wiki: unknown part "nope" in --shape (use notes, kanban, records or specs)`},
+		{[]string{"--shape", "nope"}, `wiki: unknown part "nope" in --shape (use knowledge, kanban, data or specs)`},
 		{[]string{"--shape", "kanban,"}, "wiki: empty part in --shape"},
 		{[]string{"--shape", "kanban,kanban"}, `wiki: part "kanban" is listed twice in --shape`},
 		{[]string{"--workflow", "default"}, "flag provided but not defined: -workflow"},
@@ -86,7 +90,10 @@ func TestInitShapeErrors(t *testing.T) {
 	}
 }
 
-// docLines are the `wiki …` lines of the sh blocks in a scaffolded doc.
+// docLines are the `wiki …` commands a scaffolded doc shows: each line of its
+// sh blocks, and each inline code span outside them that is a whole command,
+// with an argument and no placeholder (`<file>`, `…`). A bare `wiki move` in a
+// sentence names the command; it isn't one to run.
 func docLines(doc string) []string {
 	var lines []string
 	inSh := false
@@ -96,10 +103,19 @@ func docLines(doc string) []string {
 			inSh = line == "```sh"
 		case inSh && strings.HasPrefix(line, "wiki "):
 			lines = append(lines, line)
+		case !inSh:
+			for _, span := range inlineCommand.FindAllStringSubmatch(line, -1) {
+				if cmd := span[1]; strings.Count(cmd, " ") >= 2 && !strings.ContainsAny(cmd, "<…") {
+					lines = append(lines, cmd)
+				}
+			}
 		}
 	}
 	return lines
 }
+
+// inlineCommand matches an inline code span that starts with `wiki `.
+var inlineCommand = regexp.MustCompile("`(wiki [^`]+)`")
 
 // docArgs splits a doc line into arguments, honouring "…" and '…', and cutting
 // at an unquoted | (a pipe to jq) or an unquoted " #" (the comment). The first
@@ -144,7 +160,7 @@ func docArgs(line string) []string {
 // a bad value, or a usage line (a wrong number of arguments) is the drift this
 // test exists for.
 func TestDocCommandsRun(t *testing.T) {
-	shapes := [][]string{nil, {"notes"}, {"kanban"}, {"records"}, {"specs"}, {"notes", "kanban", "records", "specs"}}
+	shapes := [][]string{nil, {"knowledge"}, {"kanban"}, {"data"}, {"specs"}, {"knowledge", "kanban", "data", "specs"}}
 	ran := 0
 	for _, shape := range shapes {
 		dir := t.TempDir()
@@ -171,4 +187,55 @@ func TestDocCommandsRun(t *testing.T) {
 		t.Fatal("no doc command found")
 	}
 	t.Logf("%d doc command lines run", ran)
+}
+
+// --full writes exactly what every part, in order, writes; with --shape it
+// exits 2 and writes nothing; init -h lists it.
+func TestInitFull(t *testing.T) {
+	full, every := t.TempDir(), t.TempDir()
+	if _, code := capture(t, func() int { return cmdInit([]string{full, "--full"}) }); code != 0 {
+		t.Fatalf("--full: exit %d", code)
+	}
+	if _, code := capture(t, func() int { return cmdInit([]string{every, "--shape", "knowledge,kanban,data,specs"}) }); code != 0 {
+		t.Fatalf("--shape knowledge,kanban,data,specs: exit %d", code)
+	}
+	if got, want := tree(t, full), tree(t, every); !reflect.DeepEqual(got, want) {
+		t.Errorf("--full differs from every part:\n got %v\nwant %v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
+	}
+
+	dir := t.TempDir()
+	_, stderr, code := runChild(t, dir, []string{"init", "--full", "--shape", "kanban"})
+	if code != 2 || stderr != "wiki: use --full or --shape, not both\n" {
+		t.Errorf("--full --shape: exit %d, stderr %q", code, stderr)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("--full --shape wrote %d files", len(entries))
+	}
+
+	_, stderr, _ = runChild(t, dir, []string{"init", "-h"})
+	if !strings.Contains(stderr, "-full") || !strings.Contains(stderr, "every part: knowledge, kanban, data, specs") {
+		t.Errorf("init -h doesn't list --full:\n%s", stderr)
+	}
+}
+
+// The knowledge part writes its example topic folders, and the data part a
+// records collection and a dataset whose table, a header row and no data
+// rows, reads with wiki table and passes check.
+func TestInitExampleFolders(t *testing.T) {
+	dir := t.TempDir()
+	if _, code := capture(t, func() int { return cmdInit([]string{dir, "--shape", "knowledge,data"}) }); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, f := range []string{"topics/people/index.md", "topics/processes/index.md", "topics/decisions/index.md", "topics/inbox/index.md", "data/companies/index.md", "data/expenses.md"} {
+		if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(f))); err != nil {
+			t.Errorf("not written: %s", f)
+		}
+	}
+	t.Chdir(dir)
+	if out, code := capture(t, func() int { return cmdTable([]string{"data/expenses.md", "--format", "csv"}) }); code != 0 || out != "date,amount,currency,category,note\n" {
+		t.Errorf("table: exit %d, %q", code, out)
+	}
+	if out, errOut, code := captureAll(t, func() int { return cmdCheck(nil) }); code != 0 || errOut != "" || out != "ok: no issues found\n" {
+		t.Errorf("check: exit %d\n%s%s", code, out, errOut)
+	}
 }

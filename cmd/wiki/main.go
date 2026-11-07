@@ -19,7 +19,7 @@ const usage = `Wiki: query an agentic-wiki bundle
 Usage: wiki [--root <dir>] <command> [flags]
 
 Commands:
-  init          write a new wiki (--shape notes,kanban,records,specs, --force)
+  init          write a new wiki (--shape knowledge,kanban,data,specs or --full, --force)
   status        bundle counts: entries, links, tags, checkboxes, broken, orphans
   list, ls      list entries (--where key=value --prefix --sort=path|timestamp --reverse --fields)
   read          print an entry's body (frontmatter stripped)

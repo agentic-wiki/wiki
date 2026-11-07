@@ -31,7 +31,7 @@ func shapes() [][]string {
 
 // examples are where each part's frontmatter template is written as an entry,
 // under the part's folder.
-var examples = map[string]string{"specs": "example.md", "kanban": "example-task.md", "records": "items/example.md", "notes": "inbox/example.md"}
+var examples = map[string]string{"specs": "example.md", "kanban": "example-task.md", "data": "companies/example.md", "knowledge": "inbox/example.md"}
 
 // writeTemplates writes each part's frontmatter template (the first markdown
 // block of its AGENTS.md section) as an entry, and links the specs one from
@@ -171,7 +171,7 @@ func TestShapeErrors(t *testing.T) {
 		shape []string
 		want  string
 	}{
-		{[]string{"nope"}, `unknown part "nope" in --shape (use notes, kanban, records or specs)`},
+		{[]string{"nope"}, `unknown part "nope" in --shape (use knowledge, kanban, data or specs)`},
 		{[]string{"kanban", "kanban"}, `part "kanban" is listed twice in --shape`},
 		{[]string{"kanban", ""}, "empty part in --shape"},
 	} {

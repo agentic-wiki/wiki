@@ -21,9 +21,10 @@ func cmdInit(args []string) int {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	force := fs.Bool("force", false, "write into a directory that isn't empty")
 	shape := fs.String("shape", "", "the parts to start with, comma-separated (see above); none gives the minimal starter")
+	full := fs.Bool("full", false, "every part: "+strings.Join(scaffold.Full(), ", "))
 	format := formatFlag(fs)
 	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: wiki init [dir] [--shape part,part] [--force]\n\n"+
+		fmt.Fprintf(fs.Output(), "usage: wiki init [dir] [--shape part,part | --full] [--force]\n\n"+
 			"Writes a new wiki in dir (default: the current directory).\n\n"+
 			"Parts (one fills the wiki; two or more get a folder each):\n%s\n", scaffold.PartsTable())
 		fs.PrintDefaults()
@@ -41,7 +42,13 @@ func cmdInit(args []string) int {
 		fs.Parse(fs.Args()[1:]) // pick up flags that followed the path
 	}
 	var parts []string
-	if *shape != "" {
+	switch {
+	case *full && *shape != "":
+		fmt.Fprintln(os.Stderr, "wiki: use --full or --shape, not both")
+		return 2
+	case *full:
+		parts = scaffold.Full()
+	case *shape != "":
 		for _, p := range strings.Split(*shape, ",") {
 			parts = append(parts, strings.TrimSpace(p))
 		}

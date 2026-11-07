@@ -1230,21 +1230,26 @@ func TestEveryCommandRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
-// tree is every file's content and every directory under the current one,
-// keyed by slash path, so a test can assert a command changed nothing.
-func tree(t *testing.T) map[string]string {
+// tree is every file's content and every directory under dir, keyed by slash
+// path relative to dir, so a test can assert a command changed nothing, or
+// compare two wikis.
+func tree(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	files := map[string]string{}
-	err := filepath.WalkDir(".", func(p string, d os.DirEntry, err error) error {
-		if err != nil || p == "." {
+	err := filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || p == dir {
+			return err
+		}
+		rel, err := filepath.Rel(dir, p)
+		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			files[filepath.ToSlash(p)+"/"] = ""
+			files[filepath.ToSlash(rel)+"/"] = ""
 			return nil
 		}
 		data, err := os.ReadFile(p)
-		files[filepath.ToSlash(p)] = string(data)
+		files[filepath.ToSlash(rel)] = string(data)
 		return err
 	})
 	if err != nil {
@@ -1265,12 +1270,12 @@ func TestMoveRenameFailsChangesNothing(t *testing.T) {
 			"ref.md":    "---\ntype: note\nrelated: /a.md\n---\n# Ref\nsee [a](a.md)\n",
 			"blocker":   "a file, not a folder\n",
 		})
-		before := tree(t)
+		before := tree(t, ".")
 		_, errOut, code := captureAll(t, func() int { return cmdMove([]string{"a.md", dest, "--include-frontmatter"}) })
 		if code != 2 || !strings.HasPrefix(errOut, "wiki: ") {
 			t.Errorf("move to %.20s: exit %d, stderr %q; want 2 and an error", dest, code, errOut)
 		}
-		if after := tree(t); !reflect.DeepEqual(after, before) {
+		if after := tree(t, "."); !reflect.DeepEqual(after, before) {
 			t.Errorf("move to %.20s changed the wiki:\n got %q\nwant %q", dest, after, before)
 		}
 	}

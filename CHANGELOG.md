@@ -2,6 +2,17 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.16.0
+
+### Breaking
+
+- **`--shape notes` is now `--shape knowledge`, written to `topics/`.** It starts with three example topic folders, `people/`, `processes/` and `decisions/`, each with an `index.md` to rename or delete, plus `inbox/` as before. The types stay `note` and `source`.
+- **`--shape records` is now `--shape data`, written to `data/`, with one example of each form of data:** `companies/`, a records collection (`type: company`, its fields listed in its `index.md`), and `expenses.md`, a dataset (`type: dataset`, one table with its header row). The `record` type is gone. The core `AGENTS.md` now says once that a name is a file or a folder with an `index.md`, never both, and how a dataset that grows becomes a folder.
+
+### Added
+
+- **`wiki init --full`** writes every part: the same as `--shape knowledge,kanban,data,specs`. With `--shape`, it exits 2.
+
 ## v0.15.2
 
 ### Fixed
