@@ -229,3 +229,76 @@ func TestMapJSONFileOrder(t *testing.T) {
 		t.Errorf("got %s, %v\nwant %s", got, err, want)
 	}
 }
+
+// FieldList leaves out empty items, which wiki treats as no value, and is a
+// new slice on every call: a caller can change it without reaching the index.
+func TestFieldListDropsEmptyItemsAndIsACopy(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"a.md":     "---\ntype: note\ntags: [a, \"\", b]\nblockers:\n  -\n  - /n.md\nowner: ana\n---\nbody\n",
+	})
+	e, err := idx.Resolve("/a.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string][]string{"tags": {"a", "b"}, "blockers": {"/n.md"}, "owner": {"ana"}} {
+		got := e.FieldList(key)
+		if !slices.Equal(got, want) {
+			t.Errorf("%s: %q, want %q", key, got, want)
+		}
+		got[0] = "clobbered"
+		slices.Sort(got)
+		if again := e.FieldList(key); !slices.Equal(again, want) {
+			t.Errorf("%s: changing the result reached the entry: %q", key, again)
+		}
+	}
+	// The string view keeps every item, as written.
+	if got := e.Frontmatter()["tags"]; !reflect.DeepEqual(got, []string{"a", "", "b"}) {
+		t.Errorf("Frontmatter tags = %#v", got)
+	}
+}
+
+// The reason a header wasn't read is the text a user should see, with no
+// "yaml: " prefix.
+func TestFrontmatterErrHasNoYAMLPrefix(t *testing.T) {
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n",
+		"bad.md":   "---\ntitle: a: b\n---\nbody\n",
+	})
+	e, err := idx.Resolve("/bad.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := e.FrontmatterErr(); got == nil || got.Error() != "line 2: mapping values are not allowed in this context" {
+		t.Errorf("FrontmatterErr = %v", got)
+	}
+}
+
+// check tests an anchor against the headings' IDs, the same rule parse
+// gives them: every ID is found, a repeat by its "-N", and a slug that isn't
+// an ID warns.
+func TestCheckAnchorsUseHeadingIDs(t *testing.T) {
+	texts := []string{"Simple", "Two Words", "With-Hyphen and_underscore", "Punctuation: removed, right?",
+		"MiXeD CaSe", "Numbers 123", "Trailing underscore_", "__dunder__", "Notes", "Notes"}
+	var body strings.Builder
+	for _, h := range texts {
+		body.WriteString("## " + h + "\n\n")
+	}
+	for _, h := range parse.Headings(body.String()) {
+		body.WriteString("[to](#" + h.ID + ")\n\n")
+	}
+	body.WriteString("[to](#notes-2)\n")
+	idx := build(t, map[string]string{
+		"index.md": "---\nokf_version: \"0.1\"\n---\n[a](./a.md)\n",
+		"a.md":     "---\ntype: note\n---\n" + body.String(),
+	})
+	var anchors []string
+	for _, is := range idx.Check() {
+		if strings.Contains(is.Msg, "anchor") {
+			anchors = append(anchors, is.Msg)
+		}
+	}
+	if !slices.Equal(anchors, []string{"link anchor not found -> #notes-2"}) {
+		t.Errorf("anchor warnings %q, want only #notes-2", anchors)
+	}
+}

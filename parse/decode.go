@@ -107,7 +107,7 @@ func yamlRoot(headerText string) (*yaml.Node, error) {
 	decoder := yaml.NewDecoder(strings.NewReader(headerText))
 	var document yaml.Node
 	if err := decoder.Decode(&document); err != nil {
-		return nil, err
+		return nil, yamlError(err)
 	}
 	node := document.Content[0]
 	// An empty or comment-only header is allowed, like an absent header.
@@ -117,7 +117,7 @@ func yamlRoot(headerText string) (*yaml.Node, error) {
 	var extra yaml.Node
 	if err := decoder.Decode(&extra); err != io.EOF {
 		if err != nil {
-			return nil, err
+			return nil, yamlError(err)
 		}
 		return nil, errors.New("frontmatter must contain a single YAML mapping")
 	}
@@ -125,6 +125,13 @@ func yamlRoot(headerText string) (*yaml.Node, error) {
 		return nil, nil
 	}
 	return node, nil
+}
+
+// yamlError is a yaml.v3 error without its "yaml: " prefix: the text a user
+// should see, the same wherever it is shown (check, a command's warning, a
+// refused write, the library's Entry.FrontmatterErr).
+func yamlError(err error) error {
+	return errors.New(strings.TrimPrefix(err.Error(), "yaml: "))
 }
 
 // walker builds typed values from nodes, keeps one header's alias budgets,

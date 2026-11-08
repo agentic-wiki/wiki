@@ -56,7 +56,7 @@ func TestCheckDoesNotWarn(t *testing.T) {
 		"bad.md":    "---\ntitle: Fix: x\ntype: note\n---\nbody\n",
 	})
 	out, errOut, code := captureAll(t, func() int { return cmdCheck(nil) })
-	if code != 1 || errOut != "" || !strings.Contains(out, "/bad.md: invalid frontmatter: yaml: line 2: mapping values are not allowed in this context") {
+	if code != 1 || errOut != "" || !strings.Contains(out, "/bad.md: invalid frontmatter: line 2: mapping values are not allowed in this context") {
 		t.Errorf("exit %d, stderr %q\n%s", code, errOut, out)
 	}
 	// check --fix applies a fix (a stale okf_version), rebuilds, and still
@@ -370,5 +370,17 @@ func TestIndexPagePassesCheckAndList(t *testing.T) {
 		if got := len(rows[0]["companies"].([]any)); got != records {
 			t.Errorf("%d records: list gives %d", records, got)
 		}
+	}
+}
+
+// An empty list item is no tag: `tags` lists none, as `property tags` doesn't.
+func TestTagsSkipEmptyItems(t *testing.T) {
+	writeFiles(t, map[string]string{
+		"wiki.toml": "spec=\"0.1\"\n",
+		"a.md":      "---\ntype: note\ntags: [a, \"\", b]\n---\nA\n",
+	})
+	out, code := capture(t, func() int { return cmdTags(nil) })
+	if code != 0 || out != "a\nb\n" {
+		t.Errorf("tags: exit %d, %q", code, out)
 	}
 }

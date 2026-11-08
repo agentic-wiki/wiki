@@ -682,9 +682,9 @@ func cmdOutline(args []string) int {
 		Path     string          `json:"_path"`
 		Headings []parse.Heading `json:"headings"`
 	}{e.Path, heads}
-	rows := output.Rows{Header: []string{"_path", "level", "text", "line"}}
+	rows := output.Rows{Header: []string{"_path", "level", "text", "line", "id"}}
 	for _, h := range heads {
-		rows.Values = append(rows.Values, []any{e.Path, h.Level, h.Text, h.Line})
+		rows.Values = append(rows.Values, []any{e.Path, h.Level, h.Text, h.Line, h.ID})
 	}
 	return emitRows(*format, lines, out, rows)
 }

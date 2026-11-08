@@ -245,6 +245,41 @@ func TestHeadings(t *testing.T) {
 	}
 }
 
+// Slug is GitHub's anchor rule: an underscore is a word character and stays
+// (where most sluggers turn it into a hyphen), punctuation goes, and a
+// heading with no letter or digit has an empty slug.
+func TestSlug(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"Simple", "simple"},
+		{"Two Words", "two-words"},
+		{"With-Hyphen and_underscore", "with-hyphen-and_underscore"},
+		{"Punctuation: removed, right?", "punctuation-removed-right"},
+		{"MiXeD CaSe", "mixed-case"},
+		{"Numbers 123", "numbers-123"},
+		{"Trailing underscore_", "trailing-underscore_"},
+		{"__dunder__", "__dunder__"},
+		{"Élan vital", "élan-vital"},
+		{"", ""},
+		{"!!!", ""},
+	} {
+		if got := Slug(tc.in); got != tc.want {
+			t.Errorf("Slug(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// A heading's ID is its slug, and the Nth repeat of a slug in the body gains
+// "-N", the first keeping the bare slug, as GitHub numbers them.
+func TestHeadingIDsNumberRepeats(t *testing.T) {
+	var ids []string
+	for _, h := range Headings("## Notes\n## Other\n### Notes\n## Notes\n## !!!\n## ?\n") {
+		ids = append(ids, h.ID)
+	}
+	if want := []string{"notes", "other", "notes-1", "notes-2", "", "-1"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("ids %q, want %q", ids, want)
+	}
+}
+
 // Heading text keeps inline code verbatim, for the same reason as tasks.
 func TestHeadingsKeepInlineCode(t *testing.T) {
 	hs := Headings("## The `wiki checkboxes` command\n")

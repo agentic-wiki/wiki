@@ -151,7 +151,7 @@ In `jsonl`, `csv` and `tsv`, every command gives rows: a list result is one row 
 | `check` | issue | `level,entry,msg` |
 | `check --fix` | fix, then issue | `level,entry,field,from,to,msg` (a fix has level `fixed` and no `msg`) |
 | `move`, `mv` | rewritten file | `_path,links,frontmatter_refs` |
-| `outline` | heading | `_path,level,text,line` |
+| `outline` | heading | `_path,level,text,line,id` |
 | `status` | (one row) | `dir,spec,entries,links,tags,checkboxes,broken,orphans` |
 | `init` | (one row) | `dir,files` (`files` is a JSON list) |
 | `read` | (one row) | `_path,type,body` (`body` is one cell over several lines) |
@@ -216,7 +216,7 @@ Because the agent drives the same commands you do, you are never locked out of y
 What you have just met is a stack, the modern kind: three layers, and only the bottom one is required.
 
 1. **Markdown.** Plain files in a folder, with a light convention (a `type` in frontmatter, links between entries) we keep OKF-compatible. Complete and navigable on its own, by a human, an LLM, or any tool. This is all you strictly need; everything above is leverage.
-2. **Tool.** `wiki` CLI: a neutral, deterministic engine that indexes the folder and answers structured queries like a database. Built for agents to call, runnable by anyone.
+2. **Tool.** `wiki` CLI: a neutral, deterministic engine that indexes the folder and answers structured queries like a database. Built for agents to call, runnable by anyone. Its packages (`parse`, `index`) are also a Go library, which wikiview imports: a heading's anchor (`Heading.ID`), why a header wasn't read (`Entry.FrontmatterErr`) and a list's items (`Entry.FieldList`, a new slice without empty items) come with the same rules the CLI uses.
 3. **Skill.** The manual your agent follows to drive the tool, where the workflow opinion lives, and yours to customize. Maintained in the [skills repo](https://github.com/agentic-wiki/skills).
 
 The Markdown is data at rest and stands alone; the tool is a swappable engine over it; the skills are where the opinion lives. We provide the top two; the foundation is just your own files, and you can keep only those.

@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/index"
@@ -27,7 +26,7 @@ func loadIndex() (*index.Index, int) {
 	}
 	for _, e := range idx.Entries {
 		if err := e.FrontmatterErr(); err != nil {
-			fmt.Fprintf(os.Stderr, "wiki: warning: %s: frontmatter not read (%s); run wiki check\n", e.Path, strings.TrimPrefix(err.Error(), "yaml: "))
+			fmt.Fprintf(os.Stderr, "wiki: warning: %s: frontmatter not read (%s); run wiki check\n", e.Path, err)
 		}
 	}
 	return idx, code

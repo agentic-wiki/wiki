@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/agentic-wiki/wiki/bundle"
 	"github.com/agentic-wiki/wiki/internal/wikilink"
@@ -421,44 +420,13 @@ func relPath(fromDir, target string) string {
 	return joined
 }
 
-// headingSlug renders heading text to a GitHub-style anchor slug: lowercased,
-// punctuation dropped, spaces turned to hyphens (underscores and existing hyphens
-// kept). It is text-based, not a full markdown render, so a heading with inline
-// markup slugs its literal characters (a rare edge, documented for `check`).
-func headingSlug(text string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(text) {
-		switch {
-		case r == ' ':
-			b.WriteByte('-')
-		case unicode.IsLetter(r) || unicode.IsNumber(r) || r == '-' || r == '_':
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-// hasHeadingSlug reports whether the entry has a heading matching anchor. Both the
-// anchor and each heading are reduced to a GitHub-style slug before comparing, so a
-// markdown fragment (`#my-heading`) and an Obsidian wikilink one (`#My Heading`)
-// both resolve to the same heading. Repeated headings are disambiguated as GitHub
-// does: the Nth occurrence of a slug gains a "-N" suffix, the first stays bare (so a
-// second "## Notes" is reachable as `#notes-1`).
+// hasHeadingSlug reports whether the entry has a heading whose ID is anchor,
+// read as a slug (parse.Slug), so a markdown fragment (`#my-heading`) and an
+// Obsidian wikilink one (`#My Heading`) both find the same heading, and a
+// repeat is reached by its "-N" (`#notes-1`).
 func (e *Entry) hasHeadingSlug(anchor string) bool {
-	anchor = headingSlug(anchor)
-	seen := map[string]int{}
-	for _, h := range e.Headings {
-		s := headingSlug(h.Text)
-		final := s
-		if n := seen[s]; n > 0 {
-			final = fmt.Sprintf("%s-%d", s, n)
-		}
-		seen[s]++
-		if final == anchor {
-			return true
-		}
-	}
-	return false
+	anchor = parse.Slug(anchor)
+	return slices.ContainsFunc(e.Headings, func(h parse.Heading) bool { return h.ID == anchor })
 }
 
 // Resolve finds a single entry by a "/"-containing path (matched exactly,
@@ -565,7 +533,7 @@ func (e *Entry) matchesAll(props []PropFilter) bool {
 func (idx *Index) TagCounts(pathPrefix string, props []PropFilter) map[string]int {
 	counts := map[string]int{}
 	for _, e := range idx.Filter(pathPrefix, props) {
-		for _, t := range dedupe(parse.Strings(e.fm, "tags")) {
+		for _, t := range dedupe(e.values("tags")) {
 			counts[t]++
 		}
 	}
@@ -599,7 +567,8 @@ func (idx *Index) PropertyValueCounts(key, pathPrefix string, props []PropFilter
 	return counts
 }
 
-// values is the string view of key's value or items, without the empty ones.
+// values is the string view of key's value or items, without the empty ones,
+// in a new slice.
 func (e *Entry) values(key string) []string {
 	strs := parse.Strings(e.fm, key)
 	typed, _ := e.typed.Get(key)
@@ -608,7 +577,7 @@ func (e *Entry) values(key string) []string {
 		if parse.Empty(typed) {
 			return nil
 		}
-		return strs
+		return slices.Clone(strs)
 	}
 	var out []string
 	for i, item := range items {
@@ -1577,12 +1546,12 @@ func hasPathPrefix(path, prefix string) bool {
 func (e *Entry) Field(key string) string { return parse.String(e.fm, key) }
 
 // FieldList returns a frontmatter value as a list, treating a lone scalar as a
-// one-element list.
+// one-element list, without its empty items (parse.Empty: "", null, [], {}),
+// which wiki treats as no value everywhere (`property`, `tags`, `key=`).
 //
-// That normalization is the same one MatchProperty applies, so a consumer
-// filtering entries by hand reaches the same answer as `--where` rather than a
-// subtly different one.
-func (e *Entry) FieldList(key string) []string { return parse.Strings(e.fm, key) }
+// The list is new on every call: a caller may sort or filter it without
+// changing the index, which every reader shares.
+func (e *Entry) FieldList(key string) []string { return e.values(key) }
 
 // Frontmatter returns the entry's frontmatter in the string view
 // (parse.Frontmatter): each value is its text as YAML reads it, a list its

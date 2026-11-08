@@ -439,3 +439,19 @@ func TestReadAnchorsAndTags(t *testing.T) {
 		}
 	}
 }
+
+// A header that isn't valid YAML gives the same reason, with no "yaml: "
+// prefix, from the read, from check, and inside a refused write.
+func TestReadErrorHasNoYAMLPrefix(t *testing.T) {
+	const content = "---\ntitle: a: b\n---\nbody\n"
+	const reason = "line 2: mapping values are not allowed in this context"
+	if _, _, _, err := ReadFrontmatter(content); err == nil || err.Error() != reason {
+		t.Errorf("read: %v", err)
+	}
+	if syntax, _ := CheckFrontmatter(content); syntax == nil || syntax.Error() != reason {
+		t.Errorf("check: %v", syntax)
+	}
+	if _, err := SetField(content, "k", "v"); err == nil || err.Error() != "frontmatter not read ("+reason+"); fix the file first" {
+		t.Errorf("write: %v", err)
+	}
+}

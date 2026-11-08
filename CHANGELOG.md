@@ -2,6 +2,18 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.16.1
+
+### Changed
+
+- **A header's read error has no `yaml: ` prefix**, wherever it is shown: `Entry.FrontmatterErr`, the errors `parse` returns, a command's warning, a refused write, and now `check` too (`invalid frontmatter: line 2: mapping values are not allowed in this context`, in text and json).
+- **`Entry.FieldList` leaves out empty items** (`""`, null, `[]`, `{}`), as `property` and `key=` already treat them as no value, and returns a new slice on every call, so a caller can change it without changing the index. `wiki tags` skips an empty tag too: it printed an empty line.
+- **`wiki outline` gives each heading's `id`** in every format (a last column, `_path,level,text,line,id` in csv, so `line` stays where it was).
+
+### Added
+
+- **`Heading.ID`**, each heading's anchor as GitHub makes it: its slug, with `-N` for the Nth repeat in the entry. `parse.Slug` is the slug rule. `check` tests a link's `#anchor` against these IDs, so the rule exists once.
+
 ## v0.16.0
 
 ### Breaking

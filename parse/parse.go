@@ -4,8 +4,10 @@ package parse
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 )
 
 // Link is a root-absolute internal markdown link [Text](/target.md).
@@ -27,6 +29,11 @@ type Heading struct {
 	Level int    `json:"level"`
 	Text  string `json:"text"`
 	Line  int    `json:"line"`
+	// ID is the heading's anchor, as GitHub makes it: its Slug, with "-N" added
+	// for the Nth repeat of a slug in the document (a second "## Notes" is
+	// `#notes-1`). A link's `#anchor` names a heading by it, and `wiki check`
+	// tests anchors against it. Empty for a heading with no letter or digit.
+	ID string `json:"id"`
 }
 
 // Table is a parsed GFM table: the header cells and the data rows (each row
@@ -339,15 +346,41 @@ func Checkboxes(body string) []Checkbox {
 	return checkboxes
 }
 
-// Headings returns ATX headings, ignoring fenced code.
+// Headings returns ATX headings, ignoring fenced code, each with its ID. The
+// IDs are numbered across the whole body, which is why they are made here.
 func Headings(body string) []Heading {
 	var hs []Heading
+	seen := map[string]int{} // how many times each slug has come before
 	for i, line := range maskedLines(body) {
 		if m := headingRe.FindStringSubmatch(line); m != nil {
-			hs = append(hs, Heading{Level: len(m[1]), Text: strings.TrimSpace(m[2]), Line: i + 1})
+			text := strings.TrimSpace(m[2])
+			slug := Slug(text)
+			id := slug
+			if n := seen[slug]; n > 0 {
+				id = fmt.Sprintf("%s-%d", slug, n)
+			}
+			seen[slug]++
+			hs = append(hs, Heading{Level: len(m[1]), Text: text, ID: id, Line: i + 1})
 		}
 	}
 	return hs
+}
+
+// Slug is heading text as a GitHub-style anchor: lower-cased, spaces turned
+// to hyphens, letters, digits, hyphens and underscores kept, everything else
+// dropped. It reads the text as written, not rendered, so inline markup
+// counts as its characters. A Heading's ID is its Slug, numbered for repeats.
+func Slug(text string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(text) {
+		switch {
+		case r == ' ':
+			b.WriteByte('-')
+		case unicode.IsLetter(r) || unicode.IsNumber(r) || r == '-' || r == '_':
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // maskedLines returns body split into lines with fenced code blocks blanked

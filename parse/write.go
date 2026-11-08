@@ -76,7 +76,7 @@ func (e *EditError) Error() string {
 
 // notRead is the refusal for a header that doesn't read.
 func notRead(err error) *EditError {
-	return &EditError{Reason: fmt.Sprintf("not read (%s); fix the file first", strings.TrimPrefix(err.Error(), "yaml: "))}
+	return &EditError{Reason: fmt.Sprintf("not read (%s); fix the file first", err)}
 }
 
 // edit replaces the lines key owns with render(field), or, when the key is
@@ -108,7 +108,7 @@ func readBack(before header, after string, edited ...string) (header, error) {
 		now, err = decode(headerText)
 	}
 	if err != nil {
-		return header{}, &EditError{Reason: fmt.Sprintf("would not read after this write (%s); nothing written", strings.TrimPrefix(err.Error(), "yaml: "))}
+		return header{}, &EditError{Reason: fmt.Sprintf("would not read after this write (%s); nothing written", err)}
 	}
 	isEdited := map[string]bool{} // lookups, so a header of many keys costs no more than their number
 	for _, k := range edited {
