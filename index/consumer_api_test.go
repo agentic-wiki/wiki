@@ -56,64 +56,6 @@ func TestFrontmatterIsACopy(t *testing.T) {
 	}
 }
 
-// A body link is written relative and the graph is keyed root-absolute, so a
-// consumer rendering a body needs both directions. These are inverses.
-func TestResolveAndRelativeLinkRoundTrip(t *testing.T) {
-	idx := build(t, map[string]string{
-		"index.md":      "---\nokf_version: \"0.1\"\n---\n",
-		"a.md":          "---\ntype: note\n---\n",
-		"sub/b.md":      "---\ntype: note\n---\n",
-		"sub/deep/c.md": "---\ntype: note\n---\n",
-	})
-
-	cases := []struct{ from, written, want string }{
-		{"/sub/b.md", "./deep/c.md", "/sub/deep/c.md"},
-		{"/sub/b.md", "../a.md", "/a.md"},
-		{"/sub/deep/c.md", "../../a.md", "/a.md"},
-		{"/a.md", "./sub/b.md", "/sub/b.md"},
-		// A root-absolute link still resolves; it is valid, just not canonical.
-		{"/sub/b.md", "/a.md", "/a.md"},
-		// An anchor rides along with the target.
-		{"/sub/b.md", "../a.md#heading", "/a.md#heading"},
-	}
-	for _, tc := range cases {
-		got, outside := idx.ResolveLink(tc.from, tc.written)
-		if outside {
-			t.Errorf("ResolveLink(%q, %q) reported outside", tc.from, tc.written)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("ResolveLink(%q, %q) = %q, want %q", tc.from, tc.written, got, tc.want)
-		}
-	}
-
-	// RelativeLink is the inverse: re-spelling a resolved target from the same
-	// file must resolve back to it.
-	for _, tc := range cases {
-		target, _, _ := strings.Cut(tc.want, "#")
-		rel := RelativeLink(tc.from, target)
-		back, _ := idx.ResolveLink(tc.from, rel)
-		if back != target {
-			t.Errorf("RelativeLink(%q, %q) = %q, which resolves back to %q", tc.from, target, rel, back)
-		}
-	}
-}
-
-// A target above the bundle root is neither an edge nor broken, and a consumer
-// must be able to tell, or it will try to navigate out of the bundle.
-func TestResolveLinkReportsOutside(t *testing.T) {
-	idx := build(t, map[string]string{
-		"index.md": "---\nokf_version: \"0.1\"\n---\n",
-		"sub/b.md": "---\ntype: note\n---\n",
-	})
-	if _, outside := idx.ResolveLink("/sub/b.md", "../../escape.md"); !outside {
-		t.Error("a target above the bundle root should report outside")
-	}
-	if _, outside := idx.ResolveLink("/sub/b.md", "../index.md"); outside {
-		t.Error("a target inside the bundle should not report outside")
-	}
-}
-
 // The query syntax is part of the query contract, so its parse belongs to the
 // library. The subtleties are easy to regress: != is matched before =, so a
 // value may contain =, and values are unquoted the way frontmatter is.
@@ -308,8 +250,8 @@ func TestCheckAnchorsUseHeadingIDs(t *testing.T) {
 
 // Read gives a file's text the same reading as an indexed entry of the same
 // text: type, both frontmatter views, FieldList without empty items, the read
-// error, headings, checkboxes, the raw text and the body. It has no links and
-// refuses writes.
+// error, headings, checkboxes, the links (read by ResolveDest, which needs no
+// bundle), the raw text and the body. It refuses writes.
 func TestReadIsAnIndexedEntryWithoutTheIndex(t *testing.T) {
 	files := map[string]string{
 		"/docs/plan.md": "---\ntype: note\ntitle: 'company''s plan'\ntags: [a, \"\", b]\nraw:\n  - path: x.pdf\n---\n# Plan\n\n- [ ] step [b](./b.md)\n## Plan\n",
@@ -349,8 +291,8 @@ func TestReadIsAnIndexedEntryWithoutTheIndex(t *testing.T) {
 		if raw != content || body != wantBody {
 			t.Errorf("%s: raw %q body %q", p, raw, body)
 		}
-		if len(got.Links) != 0 {
-			t.Errorf("%s: links %+v, want none", p, got.Links)
+		if !reflect.DeepEqual(got.Links, want.Links) || !reflect.DeepEqual(got.SelfAnchors, want.SelfAnchors) || !reflect.DeepEqual(got.Outside, want.Outside) {
+			t.Errorf("%s: links %+v %+v %+v, want %+v %+v %+v", p, got.Links, got.SelfAnchors, got.Outside, want.Links, want.SelfAnchors, want.Outside)
 		}
 	}
 	plan := Read("/docs/plan.md", files["/docs/plan.md"])
@@ -383,5 +325,31 @@ func TestReadOutsideABundle(t *testing.T) {
 	}
 	if err := dated.SetField("type", "note"); !errors.Is(err, ErrNotInBundle) {
 		t.Errorf("a no-change write = %v, want ErrNotInBundle", err)
+	}
+}
+
+// A body link is written relative and the graph is keyed root-absolute, so a
+// consumer rendering a body needs both directions: ResolveDest reads a
+// destination, RelativeLink spells a path back from the same file, and the two
+// are inverses.
+func TestResolveDestAndRelativeLinkRoundTrip(t *testing.T) {
+	for _, tc := range []struct{ from, written string }{
+		{"/sub/b.md", "./deep/c.md"},
+		{"/sub/b.md", "../a.md"},
+		{"/sub/deep/c.md", "../../a.md"},
+		{"/a.md", "./sub/b.md"},
+		{"/sub/b.md", "/a.md"}, // root-absolute: valid, just not canonical
+	} {
+		d := ResolveDest(tc.from, tc.written)
+		if d.Outside {
+			t.Errorf("ResolveDest(%q, %q) is outside", tc.from, tc.written)
+			continue
+		}
+		if back := ResolveDest(tc.from, RelativeLink(tc.from, d.Path)); back != d {
+			t.Errorf("RelativeLink(%q, %q) reads back as %+v", tc.from, d.Path, back)
+		}
+	}
+	if !ResolveDest("/sub/b.md", "../../escape.md").Outside || ResolveDest("/sub/b.md", "../index.md").Outside {
+		t.Error("only a climb above the root is outside")
 	}
 }

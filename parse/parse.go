@@ -5,6 +5,7 @@ package parse
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 	"unicode"
@@ -182,9 +183,8 @@ var (
 // target sits on its line, so a rewrite can replace exactly those bytes.
 type linkMatch struct {
 	text, target string
-	line         int  // 0-based line index within the body
-	start, end   int  // byte span of target on the original line
-	angled       bool // the destination was written <…>, the markdown way to allow spaces
+	line         int // 0-based line index within the body
+	start, end   int // byte span of target on the original line, inside its <…> when written so
 }
 
 // matchLinks returns body's lines and every markdown link on them, outside fenced
@@ -212,7 +212,6 @@ func matchLinks(body string) (lines []string, ms []linkMatch) {
 				if gt := strings.IndexByte(dest, '>'); gt >= 0 {
 					dest = dest[:gt]
 				} // unterminated: keep the rest, dropping the '<' rather than leaking it
-				lm.angled = true
 			} else if sp := strings.IndexAny(dest, " \t"); sp >= 0 {
 				dest = dest[:sp] // bare destination: a space begins the title
 			}
@@ -250,13 +249,30 @@ func classify(t string) linkKind {
 		return kindNone
 	case strings.HasPrefix(t, "#"):
 		return kindSelfAnchor
-	case hasURLScheme(t):
+	case IsExternal(t):
 		return kindExternal
 	case strings.HasPrefix(t, "/"):
 		return kindAbsolute
 	default:
 		return kindRelative
 	}
+}
+
+// IsExternal reports whether a link destination, or a frontmatter value, names
+// something outside the wiki, never to be resolved, rewritten or checked: it
+// carries a URL scheme (https:, mailto:, and C: of a drive letter), or, as
+// written or once percent-decoded, starts with //, /\ or \\, which a browser
+// reads as another host. It decodes with the standard decoder only to
+// classify; index.ResolveDest, which names the file, also refuses a decoding
+// to NUL or invalid UTF-8.
+func IsExternal(dest string) bool {
+	decoded, _ := url.PathUnescape(dest) // "" when it isn't valid encoding
+	for _, s := range []string{dest, decoded} {
+		if strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/\\") || strings.HasPrefix(s, "\\\\") {
+			return true
+		}
+	}
+	return hasURLScheme(dest)
 }
 
 // Links classifies every markdown link in body (outside code) by target form.
@@ -285,10 +301,9 @@ func Links(body string) LinkSet {
 // MapInternalLinks returns body with the target of every internal (absolute or
 // relative) markdown link outside code replaced by fn(target). fn receives the
 // target as Links reports it (title stripped, anchor kept) and returns it
-// unchanged to leave the link alone. Only the target's bytes change: link text,
-// titles, URLs, #anchors and code are left exactly as written. A replacement
-// containing whitespace is wrapped in <…> when the original was bare, so the link
-// stays a link.
+// unchanged to leave the link alone. Only the target's bytes change: link
+// text, titles, URLs and code are left exactly as written. fn returns a
+// spelled destination; a <…> destination keeps its brackets.
 func MapInternalLinks(body string, fn func(target string) string) string {
 	lines, ms := matchLinks(body)
 	// Replace right to left within a line so earlier offsets stay valid.
@@ -300,9 +315,6 @@ func MapInternalLinks(body string, fn func(target string) string) string {
 		repl := fn(m.target)
 		if repl == m.target {
 			continue
-		}
-		if !m.angled && strings.ContainsAny(repl, " \t") {
-			repl = "<" + repl + ">"
 		}
 		lines[m.line] = lines[m.line][:m.start] + repl + lines[m.line][m.end:]
 	}

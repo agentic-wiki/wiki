@@ -118,12 +118,13 @@ func TestDumpTransformsLinks(t *testing.T) {
 			"`[code](./setup.md)` ![img](./pic.png \"cap\")\n" +
 			"```\n[fenced](./setup.md)\n```\n",
 		"docs/setup.md": "---\ntype: note\n---\n# Setup\n## Install\n",
+		"docs/pic.png":  "png",
 	})
 	e, _ := idx.Resolve("/docs/guide.md")
 	got := dump(t, idx, []*Entry{e}, false)
 	want := "<!-- /docs/guide.md -->\n# Guide\n" +
 		"[sib](/docs/setup.md#install) [up](/index.md) [bare](/docs/setup.md) [abs](/docs/setup.md)\n" +
-		"[todo](/docs/missing.md) [web](https://e.com/a.md) [self](#guide) [out](../../PRD.md)\n" +
+		"[todo](./missing.md) [web](https://e.com/a.md) [self](#guide) [out](../../PRD.md)\n" +
 		"[setup](/docs/setup.md) and [install it](/docs/setup.md#Install) and [[nowhere]] and [setup](/docs/setup.md)\n" +
 		"`[code](./setup.md)` ![img](/docs/pic.png \"cap\")\n" +
 		"```\n[fenced](./setup.md)\n```\n"

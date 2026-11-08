@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -19,25 +18,16 @@ import (
 	"github.com/agentic-wiki/wiki/parse"
 )
 
-// Link is an internal link as indexed: its on-disk form (Raw, anchor kept) and
-// its resolved root-absolute graph key (Target, anchor stripped). Queries and
-// the graph match on Target; rewrites (Move, NormalizeLinks) match Raw on disk.
+// Link is an internal link as indexed: Raw as written; Target and Anchor are
+// ResolveDest's Path and Anchor (Target is the climbing path for an outside
+// link). Queries and the graph match on Target.
 type Link struct {
 	Text     string
 	Raw      string
-	Target   string // resolved root-absolute path, anchor stripped (the graph edge is the file)
-	Anchor   string // the "#fragment" without the '#', parsed from both markdown and wikilink forms ("" if none)
+	Target   string
+	Anchor   string
 	Line     int
 	Wikilink bool // true if this edge came from an Obsidian [[wikilink]] (Raw is its [[…]] form)
-}
-
-// anchorSuffix reconstructs the "#fragment" of a link (or "" if it has none), the
-// single source for re-spelling an on-disk target with its anchor.
-func (l Link) anchorSuffix() string {
-	if l.Anchor == "" {
-		return ""
-	}
-	return "#" + l.Anchor
 }
 
 // Entry is one markdown file in the content tree. Its canonical, always-present
@@ -49,9 +39,9 @@ func (l Link) anchorSuffix() string {
 type Entry struct {
 	Path        string           `json:"_path"` // root-absolute, e.g. /finance/income/index.md
 	Type        string           `json:"type"`
-	Links       []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges; nil for an entry from Read
-	SelfAnchors []Link           `json:"-"` // pure #anchor links (Target = this entry); not graph edges, checked against own headings; nil for an entry from Read
-	Outside     []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching); nil for an entry from Read
+	Links       []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
+	SelfAnchors []Link           `json:"-"` // pure #anchor links (Target = this entry); not graph edges, checked against own headings
+	Outside     []Link           `json:"-"` // links climbing above the root (Raw kept; Target = the root-relative climbing path, ../PRD.md, for ignore matching)
 	Checkboxes  []parse.Checkbox `json:"-"`
 	Headings    []parse.Heading  `json:"-"`
 	wikilinks   []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
@@ -163,7 +153,7 @@ type Index struct {
 	Entries     []*Entry
 	byPath      map[string]*Entry
 	ignoreIn    []string        // wiki.toml `ignore` patterns resolving inside: bundle-path globs; a match is not indexed as an entry
-	ignoreOut   map[string]bool // wiki.toml `ignore` entries resolving outside: absolute fs path -> silence that out-of-bundle advisory
+	ignoreOut   map[string]bool // wiki.toml `ignore` entries climbing above the root, by climbing path (../PRD.md): silence that out-of-bundle advisory
 	orphanGlobs []string        // wiki.toml `ignore_orphans` as bundle-path globs: matched entries stay indexed but are not reported as orphans
 }
 
@@ -248,23 +238,21 @@ func (idx *Index) wikilinkResolver() func(target, from string) string {
 // resolveIgnore resolves the bundle's wiki.toml `ignore` and `ignore_orphans`
 // lists into glob patterns matched by matchGlob. An `ignore` pattern resolving
 // inside the bundle becomes a bundle-path glob (ignoreIn): a matching file is not
-// indexed as an entry. One resolving outside (ignoreOut, keyed by absolute fs
-// path) acknowledges an out-of-bundle link so its advisory is silenced; these are
+// indexed as an entry. One climbing above the root (ignoreOut, keyed by the
+// root-relative climbing path, ../PRD.md, as an outside Link.Target is)
+// acknowledges an out-of-bundle link so its advisory is silenced; these are
 // exact (globbing external files is out of scope). `ignore_orphans` patterns
 // become bundle-path globs (orphanGlobs). A pattern with no wildcard is an exact
 // path (a single file), so `ignore = ["AGENTS.md"]` still works. Classification
 // is pure lexical arithmetic, so an outside path is never stat'd or read.
 func (idx *Index) resolveIgnore() {
 	idx.ignoreOut = map[string]bool{}
-	root := idx.Bundle.Dir
 	for _, s := range idx.Bundle.Ignore {
-		s = strings.TrimPrefix(filepath.ToSlash(s), "/")
-		p := filepath.Join(root, filepath.FromSlash(s))
-		if withinDir(root, p) {
-			rel, _ := filepath.Rel(root, p)
-			idx.ignoreIn = append(idx.ignoreIn, "/"+filepath.ToSlash(rel))
+		rel := path.Clean(strings.TrimPrefix(filepath.ToSlash(s), "/"))
+		if rel == ".." || strings.HasPrefix(rel, "../") {
+			idx.ignoreOut[rel] = true
 		} else {
-			idx.ignoreOut[p] = true
+			idx.ignoreIn = append(idx.ignoreIn, "/"+rel)
 		}
 	}
 	for _, pat := range idx.Bundle.IgnoreOrphans {
@@ -282,7 +270,6 @@ func parseEntry(root, abs string) (*Entry, error) {
 	// the entry's Path is its root-absolute bundle id ("/finance/income.md").
 	e, body, offset := read("/"+filepath.ToSlash(rel), string(data))
 	e.abs, e.root = abs, root
-	e.Links, e.SelfAnchors, e.Outside = resolveLinks(root, parse.Links(body), e.Path, offset)
 	e.wikilinks = wikilink.Parse(body) // resolved into graph edges in Build (needs all entries)
 	for i := range e.wikilinks {
 		e.wikilinks[i].Line += offset
@@ -293,11 +280,9 @@ func parseEntry(root, abs string) (*Entry, error) {
 // Read returns the entry that content would be at path p, read by the same
 // rules as an entry of an index, for a file that isn't in one (a file read
 // from git, say). p is cleaned and made root-absolute (docs/plan.md is
-// /docs/plan.md). Its Type, Frontmatter, TypedFrontmatter, Field, FieldList,
-// FrontmatterErr, Headings, Checkboxes, Raw and Body are what an indexed
-// entry's would be. Its Links, SelfAnchors and Outside are nil, since links
-// resolve against a bundle; its SortTime is its `timestamp` alone; and any
-// write to it is refused with ErrNotInBundle.
+// /docs/plan.md). It has everything an indexed entry has, except wikilinks
+// (which resolve against an index). Its SortTime is its `timestamp` alone,
+// and any write to it is refused with ErrNotInBundle.
 func Read(p, content string) *Entry {
 	e, _, _ := read(path.Clean("/"+p), content)
 	e.content = content
@@ -305,7 +290,7 @@ func Read(p, content string) *Entry {
 }
 
 // read returns the entry that content would be at path p, without what needs
-// a bundle (its links, its file), with its body and how many lines precede
+// a bundle (its file, its wikilinks), with its body and how many lines precede
 // the body in the file.
 func read(p, content string) (e *Entry, body string, offset int) {
 	fm, typed, body, fmErr := parse.ReadFrontmatter(content) // one decode for both views
@@ -320,14 +305,18 @@ func read(p, content string) (e *Entry, body string, offset int) {
 	for i := range heads {
 		heads[i].Line += offset
 	}
+	links, selfAnchors, outside := resolveLinks(parse.Links(body), p, offset)
 	return &Entry{
-		Path:       p,
-		Type:       parse.String(fm, "type"),
-		Checkboxes: checkboxes,
-		Headings:   heads,
-		fm:         fm,
-		typed:      typed,
-		fmErr:      fmErr,
+		Path:        p,
+		Type:        parse.String(fm, "type"),
+		Links:       links,
+		SelfAnchors: selfAnchors,
+		Outside:     outside,
+		Checkboxes:  checkboxes,
+		Headings:    heads,
+		fm:          fm,
+		typed:       typed,
+		fmErr:       fmErr,
 	}, body, offset
 }
 
@@ -344,105 +333,29 @@ func (idx *Index) FileExists(target string) bool {
 	return err == nil && !fi.IsDir()
 }
 
-// resolveLinks turns a body's parsed (as-written) internal links into indexed
-// links: each keeps its on-disk Raw form and gains a resolved root-absolute
-// Target (the graph key, anchor stripped). Lines are shifted by offset to be
-// file-relative. Links whose target resolves outside the bundle are returned
-// separately in outside (Raw kept, no resolved Target): they are not graph edges
-// and the escaping path is never resolved on disk, but check reports them so the
-// author knows the tool cannot verify them.
-func resolveLinks(bundleRoot string, set parse.LinkSet, entryPath string, offset int) (links, selfAnchors, outside []Link) {
+// resolveLinks reads each internal link of a body by ResolveDest; lines are
+// shifted by offset to be file-relative, and a link climbing above the root
+// goes to outside.
+func resolveLinks(set parse.LinkSet, entryPath string, offset int) (links, selfAnchors, outside []Link) {
 	links = make([]Link, 0, len(set.Absolute)+len(set.Relative))
 	for _, bucket := range [][]parse.Link{set.Absolute, set.Relative} {
 		for _, l := range bucket {
-			target, escapes := normalizeLink(bundleRoot, entryPath, l.Target)
-			if escapes {
-				outside = append(outside, Link{Text: l.Text, Raw: l.Target, Target: target, Line: l.Line + offset})
+			d := ResolveDest(entryPath, l.Target)
+			link := Link{Text: l.Text, Raw: l.Target, Target: d.Path, Anchor: d.Anchor, Line: l.Line + offset}
+			if d.Outside {
+				outside = append(outside, link)
 				continue
 			}
-			anchor := ""
-			if h := strings.IndexByte(target, '#'); h >= 0 {
-				anchor = target[h+1:] // the graph edge is the file; the anchor is kept for check/rewrite
-				target = target[:h]
-			}
-			links = append(links, Link{Text: l.Text, Raw: l.Target, Target: target, Anchor: anchor, Line: l.Line + offset})
+			links = append(links, link)
 		}
 	}
 	// A pure #anchor points at a heading in this same entry: not a graph edge (it
 	// would be a self-backlink), so it is kept apart, with Target set to the entry
 	// itself, only for check to validate against the entry's own headings.
 	for _, l := range set.SelfAnchors {
-		selfAnchors = append(selfAnchors, Link{Text: l.Text, Raw: l.Target, Target: entryPath, Anchor: strings.TrimPrefix(l.Target, "#"), Line: l.Line + offset})
+		selfAnchors = append(selfAnchors, Link{Text: l.Text, Raw: l.Target, Target: entryPath, Anchor: decoded(strings.TrimPrefix(l.Target, "#")), Line: l.Line + offset})
 	}
 	return links, selfAnchors, outside
-}
-
-// normalizeLink resolves a link target, as written in the entry at fromPath, to
-// its canonical root-absolute spelling within the bundle rooted at bundleRoot
-// (anchor preserved): the single standard representation of an internal link. An
-// absolute target resolves from the bundle root, a relative one from the entry's
-// directory; the result is the final on-disk path with all `.`/`..` applied.
-// escapes is true when that path lands outside the bundle — decided by withinDir,
-// the same containment guard FileExists uses, so a `..` climb above the root
-// (relative or absolute) is caught once, here, and never resolved on disk. Such a
-// link points outside the self-contained bundle, so it is not an internal edge and
-// callers skip it. The index uses the resolved form as the graph key (anchor
-// dropped); NormalizeLinks uses it for the on-disk rewrite.
-func normalizeLink(bundleRoot, fromPath, target string) (abs string, escapes bool) {
-	anchor := ""
-	if h := strings.IndexByte(target, '#'); h >= 0 {
-		anchor, target = target[h:], target[:h]
-	}
-	base := bundleRoot
-	if !strings.HasPrefix(target, "/") {
-		base = filepath.Join(bundleRoot, filepath.FromSlash(strings.TrimPrefix(path.Dir(fromPath), "/")))
-	}
-	p := filepath.Join(base, filepath.FromSlash(strings.TrimPrefix(target, "/")))
-	if !withinDir(bundleRoot, p) {
-		return p, true // outside the bundle: return the resolved fs path (for ignore matching); never resolved on disk
-	}
-	rel, _ := filepath.Rel(bundleRoot, p) // no error: withinDir confirmed p is under bundleRoot
-	if rel == "." {
-		return "/" + anchor, false // the bundle root itself
-	}
-	return "/" + filepath.ToSlash(rel) + anchor, false
-}
-
-// relativeLink is the inverse of normalizeLink for an in-bundle target: it returns
-// the on-disk relative spelling of a resolved root-absolute target (anchor kept),
-// as written from the entry at fromPath. The result is slash-separated and always
-// carries a leading "./" or "../", so it is unambiguously relative and resolves back
-// to target from fromPath's directory. This is the canonical on-disk link form.
-func relativeLink(fromPath, target string) string {
-	anchor := ""
-	if h := strings.IndexByte(target, '#'); h >= 0 {
-		anchor, target = target[h:], target[:h]
-	}
-	return relPath(path.Dir(fromPath), target) + anchor
-}
-
-// relPath returns the relative slash-path from directory fromDir to target, both
-// root-absolute bundle paths ("/…"). The result is prefixed with "./" (target at or
-// below fromDir) or a run of "../" (target above it).
-func relPath(fromDir, target string) string {
-	from, to := splitSlash(fromDir), splitSlash(target)
-	i := 0
-	for i < len(from) && i < len(to) && from[i] == to[i] {
-		i++
-	}
-	parts := make([]string, 0, len(from)-i+len(to)-i)
-	for range from[i:] {
-		parts = append(parts, "..")
-	}
-	parts = append(parts, to[i:]...)
-	joined := strings.Join(parts, "/")
-	if joined == "" {
-		return "." // target is fromDir itself (degenerate for a file target)
-	}
-	if !strings.HasPrefix(joined, "../") && joined != ".." {
-		joined = "./" + joined
-	}
-	return joined
 }
 
 // hasHeadingSlug reports whether the entry has a heading whose ID is anchor,
@@ -934,45 +847,23 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		}
 	}
 
-	// Rewrite links as relative (the canonical on-disk form), matching each by its
-	// on-disk form (Raw) so relative and root-absolute links are both handled. Two
-	// jobs: every link whose resolved target is src is respelled to point at dest
-	// (relative from the *linking* file), and the moved file's own outgoing links
-	// are respelled relative from its new directory (its dir changed, so its
-	// relative links would otherwise dangle). Nothing is written yet: each
-	// file's new text is kept until the rename has succeeded.
+	// Rewrite links through the one rule: every link whose destination
+	// resolves to src is respelled to point at dest (relative from the linking
+	// file), and the moved file's own outgoing links are respelled relative
+	// from its new folder (its folder changed, so its relative links would
+	// otherwise dangle). Only the path changes: the suffix (?query#anchor), the
+	// title and a <…> form stay as written. Wikilinks resolve by basename each
+	// run, so a relocation needs no rewrite. Nothing is written yet: each file's
+	// new text is kept until the rename has succeeded.
 	type write struct {
 		e    *Entry
 		text string
 	}
 	var writes []write
 	for _, e := range idx.Entries {
-		epath := e.Path
-		if e == src {
-			epath = dest // e's location after the move (only src moves)
-		}
-		type rewrite struct {
-			line           int
-			oldRaw, newRaw string
-		}
-		var rws []rewrite
-		for _, l := range e.Links {
-			// Wikilinks resolve by basename each run, so a relocation needs no
-			// rewrite; and their [[…]] form isn't a markdown `](…)` target anyway.
-			if l.Wikilink {
-				continue
-			}
-			switch {
-			case l.Target == src.Path: // a link to the moved file
-				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(epath, dest+l.anchorSuffix())})
-			case e == src: // the moved file's own outgoing link to an unmoved target
-				rws = append(rws, rewrite{l.Line, l.Raw, relativeLink(dest, l.Target+l.anchorSuffix())})
-			}
-		}
-		// A same-directory rename leaves most spellings unchanged; drop the no-ops.
-		rws = slices.DeleteFunc(rws, func(r rewrite) bool { return r.newRaw == r.oldRaw })
+		moved := e == src
 		plan, rewritesFM := plans[e]
-		if len(rws) == 0 && !rewritesFM {
+		if !moved && !rewritesFM && !slices.ContainsFunc(e.Links, func(l Link) bool { return l.Target == src.Path }) {
 			continue
 		}
 		raw := plan.text // the checked frontmatter rewrite: it changes no line count
@@ -982,30 +873,36 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 				return nil, err
 			}
 		}
-		lines := strings.Split(raw, "\n") // link lines are file-relative
-		n := 0
-		for _, r := range rws {
-			if r.line-1 < 0 || r.line-1 >= len(lines) {
-				continue
-			}
-			// Match the on-disk form, which may be angle-bracketed (`<…>`) if the
-			// old target had a space. Re-wrap only if the new target still has one.
-			re := regexp.MustCompile(`\]\(<?` + regexp.QuoteMeta(r.oldRaw) + `>?(\s[^)]*)?\)`)
-			lines[r.line-1] = re.ReplaceAllStringFunc(lines[r.line-1], func(m string) string {
-				n++
-				nt := r.newRaw
-				if strings.ContainsAny(nt, " \t") {
-					nt = "<" + nt + ">"
-				}
-				return "](" + nt + re.FindStringSubmatch(m)[1] + ")" // keep anchor + title
-			})
+		body := parse.Body(raw)
+		head := raw[:len(raw)-len(body)]
+		from := e.Path
+		if moved {
+			from = dest // e's place after the move (only src moves)
 		}
+		n := 0
+		body = parse.MapInternalLinks(body, func(target string) string {
+			d := ResolveDest(e.Path, target)
+			switch {
+			case d.Outside:
+				return target // not in the bundle: left as written
+			case d.Path == src.Path:
+				d.Path = dest // a link to the moved file
+			case !moved:
+				return target
+			} // else the moved file's own link to an unmoved target
+			repl := spell(RelativeLink(from, d.Path), true) + suffixOf(target)
+			if repl == target {
+				return target // a same-folder rename leaves most spellings unchanged
+			}
+			n++
+			return repl
+		})
 		fields := plan.refs
 		if n == 0 && fields == 0 {
 			continue
 		}
 		res.Rewrites = append(res.Rewrites, FileRewrite{Path: e.Path, Links: n, FrontmatterRefs: fields})
-		writes = append(writes, write{e, strings.Join(lines, "\n")})
+		writes = append(writes, write{e, head + body})
 	}
 	if dryRun {
 		return res, nil
@@ -1065,53 +962,24 @@ func missingDirs(dir string) []string {
 }
 
 // frontmatterRewrites is the callback parse.RewriteValues asks about every
-// frontmatter value and list item of entry e, in every occurrence of every
-// key: what a move makes of the value, and whether it changes. It is the
-// frontmatter twin of the body-link pass in
-// Move: a value referencing src is repointed at dest, and (only for the moved file
-// itself, whose directory changes, so its relative refs would otherwise dangle) a
-// relative value referencing anything else is normalized in place.
-//
-// Matching is by resolved target, not by spelling, so a relative ref is found as
-// readily as a root-absolute one. The rewrite always emits the **root-absolute**
-// form, which is where frontmatter deliberately parts company with body links:
-// a body link is relative because it must navigate in a renderer, while a
-// frontmatter ref is never rendered as a link and instead must be a *stable key*.
-// Only one spelling per target keeps `--where blockers=/active/x.md` finding every
-// referrer; relative values spell the same target differently from each directory,
-// so no single query can match them all.
-//
-// A frontmatter value is considered a reference only when it ends in `.md` (after
-// any `#anchor`). That suffix is the whole heuristic, and it is what keeps the
-// pass from mangling ordinary metadata: an arbitrary value like `title: Some Note`
-// would otherwise resolve to a perfectly valid in-bundle path and be rewritten as
-// one. Values resolving outside the bundle are left alone, as body links are.
+// frontmatter value of entry e that ref reads as a reference: a value naming
+// src is repointed at dest, and the moved file's own relative refs are
+// normalized (its folder changes). It always writes the root-absolute form: a
+// frontmatter ref is never rendered as a link, it must be a stable key, so
+// `--where blockers=/active/x.md` finds every referrer by its text.
 func (idx *Index) frontmatterRewrites(e *Entry, srcPath, dest string) func(key, v string) (string, bool) {
 	return func(_, v string) (string, bool) {
-		if p, _, _ := strings.Cut(v, "#"); !strings.HasSuffix(p, ".md") {
-			return "", false
-		}
-		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, v)
-		if escapes {
-			return "", false
-		}
+		d, ok := ref(e.Path, v)
 		switch {
-		case stripAnchor(abs) == srcPath:
-			return dest + anchorOf(abs), true
+		case !ok || d.Outside:
+			return "", false
+		case d.Path == srcPath:
+			return spell(dest, false) + suffixOf(v), true
 		case e.Path == srcPath:
-			return abs, true // already root-absolute: the canonical frontmatter form
+			return spell(d.Path, false) + suffixOf(v), true // root-absolute: the canonical frontmatter form
 		}
 		return "", false // only the moved file normalizes its refs to unmoved targets
 	}
-}
-
-func stripAnchor(p string) string { p, _, _ = strings.Cut(p, "#"); return p }
-
-func anchorOf(p string) string {
-	if _, a, ok := strings.Cut(p, "#"); ok {
-		return "#" + a
-	}
-	return ""
 }
 
 // withinDir reports whether p is dir itself or lexically inside it, guarding
@@ -1381,7 +1249,7 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 			continue
 		}
 		rws := e.wikilinkRewrites(resolve, func(abs string) string {
-			return relativeLink(e.Path, abs) // canonical relative on-disk form
+			return RelativeLink(e.Path, abs) // canonical relative on-disk form
 		})
 		for _, rw := range rws {
 			if rw.To == "" {
@@ -1415,13 +1283,14 @@ type wikilinkRewrite struct {
 	From, To string
 }
 
-// wikilinkRewrites converts the entry's [[wikilinks]] to markdown links, the
-// target spelled by spell from its resolved root-absolute path (anchor kept), so
-// tidy can write the relative on-disk form and dump the root-absolute one from
-// the same conversion. One rewrite per unique [[…]] on a line, embeds first:
+// wikilinkRewrites converts the entry's [[wikilinks]] to markdown links: the
+// path that form makes of the resolved root-absolute path, and the anchor,
+// both written by spell, so tidy can write the relative on-disk form and
+// dump the root-absolute one from the same conversion, and each reads back as
+// it was meant. One rewrite per unique [[…]] on a line, embeds first:
 // `[[x]]` is a substring of `![[x]]`, so replacing the bare form first would
 // mangle an embed with the same target on that line.
-func (e *Entry) wikilinkRewrites(resolve func(target, from string) string, spell func(abs string) string) []wikilinkRewrite {
+func (e *Entry) wikilinkRewrites(resolve func(target, from string) string, form func(abs string) string) []wikilinkRewrite {
 	wls := slices.Clone(e.wikilinks)
 	slices.SortStableFunc(wls, func(a, b wikilink.Link) int {
 		if a.IsEmbed == b.IsEmbed {
@@ -1446,13 +1315,11 @@ func (e *Entry) wikilinkRewrites(resolve func(target, from string) string, spell
 			rws = append(rws, wikilinkRewrite{Line: wl.Line, From: wl.Full()})
 			continue
 		}
+		suffix := ""
 		if anchor != "" {
-			resolved += "#" + anchor
+			suffix = "#" + spell(anchor, true) // [[x#My Heading]] reads back as the anchor "My Heading"
 		}
-		url := spell(resolved)
-		if strings.ContainsAny(url, " \t") {
-			url = "<" + url + ">"
-		}
+		url := spell(form(resolved), true) + suffix
 		text := display
 		if text == "" {
 			text = target
@@ -1482,43 +1349,35 @@ func applyWikilinkRewrites(lines []string, rws []wikilinkRewrite) bool {
 }
 
 // normalizeEntryLinks rewrites each root-absolute link in one entry to its
-// canonical relative form (anchor and title preserved), writing the file once.
-// The relative form is deterministic (path arithmetic), so it applies whether or
-// not the target exists. Returns one Fix per link.
+// canonical relative form, through the one rule (ResolveDest, then spell):
+// only the path changes, the suffix (?query#anchor), the title and a <…> form
+// stay as written. The relative form is path arithmetic, so it applies whether
+// or not the target exists. A link climbing above the root is left exactly as
+// authored, never clamped. Returns one Fix per link, in document order, and
+// writes the file once.
 func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	raw, err := e.Raw()
 	if err != nil {
 		return nil, err
 	}
 	body := parse.Body(raw)
-	offset := strings.Count(raw[:len(raw)-len(body)], "\n")
-	abs := parse.Links(body).Absolute
-	if len(abs) == 0 {
-		return nil, nil
-	}
+	head := raw[:len(raw)-len(body)]
 	var changes []Fix
-	lines := strings.Split(raw, "\n") // link lines are file-relative
-	for _, l := range abs {
-		target, escapes := normalizeLink(idx.Bundle.Dir, e.Path, l.Target)
-		if escapes {
-			continue // out-of-bundle link: leave it exactly as authored, never clamp it
+	body = parse.MapInternalLinks(body, func(target string) string {
+		if !strings.HasPrefix(target, "/") {
+			return target
 		}
-		rel := relativeLink(e.Path, target)
-		if strings.ContainsAny(rel, " \t") {
-			continue // a space target is flagged by check; the fix is renaming the file, not normalizing the link
+		d := ResolveDest(e.Path, target)
+		if d.Outside {
+			return target
 		}
-		changes = append(changes, Fix{e.Path, "link", l.Target, rel})
-		ln := l.Line + offset - 1
-		if !apply || ln < 0 || ln >= len(lines) {
-			continue
-		}
-		re := regexp.MustCompile(`\]\(` + regexp.QuoteMeta(l.Target) + `(\s[^)]*)?\)`)
-		lines[ln] = re.ReplaceAllStringFunc(lines[ln], func(m string) string {
-			return "](" + rel + re.FindStringSubmatch(m)[1] + ")" // keep any title
-		})
-	}
-	if apply {
-		if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
+		repl := spell(RelativeLink(e.Path, d.Path), true) + suffixOf(target)
+		changes = append(changes, Fix{e.Path, "link", target, repl})
+		return repl
+	})
+	slices.Reverse(changes) // MapInternalLinks visits the links last to first
+	if apply && len(changes) > 0 {
+		if err := writeFile(e.abs, []byte(head+body)); err != nil {
 			return nil, err
 		}
 	}
@@ -1610,21 +1469,17 @@ func (e *Entry) TypedFrontmatter() parse.Map {
 // the closing fence. `wiki check` reports it; every other command warns.
 func (e *Entry) FrontmatterErr() error { return e.fmErr }
 
-// ResolveLink resolves a link target as written in the entry at fromPath to its
-// canonical root-absolute bundle path, the same key the graph is built on.
-//
-// outside reports that the target lands above the bundle root, which is neither
-// an edge nor broken: it points out of a self-contained bundle, so callers skip
-// it rather than resolving it on disk.
-//
-// Exported because anything rendering a body has to turn its links into
-// something it can navigate, and doing that by hand is how the rule ends up with
-// more than one home.
-func (idx *Index) ResolveLink(fromPath, target string) (path string, outside bool) {
-	return normalizeLink(idx.Bundle.Dir, fromPath, target)
+// Title is the entry's title by the scaffolded AGENTS.md's rule: its `title:`
+// value, else the text of its first level-1 heading that has text, else "". A
+// readable file name is the caller's fallback (presentation).
+func (e *Entry) Title() string {
+	if t := e.Field("title"); t != "" {
+		return t
+	}
+	for _, h := range e.Headings {
+		if h.Level == 1 && h.Text != "" {
+			return h.Text
+		}
+	}
+	return ""
 }
-
-// RelativeLink spells a resolved root-absolute target as it should be written on
-// disk from fromPath: the canonical on-disk form, relative so it navigates in any
-// renderer. The inverse of ResolveLink, and what anything writing a link needs.
-func RelativeLink(fromPath, target string) string { return relativeLink(fromPath, target) }

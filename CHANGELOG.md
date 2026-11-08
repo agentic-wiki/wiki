@@ -2,6 +2,35 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.17.0
+
+One rule for link destinations: how one is read, how one is written back, and which frontmatter values are references, in the library, so apps stop keeping copies.
+
+### Breaking
+
+- **`Index.ResolveLink` is removed.** `index.ResolveDest(from, dest)` reads a destination and returns a `Dest`: `Path`, root-absolute and decoded once (never unescape it again: `%252e` is the literal name `%2e`), `Anchor`, decoded, and `Outside`.
+- **`Link.Target` is the decoded path** (`/my file.md` for `my%20file.md`), and `Link.Anchor` is decoded. For a link climbing above the root, `Target` is the root-relative climbing path (`../PRD.md`), not an absolute file-system path; `ignore` names an outside file the same way.
+- **`RelativeLink(fromPath, p)` takes a path without an anchor** and never cuts it at `#`. It doesn't spell the path.
+- **`parse.MapInternalLinks` no longer wraps a replacement in `<…>`:** its function returns a spelled destination.
+
+### Changed
+
+- **A link is read by one rule:** the anchor is cut at the first `#`, a `?query` is dropped, and the path is percent-decoded once. So `check` stops reporting `my%20file.md` and `a.md?raw=1` as broken, `#caf%C3%A9` finds `## Café`, and `links`, `backlinks` and `unresolved` show decoded paths.
+- **A destination starting `//`, `/\` or `\\`, as written or once decoded, is external**, like one with a URL scheme: never resolved, rewritten or checked. Neither is a frontmatter value like that, or one with a scheme.
+- **`move`, `tidy` and `dump` write a path so it reads back as itself:** a space, `%`, `#`, `?`, `(`, `)`, `<`, `>`, `\`, the controls and non-printing characters are percent-encoded. A file whose name holds `%` is written with `%25`: `my%2520file.md` for `my%20file.md`.
+- **A rewrite changes only the path:** a `?query#anchor` and the link's title are kept as written, and a `<…>` destination stays one.
+- **`tidy --links` now rewrites a link to a file with a space**, spelling it `%20`: it used to skip it.
+- **`dump` rewrites only a link that resolves** (to an entry, or a file the bundle holds). A link to nothing keeps its spelling, where it used to get the path it would have.
+- **`tidy --wikilinks` and `dump` write a converted wikilink the same way:** the path and the anchor spelled, never wrapped in `<…>`.
+- **`move --include-frontmatter` writes a reference as readable text:** only `%`, `#`, `?` and non-printing characters are encoded, so `related: /new name.md` keeps its space, and `--where "related=/new name.md"` still matches it.
+
+### Added
+
+- **`Entry.FrontmatterRefs()`**: every frontmatter value that names an entry (a path ending in `.md`, read by `ResolveDest`), as a `Ref` (`Key`, `Value` and the `Dest`), in file order. `move` rewrites references by the same rule.
+- **`Entry.Title()`**: the entry's `title:`, else its first level-1 heading's text, else `""`.
+- **`parse.IsExternal(dest)`**: whether a destination or value names something outside the wiki.
+- **`index.Read` reads a file's links too** (`Links`, `SelfAnchors`, `Outside`), by the same rule.
+
 ## v0.16.2
 
 ### Added

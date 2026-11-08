@@ -98,11 +98,13 @@ func (idx *Index) ReadingOrder() []*Entry {
 // made portable to a single URL (llms-full.txt), so each body is transformed
 // in memory, never on disk:
 //
-//   - internal links, relative on disk, become root-absolute, so they still mean
+//   - internal links that resolve (to an entry, or a file the bundle holds)
+//     become root-absolute, spelled by the one rule, so they still mean
 //     something in one file and match the delimiter of the entry they name
-//     (anchors kept; an unresolved link gets the path it would have);
+//     (the ?query#anchor suffix kept as written);
 //   - resolved [[wikilinks]] become markdown links to that same root-absolute path;
-//   - URLs, out-of-bundle links and unresolvable wikilinks are left as written;
+//   - URLs, out-of-bundle links, links to nothing and unresolvable wikilinks
+//     are left as written;
 //   - frontmatter is dropped unless withFrontmatter, which keeps it verbatim.
 //
 // The bytes depend only on the source: line endings are normalized to "\n", a
@@ -147,11 +149,11 @@ func (idx *Index) dumpText(e *Entry, resolve func(target, from string) string, w
 	body := parse.Body(raw)
 	head := raw[:len(raw)-len(body)]
 	body = parse.MapInternalLinks(body, func(target string) string {
-		abs, escapes := normalizeLink(idx.Bundle.Dir, e.Path, target)
-		if escapes {
-			return target // out of the bundle: there is no root-absolute path to give it
+		d := ResolveDest(e.Path, target)
+		if d.Outside || !idx.FileExists(d.Path) {
+			return target // out of the bundle, or naming nothing: there is no path to give it
 		}
-		return abs
+		return spell(d.Path, true) + suffixOf(target)
 	})
 	if withFrontmatter {
 		body = head + body

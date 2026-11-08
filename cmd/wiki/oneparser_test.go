@@ -384,3 +384,22 @@ func TestTagsSkipEmptyItems(t *testing.T) {
 		t.Errorf("tags: exit %d, %q", code, out)
 	}
 }
+
+// A moved frontmatter reference keeps readable text: a space stays a space, so
+// `--where` still matches it as written.
+func TestMovedRefWithASpaceStillMatches(t *testing.T) {
+	writeFiles(t, map[string]string{
+		"wiki.toml":   "spec=\"0.1\"\n",
+		"old name.md": "---\ntype: note\n---\n# Old\n",
+		"ref.md":      "---\ntype: note\nrelated: /old name.md\n---\n# Ref\n",
+	})
+	if _, errOut, code := captureAll(t, func() int { return cmdMove([]string{"old name.md", "new name.md", "--include-frontmatter"}) }); code != 0 {
+		t.Fatalf("move: exit %d, %s", code, errOut)
+	}
+	if got, _ := os.ReadFile("ref.md"); string(got) != "---\ntype: note\nrelated: /new name.md\n---\n# Ref\n" {
+		t.Errorf("ref.md = %q", got)
+	}
+	if out, code := capture(t, func() int { return cmdList([]string{"--where", "related=/new name.md", "--format", "csv"}) }); code != 0 || !strings.Contains(out, "/ref.md") {
+		t.Errorf("list --where: exit %d, %q", code, out)
+	}
+}

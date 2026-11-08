@@ -373,14 +373,14 @@ func TestMapInternalLinks(t *testing.T) {
 	}
 }
 
-func TestMapInternalLinksSpacesGetBrackets(t *testing.T) {
-	// A bare destination cannot hold a space, so a replacement that has one is
-	// bracketed; an already-bracketed one is not double-wrapped.
-	sp := func(string) string { return "/my dir/x.md" }
-	if got := MapInternalLinks("[a](x.md)", sp); got != "[a](</my dir/x.md>)" {
-		t.Errorf("bare -> %q", got)
+func TestMapInternalLinksKeepsTheForm(t *testing.T) {
+	// Only the destination's bytes change: a <…> one keeps its brackets, a
+	// plain one gets none (writers spell paths, so they hold no space).
+	sp := func(string) string { return "/my%20dir/x.md" }
+	if got := MapInternalLinks("[a](x.md \"t\")", sp); got != "[a](/my%20dir/x.md \"t\")" {
+		t.Errorf("plain -> %q", got)
 	}
-	if got := MapInternalLinks("[a](<x y.md>)", sp); got != "[a](</my dir/x.md>)" {
+	if got := MapInternalLinks("[a](<x y.md>)", sp); got != "[a](</my%20dir/x.md>)" {
 		t.Errorf("angled -> %q", got)
 	}
 }

@@ -286,31 +286,28 @@ func TestCheckAnchorLinks(t *testing.T) {
 	}
 }
 
-func TestNormalizeLink(t *testing.T) {
-	// Resolution is pure path math against the root, so any real dir works as root.
-	root := t.TempDir()
+func TestResolveDestPaths(t *testing.T) {
 	cases := []struct {
-		from, target, want string
-		escapes            bool
+		from, target, want, anchor string
+		outside                    bool
 	}{
-		{"/index.md", "/a.md", "/a.md", false},                 // absolute
-		{"/index.md", "/a.md#sec", "/a.md#sec", false},         // anchor preserved
-		{"/index.md", "a.md", "/a.md", false},                  // bare, from root
-		{"/index.md", "./a.md", "/a.md", false},                // explicit current dir
-		{"/sub/x.md", "a.md", "/sub/a.md", false},              // bare, from a subdir
-		{"/sub/x.md", "../a.md", "/a.md", false},               // up one
-		{"/sub/deep/x.md", "../../a.md", "/a.md", false},       // up two
-		{"/sub/x.md", "../a.md#sec", "/a.md#sec", false},       // relative + anchor
-		{"/a/b.md", "c/d.md", "/a/c/d.md", false},              // nested relative
-		{"/a/x.md", "/a/../b.md", "/b.md", false},              // absolute interior .. canonicalized
-		{"/index.md", "../PRD.md", "", true},                   // relative climbs above root
-		{"/sub/x.md", "../../../../a.md", "", true},            // relative climbs above root
-		{"/index.md", "/something/../../../this.md", "", true}, // absolute climbs above root
+		{"/index.md", "/a.md", "/a.md", "", false},                              // absolute
+		{"/index.md", "/a.md#sec", "/a.md", "sec", false},                       // anchor apart
+		{"/index.md", "a.md", "/a.md", "", false},                               // bare, from root
+		{"/index.md", "./a.md", "/a.md", "", false},                             // explicit current dir
+		{"/sub/x.md", "a.md", "/sub/a.md", "", false},                           // bare, from a subdir
+		{"/sub/x.md", "../a.md", "/a.md", "", false},                            // up one
+		{"/sub/deep/x.md", "../../a.md", "/a.md", "", false},                    // up two
+		{"/sub/x.md", "../a.md#sec", "/a.md", "sec", false},                     // relative + anchor
+		{"/a/b.md", "c/d.md", "/a/c/d.md", "", false},                           // nested relative
+		{"/a/x.md", "/a/../b.md", "/b.md", "", false},                           // absolute interior .. canonicalized
+		{"/index.md", "../PRD.md", "../PRD.md", "", true},                       // relative climbs above root
+		{"/sub/x.md", "../../../../a.md", "../../../a.md", "", true},            // relative climbs above root
+		{"/index.md", "/something/../../../this.md", "../../this.md", "", true}, // absolute climbs above root
 	}
 	for _, c := range cases {
-		abs, escapes := normalizeLink(root, c.from, c.target)
-		if escapes != c.escapes || (!escapes && abs != c.want) {
-			t.Errorf("normalizeLink(%q, %q) = (%q, %v), want (%q, %v)", c.from, c.target, abs, escapes, c.want, c.escapes)
+		if got := ResolveDest(c.from, c.target); got != (Dest{Path: c.want, Anchor: c.anchor, Outside: c.outside}) {
+			t.Errorf("ResolveDest(%q, %q) = %+v, want %q #%q outside %v", c.from, c.target, got, c.want, c.anchor, c.outside)
 		}
 	}
 }
@@ -1333,9 +1330,10 @@ func TestSlugify(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(idx.Bundle.Dir, "my note.md")); err == nil {
 		t.Errorf("old spaced file should be gone")
 	}
-	// the angle-bracketed inbound link is rewritten to the slug, relative (space gone)
+	// the angle-bracketed inbound link is rewritten to the slug, relative, and
+	// keeps its <…> form: a rewrite changes only the path
 	root, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "index.md"))
-	if !strings.Contains(string(root), "[n](./my-note.md)") {
+	if !strings.Contains(string(root), "[n](<./my-note.md>)") {
 		t.Errorf("inbound <…> link not rewritten:\n%s", root)
 	}
 }
