@@ -49,18 +49,22 @@ func (l Link) anchorSuffix() string {
 type Entry struct {
 	Path        string           `json:"_path"` // root-absolute, e.g. /finance/income/index.md
 	Type        string           `json:"type"`
-	Links       []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges
-	SelfAnchors []Link           `json:"-"` // pure #anchor links (Target = this entry); not graph edges, checked against own headings
-	Outside     []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching)
+	Links       []Link           `json:"-"` // internal links, resolved to root-absolute: the graph edges; nil for an entry from Read
+	SelfAnchors []Link           `json:"-"` // pure #anchor links (Target = this entry); not graph edges, checked against own headings; nil for an entry from Read
+	Outside     []Link           `json:"-"` // links resolving outside the bundle (Raw kept; Target = resolved abs fs path, for ignore matching); nil for an entry from Read
 	Checkboxes  []parse.Checkbox `json:"-"`
 	Headings    []parse.Heading  `json:"-"`
 	wikilinks   []wikilink.Link  // [[wikilinks]] parsed from the body (compat); resolved into Links (Wikilink) in Build
-	abs         string
-	root        string // the bundle dir, so an entry can re-parse itself after a write
+	abs         string           // the file, or "" for an entry Read outside a bundle
+	root        string           // the bundle dir, so an entry can re-parse itself after a write
+	content     string           // the text of an entry Read outside a bundle
 	fm          map[string]any
 	typed       parse.Map // fm with YAML types (parse.ReadFrontmatter): what MarshalJSON emits
 	fmErr       error     // why the header wasn't read (parse.ReadFrontmatter), or nil
 }
+
+// inBundle reports whether the entry is a file of a bundle, not one from Read.
+func (e *Entry) inBundle() bool { return e.abs != "" }
 
 // base is the entry's filename (basename of Path), computed on demand: the path
 // is the single source of truth for identity, so the basename is not stored.
@@ -83,15 +87,21 @@ func (e *Entry) SortTime() time.Time {
 	if t, ok := parseTimestamp(parse.String(e.fm, "timestamp")); ok {
 		return t
 	}
-	if fi, err := os.Stat(e.abs); err == nil {
-		return fi.ModTime()
+	if e.inBundle() {
+		if fi, err := os.Stat(e.abs); err == nil {
+			return fi.ModTime()
+		}
 	}
 	return time.Time{}
 }
 
 // Raw returns the entry's full file content, read fresh from disk. The index
-// holds only metadata, so bodies are re-read on demand.
+// holds only metadata, so bodies are re-read on demand. An entry Read outside
+// a bundle returns the text it was read from.
 func (e *Entry) Raw() (string, error) {
+	if !e.inBundle() {
+		return e.content, nil
+	}
 	data, err := os.ReadFile(e.abs)
 	if err != nil {
 		return "", err
@@ -268,16 +278,41 @@ func parseEntry(root, abs string) (*Entry, error) {
 		return nil, err
 	}
 	rel, _ := filepath.Rel(root, abs)
-	content := string(data)
+	// rel is the file's path under the bundle root ("finance/income.md");
+	// the entry's Path is its root-absolute bundle id ("/finance/income.md").
+	e, body, offset := read("/"+filepath.ToSlash(rel), string(data))
+	e.abs, e.root = abs, root
+	e.Links, e.SelfAnchors, e.Outside = resolveLinks(root, parse.Links(body), e.Path, offset)
+	e.wikilinks = wikilink.Parse(body) // resolved into graph edges in Build (needs all entries)
+	for i := range e.wikilinks {
+		e.wikilinks[i].Line += offset
+	}
+	return e, nil
+}
+
+// Read returns the entry that content would be at path p, read by the same
+// rules as an entry of an index, for a file that isn't in one (a file read
+// from git, say). p is cleaned and made root-absolute (docs/plan.md is
+// /docs/plan.md). Its Type, Frontmatter, TypedFrontmatter, Field, FieldList,
+// FrontmatterErr, Headings, Checkboxes, Raw and Body are what an indexed
+// entry's would be. Its Links, SelfAnchors and Outside are nil, since links
+// resolve against a bundle; its SortTime is its `timestamp` alone; and any
+// write to it is refused with ErrNotInBundle.
+func Read(p, content string) *Entry {
+	e, _, _ := read(path.Clean("/"+p), content)
+	e.content = content
+	return e
+}
+
+// read returns the entry that content would be at path p, without what needs
+// a bundle (its links, its file), with its body and how many lines precede
+// the body in the file.
+func read(p, content string) (e *Entry, body string, offset int) {
 	fm, typed, body, fmErr := parse.ReadFrontmatter(content) // one decode for both views
-	// Links/checkboxes/headings are parsed from the frontmatter-stripped body, so
+	// Checkboxes and headings are parsed from the frontmatter-stripped body, so
 	// their line numbers are body-relative; offset by the frontmatter's length
 	// to make them file-relative (what `unresolved`/`backlinks`/`tasks` report).
-	offset := strings.Count(content[:len(content)-len(body)], "\n")
-	// rel is the file's path under the bundle root ("finance/income.md");
-	// entryPath is its root-absolute bundle id ("/finance/income.md").
-	entryPath := "/" + filepath.ToSlash(rel)
-	links, selfAnchors, outside := resolveLinks(root, parse.Links(body), entryPath, offset)
+	offset = strings.Count(content[:len(content)-len(body)], "\n")
 	checkboxes, heads := parse.Checkboxes(body), parse.Headings(body)
 	for i := range checkboxes {
 		checkboxes[i].Line += offset
@@ -285,25 +320,15 @@ func parseEntry(root, abs string) (*Entry, error) {
 	for i := range heads {
 		heads[i].Line += offset
 	}
-	wikilinks := wikilink.Parse(body) // resolved into graph edges in Build (needs all entries)
-	for i := range wikilinks {
-		wikilinks[i].Line += offset
-	}
 	return &Entry{
-		Path:        entryPath,
-		Type:        parse.String(fm, "type"),
-		Links:       links,
-		SelfAnchors: selfAnchors,
-		Outside:     outside,
-		Checkboxes:  checkboxes,
-		Headings:    heads,
-		wikilinks:   wikilinks,
-		abs:         abs,
-		root:        root,
-		fm:          fm,
-		typed:       typed,
-		fmErr:       fmErr,
-	}, nil
+		Path:       p,
+		Type:       parse.String(fm, "type"),
+		Checkboxes: checkboxes,
+		Headings:   heads,
+		fm:         fm,
+		typed:      typed,
+		fmErr:      fmErr,
+	}, body, offset
 }
 
 // FileExists reports whether a root-absolute target resolves to a real file.

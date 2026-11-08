@@ -2,10 +2,13 @@ package index
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agentic-wiki/wiki/parse"
 )
@@ -300,5 +303,85 @@ func TestCheckAnchorsUseHeadingIDs(t *testing.T) {
 	}
 	if !slices.Equal(anchors, []string{"link anchor not found -> #notes-2"}) {
 		t.Errorf("anchor warnings %q, want only #notes-2", anchors)
+	}
+}
+
+// Read gives a file's text the same reading as an indexed entry of the same
+// text: type, both frontmatter views, FieldList without empty items, the read
+// error, headings, checkboxes, the raw text and the body. It has no links and
+// refuses writes.
+func TestReadIsAnIndexedEntryWithoutTheIndex(t *testing.T) {
+	files := map[string]string{
+		"/docs/plan.md": "---\ntype: note\ntitle: 'company''s plan'\ntags: [a, \"\", b]\nraw:\n  - path: x.pdf\n---\n# Plan\n\n- [ ] step [b](./b.md)\n## Plan\n",
+		"/docs/bad.md":  "---\ntitle: a: b\n---\n# Bad\n",
+	}
+	idx := build(t, map[string]string{
+		"index.md":     "---\nokf_version: \"0.1\"\n---\n",
+		"docs/plan.md": files["/docs/plan.md"],
+		"docs/bad.md":  files["/docs/bad.md"],
+	})
+	for p, content := range files {
+		want, err := idx.Resolve(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Read(p, content)
+		if got.Path != want.Path || got.Type != want.Type {
+			t.Errorf("%s: path %q type %q, want %q %q", p, got.Path, got.Type, want.Path, want.Type)
+		}
+		if !reflect.DeepEqual(got.Frontmatter(), want.Frontmatter()) || !reflect.DeepEqual(got.TypedFrontmatter(), want.TypedFrontmatter()) {
+			t.Errorf("%s: frontmatter %v / %v, want %v / %v", p, got.Frontmatter(), got.TypedFrontmatter(), want.Frontmatter(), want.TypedFrontmatter())
+		}
+		for _, key := range []string{"tags", "raw", "title"} {
+			if !slices.Equal(got.FieldList(key), want.FieldList(key)) {
+				t.Errorf("%s: FieldList(%s) %q, want %q", p, key, got.FieldList(key), want.FieldList(key))
+			}
+		}
+		if fmt.Sprint(got.FrontmatterErr()) != fmt.Sprint(want.FrontmatterErr()) {
+			t.Errorf("%s: FrontmatterErr %v, want %v", p, got.FrontmatterErr(), want.FrontmatterErr())
+		}
+		if !reflect.DeepEqual(got.Headings, want.Headings) || !reflect.DeepEqual(got.Checkboxes, want.Checkboxes) {
+			t.Errorf("%s: headings %+v checkboxes %+v, want %+v %+v", p, got.Headings, got.Checkboxes, want.Headings, want.Checkboxes)
+		}
+		raw, _ := got.Raw()
+		body, _ := got.Body()
+		wantBody, _ := want.Body()
+		if raw != content || body != wantBody {
+			t.Errorf("%s: raw %q body %q", p, raw, body)
+		}
+		if len(got.Links) != 0 {
+			t.Errorf("%s: links %+v, want none", p, got.Links)
+		}
+	}
+	plan := Read("/docs/plan.md", files["/docs/plan.md"])
+	if got := plan.FieldList("tags"); !slices.Equal(got, []string{"a", "b"}) {
+		t.Errorf("tags %q, want [a b]", got)
+	}
+	if err := plan.SetField("status", "done"); !errors.Is(err, ErrNotInBundle) {
+		t.Errorf("SetField = %v, want ErrNotInBundle", err)
+	}
+}
+
+// A Read entry's path is cleaned and made root-absolute, as a git path comes
+// without the slash; it sorts by its `timestamp` alone (no file to stat); and
+// any write is refused, even one that would change nothing.
+func TestReadOutsideABundle(t *testing.T) {
+	for in, want := range map[string]string{"docs/plan.md": "/docs/plan.md", "/docs/./x/../plan.md": "/docs/plan.md", "log.md": "/log.md"} {
+		if got := Read(in, "").Path; got != want {
+			t.Errorf("Read(%q).Path = %q, want %q", in, got, want)
+		}
+	}
+	if !Read("notes/log.md", "").IsLog() {
+		t.Error("notes/log.md isn't a log")
+	}
+	dated := Read("a.md", "---\ntype: note\ntimestamp: 2026-01-02T03:04:05Z\n---\n")
+	if got := dated.SortTime(); !got.Equal(time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)) {
+		t.Errorf("SortTime = %v", got)
+	}
+	if got := Read("b.md", "---\ntype: note\n---\n").SortTime(); !got.IsZero() {
+		t.Errorf("SortTime without a timestamp = %v, want zero", got)
+	}
+	if err := dated.SetField("type", "note"); !errors.Is(err, ErrNotInBundle) {
+		t.Errorf("a no-change write = %v, want ErrNotInBundle", err)
 	}
 }

@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.16.2
+
+### Added
+
+- **`index.Read(path, content)`** reads one file's text as an entry, by the same rules as an indexed one, without a bundle: for a file that isn't in one, such as a file read from git. Its path is cleaned and made root-absolute (`docs/plan.md` is `/docs/plan.md`). Its `Type`, `Frontmatter`, `TypedFrontmatter`, `Field`, `FieldList` (without empty items), `FrontmatterErr`, `Headings`, `Checkboxes`, `Raw` and `Body` are what an indexed entry's would be. Its links are nil, since they resolve against a bundle; it sorts by its `timestamp` alone; and any write to it, even one that would change nothing, is refused with `index.ErrNotInBundle`.
+
 ## v0.16.1
 
 ### Changed

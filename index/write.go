@@ -18,6 +18,10 @@ import (
 // giving them a block would break the format rather than annotate the file.
 var ErrNoFrontmatter = errors.New("reserved file carries no frontmatter")
 
+// ErrNotInBundle refuses a write to an entry Read outside a bundle: it has no
+// file to write.
+var ErrNotInBundle = errors.New("entry is not a file in a bundle")
+
 // writeFile replaces a file's contents atomically: a temp file in the same
 // directory, then a rename over the target.
 //
@@ -210,6 +214,9 @@ func (e *Entry) SetCheckbox(line int, done bool) error {
 // A no-op write is skipped deliberately: it would touch the mtime and wake every
 // file watcher for a change that did not happen.
 func (e *Entry) commit(before, after string) error {
+	if !e.inBundle() {
+		return ErrNotInBundle // checked first: an entry from Read can't be written, even to no change
+	}
 	if after == before {
 		return nil
 	}
