@@ -231,7 +231,7 @@ func agentsMD(chosen []part) ([]byte, error) {
 }
 
 // wikiTOML is wiki.toml: the parts' types and ignore_orphans, each list a
-// union in part order, and the kanban part's wikiview board view (its
+// union in part order, and the kanban part's `[[board]]` view (its
 // board.toml, already commented out). With no parts, types is commented out
 // too, so types stay free-form.
 func wikiTOML(chosen []part) ([]byte, error) {

@@ -1,5 +1,5 @@
-# A board view for wikiview: uncomment it to see the tasks as a board.
-# [[tool.wikiview.board]]
+# A board view, for apps that show boards (WikiShell, Foreman): uncomment it to see the tasks as a board.
+# [[board]]
 # id      = "board"
 # path    = "/{dir}"
 # name    = "Board"

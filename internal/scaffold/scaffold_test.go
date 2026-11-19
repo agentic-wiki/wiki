@@ -326,3 +326,45 @@ func assertOKFConformant(t *testing.T, shape []string) {
 		t.Fatal(err)
 	}
 }
+
+// The kanban board is written commented out. Uncommented, it is a standard
+// [[board]]: wiki loads it without a warning and hands it to the app that reads it.
+func TestKanbanBoardIsStandard(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Write(dir, []string{"kanban"}, false); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	board := false
+	for _, line := range strings.Split(read(t, dir, "wiki.toml"), "\n") {
+		board = board || line == "# [[board]]"
+		if board {
+			line = strings.TrimPrefix(line, "# ")
+		}
+		lines = append(lines, line)
+	}
+	if !board {
+		t.Fatal("wiki.toml has no commented-out [[board]]")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "wiki.toml"), []byte(strings.Join(lines, "\n")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := bundle.Discover(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Unknown) != 0 {
+		t.Errorf("unknown keys: %v", b.Unknown)
+	}
+	var boards []struct {
+		ID   string `toml:"id"`
+		Path string `toml:"path"`
+	}
+	if found, err := b.DecodeBoards(&boards); !found || err != nil {
+		t.Fatalf("DecodeBoards: found=%v err=%v", found, err)
+	}
+	if len(boards) != 1 || boards[0].ID != "board" || boards[0].Path != "/" {
+		t.Errorf("boards = %+v", boards)
+	}
+}

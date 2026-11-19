@@ -166,7 +166,7 @@ Three axes, kept separate, are what keep it friction-free:
 
 Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists and nested maps. `--format json` gives lists and maps as JSON, and it is the exact view. Everywhere else, a list or map is one line of YAML in flow style (`[a, b]`, `{k: v}`), and types are lost: the text `"{a: 1}"` and the map `{a: 1}` both read `{a: 1}` there. `wiki check` reports what wiki can't read or edit safely.
 
-**Limits.** A header can be up to 1 MiB, with any number of values written in it: an index of thousands of records reads. What aliases (`&a` ... `*a`) produce is limited to 10,000 values and 1 MiB of text, each use counted again, so a file can't expand without bound. Beyond these limits a header is refused: `check` reports it, and other commands warn and read the file without its frontmatter. Known limit: a 1 MiB header of about 500,000 tiny values takes about 25 MB of memory once read, for as long as it is held (wikiview's index holds every file).
+**Limits.** A header can be up to 1 MiB, with any number of values written in it: an index of thousands of records reads. What aliases (`&a` ... `*a`) produce is limited to 10,000 values and 1 MiB of text, each use counted again, so a file can't expand without bound. Beyond these limits a header is refused: `check` reports it, and other commands warn and read the file without its frontmatter. Known limit: a 1 MiB header of about 500,000 tiny values takes about 25 MB of memory once read, for as long as it is held (WikiShell's index holds every file).
 
 Entries link with relative Markdown links, `[Income](../finance/income.md)`, so they work in any Markdown viewer. A link from the root (`/finance/income.md`) resolves too, and `wiki tidy --links` rewrites it relative. A link's path is percent-decoded once and its `?query` dropped when it is read, so `my%20file.md` names `my file.md`; `move`, `tidy` and `dump` write a path back the same way, and a link starting `//` names another site, never an entry. Go programs get the same rule from the library: `index.ResolveDest`, `Entry.FrontmatterRefs` and `Entry.Title`. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 
@@ -198,6 +198,8 @@ With no `--shape`, `wiki init` writes the minimal starter: `index.md`, `wiki.tom
 
 Each part's section in `AGENTS.md` and its lines in `wiki.toml` are yours to edit.
 
+The `kanban` part also writes a board view in `wiki.toml`, commented out. `[[board]]` and `[[graph]]` tables belong to the apps that show boards and graphs (WikiShell, Foreman), as `[tool.*]` tables belong to their tool: `wiki` never reads inside them and never warns about them. Go programs read them with `Bundle.DecodeBoards` and `Bundle.DecodeGraphs`, next to `Bundle.DecodeTool`. All three are safe to call at the same time from many goroutines.
+
 ## Run by an agent
 
 The `wiki` CLI is built for an AI agent to operate the whole base, end to end. An agent is probabilistic; your knowledge base must not be. `wiki` is the deterministic engine in between, so every query, move, and check is exact and repeatable: an agent runs your base with the reliability of a database, not the guesswork of a prompt.
@@ -216,7 +218,7 @@ Because the agent drives the same commands you do, you are never locked out of y
 What you have just met is a stack, the modern kind: three layers, and only the bottom one is required.
 
 1. **Markdown.** Plain files in a folder, with a light convention (a `type` in frontmatter, links between entries) we keep OKF-compatible. Complete and navigable on its own, by a human, an LLM, or any tool. This is all you strictly need; everything above is leverage.
-2. **Tool.** `wiki` CLI: a neutral, deterministic engine that indexes the folder and answers structured queries like a database. Built for agents to call, runnable by anyone. Its packages (`parse`, `index`) are also a Go library, which wikiview imports: a heading's anchor (`Heading.ID`), why a header wasn't read (`Entry.FrontmatterErr`) and a list's items (`Entry.FieldList`, a new slice without empty items) come with the same rules the CLI uses. `index.Read` reads one file's text by those rules without a bundle, for a file that isn't in one.
+2. **Tool.** `wiki` CLI: a neutral, deterministic engine that indexes the folder and answers structured queries like a database. Built for agents to call, runnable by anyone. Its packages (`parse`, `index`) are also a Go library, which WikiShell imports: a heading's anchor (`Heading.ID`), why a header wasn't read (`Entry.FrontmatterErr`) and a list's items (`Entry.FieldList`, a new slice without empty items) come with the same rules the CLI uses. `index.Read` reads one file's text by those rules without a bundle, for a file that isn't in one.
 3. **Skill.** The manual your agent follows to drive the tool, where the workflow opinion lives, and yours to customize. Maintained in the [skills repo](https://github.com/agentic-wiki/skills).
 
 The Markdown is data at rest and stands alone; the tool is a swappable engine over it; the skills are where the opinion lives. We provide the top two; the foundation is just your own files, and you can keep only those.

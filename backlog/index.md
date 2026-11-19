@@ -40,7 +40,7 @@ Backlog for the `wiki` CLI itself, kept in the format `wiki` implements (dogfood
 - [ ] [Entry.Links is not in document order when link forms mix](./debt/009-links-document-order.md) (low)
 
 ## 5 — Serve
-- [x] [absorb the server into the CLI](./5-serve/001-absorb-server.md): **cancelled**. The UI lives in its own repo (`wikiview`); keeping `wiki` a zero-dependency neutral engine won. The consequence is that [005](./4-release-and-docs/005-public-packages.md) becomes a prerequisite rather than a nicety, and the bar it has to clear is that no consumer should ever need to reimplement a rule.
+- [x] [absorb the server into the CLI](./5-serve/001-absorb-server.md): **cancelled**. The UI lives in its own repo (`wiki-shell`); keeping `wiki` a zero-dependency neutral engine won. The consequence is that [005](./4-release-and-docs/005-public-packages.md) becomes a prerequisite rather than a nicety, and the bar it has to clear is that no consumer should ever need to reimplement a rule.
 - [x] [what the first attempt got wrong](./5-serve/005-lessons.md): a working board UI was ported in and reverted. Three link resolvers, two frontmatter writers in one module, two config files with two parsers, a false README, deleted tests, and public API exported to unblock the port. Every one a migration artifact.
 
 ## Done

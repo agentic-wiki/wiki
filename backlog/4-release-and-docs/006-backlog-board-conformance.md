@@ -12,7 +12,7 @@ tags: [docs, dogfood, workflow]
 
 This board is 98 lines listing 78 entries, 63 of them as `- [x]` checkboxes mirroring each entry's `status`. That is the variant the workflow warns about, and it has already drifted: task `conformance/010` sat at `status: done` with an unchecked box until an audit caught it. Nothing catches that automatically, because a checkbox and a `status` are two facts and only one of them is queried.
 
-`wikiview`'s backlog was converted to the intended shape and is the working reference: goal and epics on the board, tasks found by query, `ignore_orphans` so unlisted entries do not become orphans.
+WikiShell's backlog was converted to the intended shape and is the working reference: goal and epics on the board, tasks found by query, `ignore_orphans` so unlisted entries do not become orphans.
 
 ## Why this is not a five-minute edit
 
@@ -27,13 +27,13 @@ The second is the interesting one, and the format already answers it: `log.md` i
 
 1. Move each done entry's board annotation into that entry, under `## Done`, so the entry is the single record of its own outcome.
 2. Move the bare checklist items into `log.md`, dated, as the chronicle they already are.
-3. Rewrite `index.md` as goal + epics + queries, matching `wikiview`'s.
+3. Rewrite `index.md` as goal + epics + queries, matching WikiShell's.
 4. Add `ignore_orphans` for the section folders, or every entry becomes an orphan the moment it stops being linked. A per-subfolder glob (`*/**`) needs no edit when a section is added, and leaves the bundle root covered so `index.md` itself stays honest.
 
 Steps 1 and 2 are the work; 3 and 4 are minutes. Do them in that order and nothing is lost at any point.
 
 ## Worth deciding while in here
 
-The board's sections are numbered phases (`2-query-surface`, `3-graph-and-mutation`) that are really **epics**, and they are folder names as well as headings. `wikiview` treats them as prose on the board. Whether they should instead be `type: epic` entries that tasks reference — making "what is in this epic" a query rather than a folder convention — is a real question, and `wiki.toml` here declares `types = ["task"]`, so it is currently unaskable.
+The board's sections are numbered phases (`2-query-surface`, `3-graph-and-mutation`) that are really **epics**, and they are folder names as well as headings. WikiShell treats them as prose on the board. Whether they should instead be `type: epic` entries that tasks reference — making "what is in this epic" a query rather than a folder convention — is a real question, and `wiki.toml` here declares `types = ["task"]`, so it is currently unaskable.
 
 **Acceptance:** the board carries goals and epics, not task state; `wiki checkboxes` over this bundle returns nothing; every done entry records its own outcome; the bare items live in `log.md`; `orphans` is clean; nothing that was on the board is lost.

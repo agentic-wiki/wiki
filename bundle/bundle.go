@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 )
@@ -31,12 +32,15 @@ type Bundle struct {
 	// they aren't silently ignored.
 	Unknown []string
 
-	// The [tool.<name>] tables, left undecoded. Unexported deliberately: making
-	// them public would put toml.Primitive in this package's signature and force
-	// every consumer to import the TOML library to name the type, turning an
-	// implementation choice into part of the contract. DecodeTool is the way in.
-	tool map[string]toml.Primitive
-	md   toml.MetaData
+	// The [tool.<name>], [[board]] and [[graph]] tables, left undecoded.
+	// Unexported deliberately: making them public would put toml.Primitive in
+	// this package's signature and force every consumer to import the TOML
+	// library to name the type, turning an implementation choice into part of
+	// the contract. DecodeTool, DecodeBoards and DecodeGraphs are the way in.
+	tool  map[string]toml.Primitive
+	board toml.Primitive
+	graph toml.Primitive
+	md    toml.MetaData
 }
 
 // Tools lists the names of the [tool.<name>] tables present, sorted.
@@ -55,6 +59,8 @@ func (b *Bundle) Tools() []string {
 // every tool parsing wiki.toml again: the same rule with two homes, which is the
 // drift this repo keeps refusing.
 func (b *Bundle) DecodeTool(name string, v any) (bool, error) {
+	decoding.Lock()
+	defer decoding.Unlock()
 	p, ok := b.tool[name]
 	if !ok {
 		return false, nil
@@ -64,6 +70,43 @@ func (b *Bundle) DecodeTool(name string, v any) (bool, error) {
 	}
 	return true, nil
 }
+
+// DecodeBoards unmarshals the [[board]] tables into v (a pointer to a slice of
+// the caller's struct, or of maps). Reports whether any were declared.
+//
+// The standard defines [[board]] and [[graph]] for the apps that show them.
+// wiki never reads inside them: it only hands them over, through the same
+// parser, so no app reads wiki.toml a second time. Named methods rather than a
+// generic key lookup, so the set of keys apps may own stays closed.
+func (b *Bundle) DecodeBoards(v any) (bool, error) {
+	return b.decodeView("board", b.board, v)
+}
+
+// DecodeGraphs unmarshals the [[graph]] tables into v, as DecodeBoards does.
+func (b *Bundle) DecodeGraphs(v any) (bool, error) {
+	return b.decodeView("graph", b.graph, v)
+}
+
+func (b *Bundle) decodeView(key string, p toml.Primitive, v any) (bool, error) {
+	decoding.Lock()
+	defer decoding.Unlock()
+	if !b.md.IsDefined(key) {
+		return false, nil
+	}
+	if err := b.md.PrimitiveDecode(p, v); err != nil {
+		return true, fmt.Errorf("wiki.toml [[%s]]: %w", key, err)
+	}
+	return true, nil
+}
+
+// decoding serialises every deferred decode.
+//
+// PrimitiveDecode records what it reads in the toml.MetaData it reads from, so
+// two decodes at once on one bundle are a concurrent map write, which ends the
+// process. Apps share one bundle across requests, so this is not theoretical.
+// One lock for the package rather than one per bundle: a copied Bundle shares
+// its metadata, and a decode is small enough that waiting on it costs nothing.
+var decoding sync.Mutex
 
 // ErrNotFound is returned when no wiki.toml is found walking up from start.
 var ErrNotFound = errors.New("no wiki.toml found (not inside a wiki bundle)")
@@ -88,14 +131,23 @@ func Discover(start string) (*Bundle, error) {
 }
 
 // config is the whole of wiki.toml the tool interprets. Anything else is either
-// a [tool.*] table, which is deliberately opaque, or an unrecognized key.
+// set aside for apps, which is deliberately opaque ([tool.*], board and graph),
+// or an unrecognized key.
 type config struct {
 	Spec          string                    `toml:"spec"`
 	Types         []string                  `toml:"types"`
 	Ignore        []string                  `toml:"ignore"`
 	IgnoreOrphans []string                  `toml:"ignore_orphans"`
 	Tool          map[string]toml.Primitive `toml:"tool"`
+	// Any TOML value, not only an array of tables: a mistyped board is for the
+	// app that reads it to report, never a reason for wiki to warn or fail.
+	Board toml.Primitive `toml:"board"`
+	Graph toml.Primitive `toml:"graph"`
 }
+
+// appKeys are the top-level wiki.toml keys set aside for apps: wiki reads
+// nothing inside them and reports nothing about them.
+var appKeys = map[string]bool{"tool": true, "board": true, "graph": true}
 
 func load(root, cfg string) (*Bundle, error) {
 	var c config
@@ -106,13 +158,13 @@ func load(root, cfg string) (*Bundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("wiki.toml: %w", err)
 	}
-	// Undecoded keys are the ones no field claimed. The [tool.*] subtree is
-	// skipped rather than reported: reserving the namespace means wiki never has
-	// an opinion about what is inside it. (Its keys show as undecoded because
+	// Undecoded keys are the ones no field claimed. The keys set aside for apps
+	// are skipped rather than reported: reserving them means wiki never has an
+	// opinion about what is inside. (Their keys show as undecoded because
 	// toml.Primitive defers decoding, so the filter is explicit.)
 	var unknown []string
 	for _, k := range md.Undecoded() {
-		if len(k) > 0 && k[0] == "tool" {
+		if len(k) > 0 && appKeys[k[0]] {
 			continue
 		}
 		// Report the shallowest unrecognized key only: once [nested] is flagged,
@@ -130,6 +182,8 @@ func load(root, cfg string) (*Bundle, error) {
 		Ignore:        c.Ignore,
 		IgnoreOrphans: c.IgnoreOrphans,
 		tool:          c.Tool,
+		board:         c.Board,
+		graph:         c.Graph,
 		Unknown:       unknown,
 		md:            md,
 	}, nil

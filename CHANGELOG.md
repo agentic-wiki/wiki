@@ -2,6 +2,24 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.18.0
+
+`[[board]]` and `[[graph]]` tables in `wiki.toml`, defined by the standard for the apps that show boards and graphs. `wiki` sets them aside and never reads inside them.
+
+### Added
+
+- **`[[board]]` and `[[graph]]` give no warning.** `check` no longer reports them as unknown `wiki.toml` keys, whatever they hold: even `board = "x"` loads quietly, and the app that reads it reports it. A `wiki` older than v0.18.0 warns `unknown wiki.toml key: board`, and upgrading fixes it.
+- **`Bundle.DecodeBoards` and `Bundle.DecodeGraphs`** unmarshal those tables into a slice of the caller's struct, or of maps, and report whether any were declared. They work like `DecodeTool`.
+
+### Changed
+
+- **`wiki init --shape kanban` writes its board view as `[[board]]`**, still commented out, with a comment for any app that shows boards.
+- **wikiview is now WikiShell:** the docs name WikiShell.
+
+### Fixed
+
+- **Decoding is safe from many goroutines at once.** `DecodeTool`, `DecodeBoards` and `DecodeGraphs` share one lock. Two decodes on one bundle at the same moment could crash the process, and an app that keeps one bundle across requests no longer needs its own lock.
+
 ## v0.17.0
 
 One rule for link destinations: how one is read, how one is written back, and which frontmatter values are references, in the library, so apps stop keeping copies.
