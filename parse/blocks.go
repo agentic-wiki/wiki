@@ -87,6 +87,22 @@ func startsBlock(l string) bool {
 	return fenceRe.MatchString(l) || atxRe.MatchString(l) || isRule(l) || itemRe.MatchString(l) || quoteRe.MatchString(l)
 }
 
+// interruptsParagraph reports whether l, under a paragraph's line, starts a
+// block rather than continuing the paragraph. A list item does only when it
+// isn't empty and, if ordered, starts at 1 (CommonMark): `2. one` or an empty
+// `*` there is paragraph text.
+func interruptsParagraph(l string) bool {
+	m := itemRe.FindStringSubmatch(l)
+	if m == nil {
+		return startsBlock(l)
+	}
+	if strings.TrimSpace(l[len(m[0]):]) == "" {
+		return false
+	}
+	n := strings.TrimRight(m[2], ".)")
+	return n == "" || n == "-" || n == "*" || n == "+" || strings.TrimLeft(n, "0") == "1"
+}
+
 // Blocks splits a page's body (what follows the frontmatter) into blocks:
 //
 //	code        a fence (``` or ~~~, up to 3 spaces in) to its closing fence or
@@ -103,6 +119,8 @@ func startsBlock(l string) bool {
 //	quote       > to a blank line
 //	html        an HTML tag or <!-- to a blank line
 //	paragraph   anything else, to a blank line or a line starting another kind
+//	            (a list item starts one only when it isn't empty and, if
+//	            ordered, starts at 1, as in CommonMark)
 //
 // A line's trailing \r belongs to its line break, so a page with CRLF line
 // endings splits the same way.
@@ -234,7 +252,7 @@ func Blocks(body string) []Block {
 				j++
 				break
 			}
-			if startsBlock(lines[j]) || isTableHead(lines[j], line(j+1)) {
+			if interruptsParagraph(lines[j]) || isTableHead(lines[j], line(j+1)) {
 				break
 			}
 			j++

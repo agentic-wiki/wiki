@@ -9,7 +9,8 @@ import (
 // The table's writers give exactly what `wiki table --format csv|json` prints:
 // apps export datasets through them and promise the CLI's bytes. The expected
 // output below was captured from the CLI before these writers existed, then
-// fully quoted when every CSV field came to be (v0.22.0).
+// fully quoted when every CSV field came to be (v0.22.0), and JSON's `<`, `>`
+// and `&` left as they are, as in jsonl (v0.23.0).
 const tricky = `
 | date | amount | note | ok | empty | quote |
 |---|---:|---|---|---|---|
@@ -50,7 +51,7 @@ func TestTableWriteJSON(t *testing.T) {
   {
     "date": "2026-01-03",
     "amount": -3,
-    "note": "\u003cb\u003e\u0026\u003c/b\u003e café | pipe",
+    "note": "<b>&</b> café | pipe",
     "ok": false,
     "empty": null,
     "quote": "single"

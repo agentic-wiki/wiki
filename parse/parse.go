@@ -170,8 +170,9 @@ func stringsOf(v any) []string {
 
 var (
 	linkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
-	// A to-do may sit in a quote or a callout, under any depth of `>`.
-	checkboxRe   = regexp.MustCompile(`^[ \t]*(?:>[ \t]*)*[-*+] \[([ xX])\]\s+(.*)$`)
+	// A to-do is a bullet or an ordered item (`1.` or `1)`), and may sit in a
+	// quote or a callout, under any depth of `>`.
+	checkboxRe   = regexp.MustCompile(`^[ \t]*(?:>[ \t]*)*(?:[-*+]|\d{1,9}[.)]) \[([ xX])\]\s+(.*)$`)
 	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	inlineCodeRe = regexp.MustCompile("`[^`]*`")
 	// tableDelimRe matches a GFM table's delimiter row: dash cells with optional
@@ -347,8 +348,20 @@ func hasURLScheme(target string) bool {
 // Checkboxes returns checkbox items, ignoring fenced code.
 func Checkboxes(body string) []Checkbox {
 	var checkboxes []Checkbox
+	var listed map[int]bool // lines that start an item block or sit in a quote, when needed
 	for i, line := range maskedLines(body) {
 		if m := checkboxRe.FindStringSubmatch(line); m != nil {
+			// An ordered to-do not starting at 1 doesn't interrupt a
+			// paragraph (CommonMark): under one, it is paragraph text, as
+			// Blocks splits it.
+			if orderedNotOne(line) {
+				if listed == nil {
+					listed = itemLines(body)
+				}
+				if !listed[i] {
+					continue
+				}
+			}
 			checkboxes = append(checkboxes, Checkbox{
 				Done: m[1] == "x" || m[1] == "X",
 				Text: strings.TrimSpace(m[2]),
@@ -357,6 +370,32 @@ func Checkboxes(body string) []Checkbox {
 		}
 	}
 	return checkboxes
+}
+
+// orderedNotOne reports whether a to-do line's marker is ordered with a start
+// other than 1.
+func orderedNotOne(line string) bool {
+	t := strings.TrimLeft(line, " \t>")
+	digits := len(t) - len(strings.TrimLeft(t, "0123456789"))
+	return digits > 0 && strings.TrimLeft(t[:digits], "0") != "1"
+}
+
+// itemLines is the lines of body, from 0, that start an item block, or sit
+// in a quote block (whose to-dos Blocks doesn't split out).
+func itemLines(body string) map[int]bool {
+	lines := map[int]bool{}
+	lineOf := func(at int) int { return strings.Count(body[:at], "\n") }
+	for _, b := range Blocks(body) {
+		switch b.Kind {
+		case "item":
+			lines[lineOf(b.Start)] = true
+		case "quote":
+			for l := lineOf(b.Start); l <= lineOf(b.End); l++ {
+				lines[l] = true
+			}
+		}
+	}
+	return lines
 }
 
 // Headings returns ATX headings, ignoring fenced code, each with its ID. The

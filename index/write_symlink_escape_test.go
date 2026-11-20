@@ -238,3 +238,45 @@ func TestBuildSkipsADanglingLink(t *testing.T) {
 		t.Errorf("check does not name the dangling link: %+v", idx.Check())
 	}
 }
+
+// A bundle reached through a symlinked root (wiki --root ~/kb, kb a link) is
+// indexed, its Dir kept as given. A symlinked folder inside isn't followed,
+// as git doesn't follow one.
+func TestASymlinkedRootIsIndexed(t *testing.T) {
+	real, other := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(real, "wiki.toml"), []byte("spec = \"0.1\"\n"), 0o644)
+	os.WriteFile(filepath.Join(real, "a.md"), []byte("---\ntype: note\n---\n"), 0o644)
+	os.WriteFile(filepath.Join(other, "x.md"), []byte("---\ntype: note\n---\n"), 0o644)
+	link := filepath.Join(t.TempDir(), "kb")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := os.Symlink(other, filepath.Join(real, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	b, err := bundle.Discover(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Build(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Dir != link {
+		t.Errorf("Dir = %s, want it as given", b.Dir)
+	}
+	if _, err := idx.Resolve("/a.md"); err != nil || len(idx.Entries) != 1 {
+		t.Errorf("entries %d, a.md: %v", len(idx.Entries), err)
+	}
+	if e, err := idx.Resolve("/a.md"); err != nil {
+		return
+	} else if err := e.SetField("status", "done"); err != nil {
+		t.Errorf("a write through the symlinked root: %v", err)
+	}
+	if _, err := idx.Move("/a.md", "/b.md", false, false); err != nil {
+		t.Errorf("a move through the symlinked root: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(real, "b.md")); err != nil {
+		t.Errorf("b.md: %v", err)
+	}
+}

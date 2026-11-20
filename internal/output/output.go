@@ -56,6 +56,7 @@ func EmitRows(w io.Writer, format string, lines []string, v any, rows Rows) erro
 	switch format {
 	case "json":
 		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false) // results are data, not HTML: as jsonl writes them
 		enc.SetIndent("", "  ")
 		return enc.Encode(jsonable(v))
 	case "jsonl":

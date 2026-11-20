@@ -2,6 +2,23 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.23.0
+
+### Breaking
+
+- **`--format json` writes `<`, `>` and `&` as they are** (every command, and `parse.Table.WriteJSON`), as jsonl always has: `"<b>"`, not `"\u003cb\u003e"`. The values are the same, and any JSON reader reads them the same, but a script that compares bytes sees new output. WikiShell's JSON download follows, since it shares the writer.
+
+### Fixed
+
+- **A block write whose text doesn't close is refused** (`parse.MergeBlocks`, so `Entry.ApplyBlocks` and every editor): a code fence with no closing line, an HTML comment with no `-->`, `<?` with no `?>`, `<!DOCTYPE` with no `>`, `<![CDATA[` with no `]]>`, or a `<script>`, `<pre>`, `<style>` or `<textarea>` block with no closing tag would swallow every block after it on the page (`A\n- b` with `A` replaced by ```` ``` ```` became one code block). It is `ErrRefused`, "this block isn't closed: it would swallow the rest of the page", and nothing is written.
+- **Editing a block changes no byte outside it** unless the new text would otherwise fuse with a neighbour. `parse.MergeBlocks` widened a replacement's gaps to what its kinds would need if they met fresh, so replacing a list item right after a paragraph (`**Acceptance:**\n- one`) added a blank line before it. Now every change of a save keeps the page's gaps, several adjacent ones included, and the merged page is then split once to check it: where new text would fuse with a neighbour, that side gets a blank line: an emptied `-` after a paragraph (which would make the paragraph a heading), `2. one` after a paragraph (which would join it), a paragraph after a list item (which would continue it). Where no blank line can keep them apart (indented text right after a list item continues it), the save is refused, `ErrRefused` "this block would join its neighbour", and nothing is written.
+- **A list item interrupts a paragraph only by CommonMark's rule** in `parse.Blocks`: not empty, and if ordered, starting at 1. `Para\n2. one` is one paragraph, as every Markdown renderer shows it; before, it split into a paragraph and an item.
+- **An ordered to-do is a to-do:** `1. [ ] call the bank` and `1) [ ] call the bank`, in a quote too, are listed by `parse.Checkboxes` (and `wiki checkboxes`) and tick with `Entry.SetCheckbox`. Under a paragraph, one that doesn't start at 1 is paragraph text, as `parse.Blocks` splits it, and isn't listed. Before, only `-`, `*` and `+` items were, while WikiShell already let you tick an ordered one.
+- **One file that can't be read no longer fails the whole build.** A `.md` without read permission, a folder that can't be read, a `.md` that is a symlink to a folder (a cloned repo can ship one), or a `.md` that isn't a file at all (a FIFO, which blocked the build forever) is left out, and `wiki check` names it ("can't be read: not indexed", "is a folder that can't be read: not indexed", "is a symlink to a folder, not a file: not indexed", "isn't a file: not indexed"), as it names a dangling link. Before, Build stopped, and every command and app with it.
+- **`wiki move` refuses a destination where the file would no longer be an entry**, saying why: a name or folder that starts with a dot (refused before, as outside the bundle's content, in less clear words), or a path `wiki.toml`'s `ignore` leaves out (moved before, and the entry vanished from the wiki unseen). `Index.Move` wraps `ErrOutsideBundle` and `ErrBadPath` for them.
+- **`wiki check` warns about more log headings that aren't ISO dates:** day-first ones (`## 24/06/2026`), unpadded ones (`## 4/6/2026`), and a date followed by text (`## 2026/06/24 Deploy`, `## 2 Jan 2026: release`). A heading that starts with an ISO date, with or without text after it, still doesn't warn.
+- **A base whose own folder is a symlink is indexed** (`wiki --root ~/kb`, `kb` a link). Before, it held no entry. `Bundle.Dir` stays as given. A symlinked folder inside a base still isn't followed, as git doesn't follow one; the README now says so.
+
 ## v0.22.0
 
 ### Breaking

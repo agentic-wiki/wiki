@@ -131,6 +131,49 @@ func TestAnInsertContinuesItsListOrTable(t *testing.T) {
 	}
 }
 
+// A replacement keeps the page's gaps unless its window, re-split, would
+// change the blocks around it: an item replaced by an item, or a row by a
+// row, changes no byte outside it, while new text that would fuse with a
+// neighbour (a paragraph after an item, an item that can't interrupt a
+// paragraph) gets a blank line on that side. The text comes as an editor
+// sends it, with no line breaks around it.
+func TestAReplacementKeepsItsGapsUnlessItWouldFuse(t *testing.T) {
+	for _, c := range []struct {
+		name, page string
+		at         int
+		text, want string
+	}{
+		{"an item after a paragraph", "**Acceptance:**\n- one\n- two\n\nAfter\n", 1, "- one, edited",
+			"**Acceptance:**\n- one, edited\n- two\n\nAfter\n"},
+		{"a row after a row", "| h |\n|---|\n| 1 |\n| 2 |\n\nAfter\n", 1, "| 1, edited |",
+			"| h |\n|---|\n| 1, edited |\n| 2 |\n\nAfter\n"},
+		// The blank line keeps it out of the item before; the item after
+		// can interrupt it, so that gap stays.
+		{"an item becomes a paragraph", "- one\n- two\n- three\n", 1, "Not an item",
+			"- one\n\nNot an item\n- three\n"},
+		{"a paragraph becomes an item", "Intro\n\nPara\n\nAfter\n", 1, "- an item",
+			"Intro\n\n- an item\n\nAfter\n"},
+		// A list item interrupts a paragraph only when it isn't empty and, if
+		// ordered, starts at 1 (CommonMark): otherwise it needs a blank line.
+		{"an item emptied after a paragraph", "**Acceptance:**\n- one\n- two\n", 1, "-",
+			"**Acceptance:**\n\n-\n- two\n"},
+		{"an ordered item renumbered after a paragraph", "Steps:\n1. a\n2. b\n", 1, "2. a",
+			"Steps:\n\n2. a\n2. b\n"},
+		{"Archy's empty item", "Para\n- one\n", 1, "-", "Para\n\n-\n"},
+		{"Archy's renumbered item", "Para\n- one\n", 1, "2. one", "Para\n\n2. one\n"},
+		{"an ordered item from 1 after a paragraph", "Steps:\n1) a\n2) b\n", 1, "1) a, edited",
+			"Steps:\n1) a, edited\n2) b\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bs := Blocks(c.page)
+			got, _, conflicts, _, err := MergeBlocks(hashes(bs), []Op{{Op: "replace", At: c.at, Hash: bs[c.at].Hash, Text: c.text}}, c.page)
+			if err != nil || len(conflicts) > 0 || got != c.want {
+				t.Errorf("got %q %v %v, want %q", got, conflicts, err, c.want)
+			}
+		})
+	}
+}
+
 // When the page is still the base, nothing can conflict: the operations
 // apply as sent, and the result is exactly mine.
 func TestMergeBlocksOntoTheBaseIsMine(t *testing.T) {
@@ -169,6 +212,76 @@ func TestMergeBlocksIdenticalBlocksTakePosition(t *testing.T) {
 	body, conflicts, _ := merged(t, base, "a\n\n---\n\nmid\n\n***\n\nend\n", "new\n\na\n\n---\n\nmid\n\n---\n\nend\n")
 	if want := "new\n\na\n\n---\n\nmid\n\n***\n\nend\n"; body != want || conflicts != nil {
 		t.Errorf("got %q %v, want %q", body, conflicts, want)
+	}
+}
+
+// Several changes in one save keep the page's tight gaps between them, as
+// one change does: an editor's save often carries several units.
+func TestSeveralChangesInOneSaveStayTight(t *testing.T) {
+	for _, c := range []struct {
+		name, page string
+		ops        func(bs []Block) []Op
+		want       string
+	}{
+		{"two adjacent items replaced", "- a\n- b\n- c\n", func(bs []Block) []Op {
+			return []Op{{Op: "replace", At: 0, Hash: bs[0].Hash, Text: "- a2"}, {Op: "replace", At: 1, Hash: bs[1].Hash, Text: "- b2"}}
+		}, "- a2\n- b2\n- c\n"},
+		{"two adjacent rows replaced", "| h |\n|---|\n| 1 |\n| 2 |\n| 3 |\n", func(bs []Block) []Op {
+			return []Op{{Op: "replace", At: 1, Hash: bs[1].Hash, Text: "| 1b |"}, {Op: "replace", At: 2, Hash: bs[2].Hash, Text: "| 2b |"}}
+		}, "| h |\n|---|\n| 1b |\n| 2b |\n| 3 |\n"},
+		{"an item replaced and another inserted", "- a\n- b\n- c\n", func(bs []Block) []Op {
+			return []Op{{Op: "replace", At: 0, Hash: bs[0].Hash, Text: "- a2"}, {Op: "insert", After: 0, Hash: bs[0].Hash, Text: "- new"}}
+		}, "- a2\n- new\n- b\n- c\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bs := Blocks(c.page)
+			got, _, conflicts, _, err := MergeBlocks(hashes(bs), c.ops(bs), c.page)
+			if err != nil || len(conflicts) > 0 || got != c.want {
+				t.Errorf("got %q %v %v, want %q", got, conflicts, err, c.want)
+			}
+		})
+	}
+}
+
+// When no blank line can keep new text apart from its neighbour (indented,
+// it continues the item before it), the save is refused, nothing written,
+// rather than written fused.
+func TestMergeBlocksRefusesTextThatWouldJoinItsNeighbour(t *testing.T) {
+	const page = "- a\n\nPara\n"
+	bs := Blocks(page)
+	for _, text := range []string{"    x", "  x"} {
+		_, _, _, _, err := MergeBlocks(hashes(bs), []Op{{Op: "replace", At: 1, Hash: bs[1].Hash, Text: text}}, page)
+		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "operation 0: this block would join its neighbour") {
+			t.Errorf("%q: err = %v", text, err)
+		}
+	}
+}
+
+// An operation whose text opens a block it doesn't close (a fence, an HTML
+// comment, a <script> or <pre>) would swallow the rest of the page: refused,
+// nothing written. Closed, it is accepted.
+func TestMergeBlocksRefusesAnUnclosedBlock(t *testing.T) {
+	const page = "A\n- b\n"
+	bs := Blocks(page)
+	for _, text := range []string{"```", "~~~~\ncode\n~~~", "<!-- a note", "<script>\nalert(1)", "- item\n\n  ```\n  code",
+		"<?php echo 1;", "<!DOCTYPE html", "<![CDATA[ data"} {
+		_, _, _, _, err := MergeBlocks(hashes(bs), []Op{{Op: "replace", At: 0, Hash: bs[0].Hash, Text: text}}, page)
+		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "this block isn't closed: it would swallow the rest of the page") {
+			t.Errorf("%q: err = %v", text, err)
+		}
+	}
+	for text, want := range map[string]string{
+		"```\ncode\n```":                             "```\ncode\n```\n- b\n",
+		"<!-- a note -->":                            "<!-- a note -->\n\n- b\n",
+		"<pre>\nx\n</pre>":                           "<pre>\nx\n</pre>\n\n- b\n",
+		"<?php echo 1; ?>":                           "<?php echo 1; ?>\n- b\n",
+		"<![CDATA[ data ]]>":                         "<![CDATA[ data ]]>\n- b\n",
+		"    ```\n    indented code showing a fence": "    ```\n    indented code showing a fence\n- b\n",
+	} {
+		got, _, _, _, err := MergeBlocks(hashes(bs), []Op{{Op: "replace", At: 0, Hash: bs[0].Hash, Text: text}}, page)
+		if err != nil || got != want {
+			t.Errorf("%q: got %q, %v; want %q", text, got, err, want)
+		}
 	}
 }
 

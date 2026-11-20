@@ -38,8 +38,20 @@ func (t Table) WriteJSON(w io.Writer) error {
 		objs[i] = orderedObj{t.Header, r}
 	}
 	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false) // rows are data, not HTML: as jsonl writes them
 	enc.SetIndent("", "  ")
 	return enc.Encode(objs)
+}
+
+// marshal is json.Marshal without HTML escaping, as WriteJSON writes.
+func marshal(v any) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
 // orderedObj marshals to a JSON object preserving key order (a table's column
@@ -60,11 +72,11 @@ func (o orderedObj) MarshalJSON() ([]byte, error) {
 		if i < len(o.vals) {
 			val = o.vals[i]
 		}
-		kb, err := json.Marshal(k)
+		kb, err := marshal(k)
 		if err != nil {
 			return nil, err
 		}
-		vb, err := json.Marshal(val)
+		vb, err := marshal(val)
 		if err != nil {
 			return nil, err
 		}

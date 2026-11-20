@@ -170,6 +170,8 @@ Frontmatter is YAML: values can be text, numbers, `true`/`false`, null, lists an
 
 Entries link with relative Markdown links, `[Income](../finance/income.md)`, so they work in any Markdown viewer. A link from the root (`/finance/income.md`) resolves too, and `wiki tidy --links` rewrites it relative. A link's path is percent-decoded once and its `?query` dropped when it is read, so `my%20file.md` names `my file.md`; `move`, `tidy` and `dump` write a path back the same way, and a link starting `//` names another site, never an entry. Go programs get the same rule from the library: `index.ResolveDest`, `Entry.FrontmatterRefs` and `Entry.Title`. Folders can keep an `index.md` listing what is inside, so you (and an agent) read top down and follow links instead of grepping in the dark.
 
+**What is an entry.** Every `.md` file under the base's folder, except a file or folder whose name starts with a dot, and what `wiki.toml`'s `ignore` leaves out. The base's own folder can be reached through a symlink (`wiki --root ~/kb`, `kb` a link), but a symlinked folder inside it isn't followed, as git doesn't follow one. A `.md` that is a symlink is an entry only when it leads to a file inside the base. A file wiki can't read is left out, and `wiki check` names it.
+
 ```
 my-wiki/
 ├── wiki.toml             # marks the base, bundle settings

@@ -227,6 +227,24 @@ func TestACheckboxInACalloutTicks(t *testing.T) {
 	}
 }
 
+// An ordered to-do ticks by its line, quoted or not, either delimiter.
+func TestSetCheckboxOrdered(t *testing.T) {
+	const doc = "---\ntype: note\n---\n1. [ ] first\n2) [ ] second\n> 3. [ ] quoted\n"
+	idx := build(t, map[string]string{"index.md": "---\nokf_version: \"0.1\"\n---\n", "a.md": doc})
+	e, _ := idx.Resolve("/a.md")
+	if len(e.Checkboxes) != 3 {
+		t.Fatalf("checkboxes %+v", e.Checkboxes)
+	}
+	for _, c := range e.Checkboxes {
+		if err := e.SetCheckbox(c.Line, true); err != nil {
+			t.Fatalf("line %d: %v", c.Line, err)
+		}
+	}
+	if raw, _ := e.Raw(); raw != "---\ntype: note\n---\n1. [x] first\n2) [x] second\n> 3. [x] quoted\n" {
+		t.Errorf("got %q", raw)
+	}
+}
+
 // A write must not touch the file when nothing changed, or every no-op would
 // wake a watcher for a change that did not happen.
 func TestNoOpWriteDoesNotTouchFile(t *testing.T) {

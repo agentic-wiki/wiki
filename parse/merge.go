@@ -61,8 +61,15 @@ func refuse(format string, a ...any) error {
 // them now (at the start of the page, the gap after it; at the end, the gap
 // before it). And a gap new text meets is never narrower than the two kinds
 // there need: a blank line wherever an item or a row meets another kind, so
-// new text never fuses with a neighbour. When no block of base is left on disk (rewritten),
-// nothing is applied: every operation is a conflict both-changed.
+// new text never fuses with a neighbour. A replacement keeps the page's gaps,
+// and the merged page is then split to check every change at once: each new
+// text must be blocks of its own and each block that stayed must be as it
+// was, or the side where that fails gets a blank line. That covers a setext
+// underline, a lazy line and an item that can't interrupt a paragraph alike.
+// Where no blank line can keep them apart (indented text after an item
+// continues it), the save is refused: ErrRefused, nothing merged. When no block of base is left
+// on disk (rewritten), nothing is applied: every operation is a conflict
+// both-changed.
 //
 // applied lists the operations whose change is in body. err wraps ErrRefused
 // when the operations themselves are invalid, and then nothing is merged.
@@ -89,6 +96,7 @@ func MergeBlocks(base []string, ops []Op, theirs string) (body string, applied [
 			applied = append(applied, ops[i]) // the disk made this change too
 			continue
 		}
+		m.op = i
 		ok, c := m.apply(o)
 		switch {
 		case c != nil:
@@ -148,9 +156,65 @@ func checkOps(base []string, ops []Op, theirBlocks int) error {
 			if strings.TrimSpace(text) == "" {
 				return refuse("operation %d: a %s needs text (to remove a block, delete it)", i, o.Op)
 			}
+			if unclosed(text) {
+				return refuse("operation %d: this block isn't closed: it would swallow the rest of the page", i)
+			}
 		}
 	}
 	return nil
+}
+
+// unclosed reports whether text leaves a block open at its end, so that on
+// the page it would run on over every block after it: a code fence with no
+// closing line (in a list item too), or one of CommonMark's HTML blocks that
+// cross blank lines with no end marker (an HTML comment with no `-->`, `<?`
+// with no `?>`, `<!DOCTYPE` with no `>`, `<![CDATA[` with no `]]>`, a
+// <script>, <pre>, <style> or <textarea> with no closing tag).
+func unclosed(text string) bool {
+	bs := Blocks(text)
+	for _, b := range bs {
+		rest := strings.ToLower(text[b.Start:])
+		head := strings.TrimLeft(rest, " ")
+		// CommonMark's HTML blocks that run on past blank lines to their end
+		// marker. Blocks reads some of them as paragraphs, so every block is
+		// looked at.
+		for _, t := range []struct{ start, end string }{{"<!--", "-->"}, {"<?", "?>"}, {"<![cdata[", "]]>"}} {
+			if strings.HasPrefix(head, t.start) && !strings.Contains(head[len(t.start):], t.end) {
+				return true
+			}
+		}
+		if len(head) > 2 && strings.HasPrefix(head, "<!") && head[2] >= 'a' && head[2] <= 'z' && !strings.Contains(head[2:], ">") {
+			return true // <!DOCTYPE …, to its >
+		}
+		if b.Kind != "html" {
+			continue
+		}
+		for _, tag := range []string{"script", "pre", "style", "textarea"} {
+			if m := strings.TrimPrefix(head, "<"+tag); m != head && (m == "" || strings.ContainsAny(m[:1], " \t\n\r>")) && !strings.Contains(rest, "</"+tag) {
+				return true
+			}
+		}
+	}
+	if len(bs) == 0 {
+		return false
+	}
+	last := bs[len(bs)-1]
+	if last.Kind != "code" && last.Kind != "item" {
+		return false
+	}
+	// A fence opened in the last block and still open at its end.
+	var open []string // the opening fence's match, while one is open
+	for _, l := range strings.Split(strings.ReplaceAll(last.Text, "\r\n", "\n"), "\n") {
+		switch {
+		case open != nil && isClosingFence(l, open[1][0], len(open[1]), true):
+			open = nil
+		case open == nil && last.Kind == "code":
+			open = fenceRe.FindStringSubmatch(l) // indented code (4 spaces in) opens none
+		case open == nil:
+			open = fenceRe.FindStringSubmatch(strings.TrimLeft(l, " ")) // indented to the item's content
+		}
+	}
+	return open != nil
 }
 
 // opText is the Markdown an operation brings: its Text, or its Blocks joined
@@ -184,10 +248,18 @@ type where struct {
 // hunk is a run between blocks base and disk share: base[f:t] became tb[jf:jt].
 type hunk struct{ f, t, jf, jt int }
 
+// blockEdit puts pieces in place of body[start:end]: new texts (unit), each
+// with a gap piece on both sides that the write may widen.
 type blockEdit struct {
 	start, end int
-	text       string
+	pieces     []piece
 	seq        int
+}
+
+type piece struct {
+	text string
+	unit bool // new text, as an operation gave it; otherwise a gap
+	op   int  // a unit's operation, by its index
 }
 
 type merger struct {
@@ -200,7 +272,13 @@ type merger struct {
 	ins   map[int][]string // per disk block: what goes after it, in order
 	front []string         // what goes before the first block
 	repl  map[int]string   // per disk block: its replacement
-	edits []blockEdit
+	// The operation (its index) each text above came from, for a refusal to
+	// name it, and the one being applied.
+	insOp   map[int][]int
+	frontOp []int
+	replOp  map[int]int
+	op      int
+	edits   []blockEdit
 }
 
 // place maps each base block to the disk.
@@ -208,6 +286,7 @@ func (m *merger) place(pairs [][2]int) {
 	m.at = make([]where, len(m.base))
 	m.gone = make([]bool, len(m.tb))
 	m.ins, m.repl = map[int][]string{}, map[int]string{}
+	m.insOp, m.replOp = map[int][]int{}, map[int]int{}
 	var hunks []*hunk
 	pi, pj := 0, 0
 	for _, p := range append(pairs, [2]int{len(m.base), len(m.tb)}) {
@@ -349,7 +428,7 @@ func (m *merger) apply(o Op) (bool, *Conflict) {
 			m.gone[w.j] = true
 		} else {
 			_, text := splitGap(opText(o))
-			m.repl[w.j] = text
+			m.repl[w.j], m.replOp[w.j] = text, m.op
 		}
 		return true, nil
 	}
@@ -386,23 +465,23 @@ func (m *merger) insert(o Op) (bool, *Conflict) {
 		return true, nil // all of it inserted on disk already
 	}
 	if o.After == -1 {
-		m.front = append(m.front, text)
+		m.pushFront(text)
 		return true, nil
 	}
 	w := m.at[o.After]
 	switch {
 	case w.kept:
-		m.ins[w.j] = append(m.ins[w.j], text)
+		m.pushIns(w.j, text)
 	case w.hunk.jt > w.hunk.jf:
-		m.ins[w.hunk.jt-1] = append(m.ins[w.hunk.jt-1], text) // after theirs' replacement
+		m.pushIns(w.hunk.jt-1, text) // after theirs' replacement
 	default:
 		// The anchor was deleted on disk: before the block that followed it.
 		next := o.After + 1
 		switch {
 		case next == len(m.base) && len(m.tb) > 0:
-			m.ins[len(m.tb)-1] = append(m.ins[len(m.tb)-1], text)
+			m.pushIns(len(m.tb)-1, text)
 		case next == len(m.base):
-			m.front = append(m.front, text)
+			m.pushFront(text)
 		case m.at[next].kept:
 			m.before(m.at[next].j, text)
 		case m.at[next].hunk.jt > m.at[next].hunk.jf:
@@ -414,14 +493,24 @@ func (m *merger) insert(o Op) (bool, *Conflict) {
 	return true, nil
 }
 
+// pushIns and pushFront put an operation's text after disk block j, or
+// before every block, recording which operation it came from.
+func (m *merger) pushIns(j int, text string) {
+	m.ins[j], m.insOp[j] = append(m.ins[j], text), append(m.insOp[j], m.op)
+}
+
+func (m *merger) pushFront(text string) {
+	m.front, m.frontOp = append(m.front, text), append(m.frontOp, m.op)
+}
+
 // before puts text before disk block j: after the block before it, or at the
 // front.
 func (m *merger) before(j int, text string) {
 	if j == 0 {
-		m.front = append(m.front, text)
+		m.pushFront(text)
 		return
 	}
-	m.ins[j-1] = append(m.ins[j-1], text)
+	m.pushIns(j-1, text)
 }
 
 // gapAfter is the gap to put between disk block j and what is inserted after
@@ -522,10 +611,12 @@ func lastKind(text string) string {
 // nothing is written, rather than an edit dropped.
 func (m *merger) write() (string, error) {
 	seq := 0
-	add := func(start, end int, text string) {
-		m.edits = append(m.edits, blockEdit{start, end, text, seq})
+	add := func(start, end int, pieces ...piece) {
+		m.edits = append(m.edits, blockEdit{start, end, pieces, seq})
 		seq++
 	}
+	unit := func(text string, op int) piece { return piece{text: text, unit: true, op: op} }
+	gap := func(text string) piece { return piece{text: text} }
 	// Deleted blocks go in runs, each with the gap before it (after it, for a
 	// run at the start), so two runs never claim one gap.
 	for s := 0; s < len(m.tb); s++ {
@@ -545,17 +636,17 @@ func (m *merger) write() (string, error) {
 		}
 		switch {
 		case before:
-			add(m.tb[s-1].End, m.tb[e].End, "")
+			add(m.tb[s-1].End, m.tb[e].End)
 		case after:
-			add(m.tb[s].Start, m.tb[e+1].Start, "")
+			add(m.tb[s].Start, m.tb[e+1].Start)
 		default:
-			add(m.tb[s].Start, m.tb[e].End, "")
+			add(m.tb[s].Start, m.tb[e].End)
 		}
 		s = e
 	}
 	// Each insert goes after the last block before it that stays (-1: before
 	// every block that stays).
-	ins := map[int][]string{}
+	ins, insOp := map[int][]string{}, map[int][]int{}
 	for j := range m.tb {
 		if len(m.ins[j]) == 0 {
 			continue
@@ -564,7 +655,7 @@ func (m *merger) write() (string, error) {
 		for a >= 0 && m.gone[a] {
 			a--
 		}
-		ins[a] = append(ins[a], m.ins[j]...)
+		ins[a], insOp[a] = append(ins[a], m.ins[j]...), append(insOp[a], m.insOp[j]...)
 	}
 	prevKept := func(j int) int {
 		for j--; j >= 0 && m.gone[j]; j-- {
@@ -611,10 +702,6 @@ func (m *merger) write() (string, error) {
 		f, _ := replKinds(j)
 		return f
 	}
-	changed := func(j int) bool {
-		_, r := m.repl[j]
-		return r || len(ins[j]) > 0
-	}
 	gapAfter := func(j int) string {
 		if j+1 < len(m.tb) {
 			return m.body[m.tb[j].End:m.tb[j+1].Start]
@@ -643,25 +730,27 @@ func (m *merger) write() (string, error) {
 
 	// What goes before every block that stays.
 	front := append(slices.Clone(m.front), ins[-1]...)
+	frontOp := append(slices.Clone(m.frontOp), insOp[-1]...)
 	if len(front) > 0 {
 		first := nextKept(-1)
-		var sb strings.Builder
+		ps := []piece{gap("")}
+		last := ""
 		for i, t := range front {
 			_, t = splitGap(t)
 			if i > 0 {
-				_, p := splitGap(front[i-1])
-				sb.WriteString(defaultGap(lastKind(p), firstKind(t)))
+				ps = append(ps, gap(defaultGap(lastKind(last), firstKind(t))))
 			}
-			sb.WriteString(t)
+			ps = append(ps, unit(t, frontOp[i]))
+			last = t
 		}
-		text := sb.String()
 		switch {
 		case first >= 0:
-			add(m.tb[first].Start, m.tb[first].Start, text+defaultGap(lastKind(text), firstOf(first)))
+			add(m.tb[first].Start, m.tb[first].Start, append(ps, gap(defaultGap(lastKind(last), firstOf(first))))...)
 		case len(m.tb) > 0:
-			add(m.tb[len(m.tb)-1].End, m.tb[len(m.tb)-1].End, "\n\n"+text)
+			ps[0] = gap("\n\n")
+			add(m.tb[len(m.tb)-1].End, m.tb[len(m.tb)-1].End, append(ps, gap(""))...)
 		default:
-			add(len(m.body), len(m.body), text+"\n")
+			add(len(m.body), len(m.body), append(ps, gap("\n"))...)
 		}
 	}
 	// Each gap that new text meets is checked once: by the text on its left,
@@ -673,13 +762,20 @@ func (m *merger) write() (string, error) {
 		prevKind := m.tb[j].Kind
 		if r, ok := m.repl[j]; ok {
 			rf, rl := replKinds(j)
-			if p := prevKept(j); p >= 0 && !changed(p) {
-				r = widen(gapBefore(j), defaultGap(lastOf(p), rf)) + r
+			// A replacement keeps the page's narrow gaps to the neighbours it
+			// had (the check below widens a side where new text would fuse);
+			// where it meets a neighbour new to it (blocks between deleted),
+			// the gap is widened to what the two kinds need.
+			before, after := "", ""
+			if p := prevKept(j); p >= 0 && p != j-1 && len(ins[p]) == 0 {
+				if _, r := m.repl[p]; !r {
+					before = widen(gapBefore(j), defaultGap(lastOf(p), rf))
+				}
 			}
-			if k := nextKept(j); k >= 0 && len(ins[j]) == 0 {
-				r += widen(gapAfter(j), defaultGap(rl, firstOf(k)))
+			if k := nextKept(j); k >= 0 && len(ins[j]) == 0 && k != j+1 {
+				after = widen(gapAfter(j), defaultGap(rl, firstOf(k)))
 			}
-			add(m.tb[j].Start, m.tb[j].End, r)
+			add(m.tb[j].Start, m.tb[j].End, gap(before), unit(r, m.replOp[j]), gap(after))
 			prevKind = rl
 		}
 		if len(ins[j]) == 0 {
@@ -697,29 +793,30 @@ func (m *merger) write() (string, error) {
 		case j > 0 && !m.gone[j-1] && sameList(m.tb[j-1], m.tb[j]):
 			listGap = gapBefore(j)
 		}
-		var sb strings.Builder
+		var ps []piece
 		for i, t := range ins[j] {
-			gap, t := splitGap(t)
+			g, t := splitGap(t)
 			tf, tl := kindsOf(t, prevKind)
-			if gap == "" {
+			if g == "" {
 				switch family := continues(prevKind, tf); {
 				case family == "item":
-					gap = listGap
+					g = listGap
 				case family == "row":
-					gap = nl
+					g = nl
 				case i == 0:
-					gap = m.gapAfter(j, tf)
+					g = m.gapAfter(j, tf)
 				default:
-					gap = defaultGap(prevKind, tf)
+					g = defaultGap(prevKind, tf)
 				}
 			}
-			sb.WriteString(gap + widen(gap, defaultGap(prevKind, tf)) + t)
+			ps = append(ps, gap(g+widen(g, defaultGap(prevKind, tf))), unit(t, insOp[j][i]))
 			prevKind = tl
 		}
+		trail := ""
 		if k := nextKept(j); k >= 0 {
-			sb.WriteString(widen(gapAfter(j), defaultGap(prevKind, firstOf(k))))
+			trail = widen(gapAfter(j), defaultGap(prevKind, firstOf(k)))
 		}
-		add(m.tb[j].End, m.tb[j].End, sb.String())
+		add(m.tb[j].End, m.tb[j].End, append(ps, gap(trail))...)
 	}
 	sort.SliceStable(m.edits, func(a, b int) bool {
 		x, y := m.edits[a], m.edits[b]
@@ -731,16 +828,173 @@ func (m *merger) write() (string, error) {
 		}
 		return x.seq < y.seq
 	})
-	var out strings.Builder
-	pos := 0
-	for _, e := range m.edits {
-		if e.start < pos {
-			return "", fmt.Errorf("merging blocks: two edits overlap at byte %d", e.start)
+	for i := 1; i < len(m.edits); i++ {
+		if m.edits[i].start < m.edits[i-1].end {
+			return "", fmt.Errorf("merging blocks: two edits overlap at byte %d", m.edits[i].start)
 		}
-		out.WriteString(m.body[pos:e.start])
-		out.WriteString(e.text)
+	}
+	// New text never fuses with a neighbour, checked rather than assumed: the
+	// merged page is split, every new text must start and end blocks of its
+	// own, and every block that stayed must come back as it was. Where a
+	// block doesn't start where it should, the gap before it gets a blank
+	// line (only where a block doesn't end, the gap after it), the earliest
+	// in each stretch between blank lines, and the page is checked again,
+	// until nothing more changes. A fusion first shows where the later block
+	// fails to start, so widening there alone usually mends it.
+	for range len(m.edits) + 1 {
+		out, starts, ends := m.check()
+		failing := starts
+		if len(failing) == 0 {
+			failing = ends
+		}
+		if len(failing) == 0 {
+			return out, nil
+		}
+		failing = firstPerStretch(out, failing)
+		grew := false
+		done := map[[2]int]bool{}
+		for _, at := range failing {
+			if done[[2]int{at[0], at[1]}] {
+				continue
+			}
+			done[[2]int{at[0], at[1]}] = true
+			pc := &m.edits[at[0]].pieces[at[1]]
+			if need := 2 - newlinesAround(out, at[2], at[3]); need > 0 {
+				pc.text += strings.Repeat(nl, need)
+				grew = true
+			}
+		}
+		if !grew {
+			return "", m.joins(failing[0])
+		}
+	}
+	out, starts, ends := m.check()
+	if len(starts)+len(ends) > 0 {
+		return "", m.joins(append(starts, ends...)[0])
+	}
+	return out, nil
+}
+
+// joins is the refusal of a save whose new text no blank line can keep
+// apart from its neighbour (indented, it continues the item before it),
+// naming the operation of the new text next to the failing gap.
+func (m *merger) joins(at [4]int) error {
+	e := m.edits[at[0]]
+	op := -1
+	for _, pi := range []int{at[1] + 1, at[1] - 1} {
+		if pi >= 0 && pi < len(e.pieces) && e.pieces[pi].unit {
+			op = e.pieces[pi].op
+			break
+		}
+	}
+	return refuse("operation %d: this block would join its neighbour", op)
+}
+
+// firstPerStretch keeps, of failing gap pieces, the earliest in each stretch
+// of the text between blank lines.
+func firstPerStretch(text string, failing [][4]int) [][4]int {
+	sort.Slice(failing, func(a, b int) bool { return failing[a][2] < failing[b][2] })
+	var kept [][4]int
+	for _, f := range failing {
+		if n := len(kept); n == 0 || hasBlankLine(text[min(kept[n-1][3], f[2]):f[2]]) {
+			kept = append(kept, f)
+		}
+	}
+	return kept
+}
+
+// hasBlankLine reports whether text holds an empty line: a line, between two
+// line breaks, of nothing but spaces.
+func hasBlankLine(text string) bool {
+	lines := strings.Split(text, "\n")
+	for i := 1; i < len(lines)-1; i++ {
+		if strings.TrimSpace(lines[i]) == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// check writes the merged body and says which gap pieces must widen, each as
+// {edit, piece, its start and end in the body written}: starts before a
+// block that doesn't start where it should, ends after one that doesn't end.
+func (m *merger) check() (text string, starts, ends [][4]int) {
+	type span struct{ start, end int }
+	var out strings.Builder
+	spans := make([][]span, len(m.edits))
+	kept := map[int]span{} // a block that stayed, by its index: where it is now
+	var gaps [][4]int      // every gap piece, in order
+	pos, b := 0, 0
+	copyBody := func(to int) {
+		for ; b < len(m.tb) && m.tb[b].Start < to; b++ {
+			if _, r := m.repl[b]; !m.gone[b] && !r && m.tb[b].Start >= pos {
+				at := out.Len() + m.tb[b].Start - pos
+				kept[b] = span{at, at + m.tb[b].End - m.tb[b].Start}
+			}
+		}
+		out.WriteString(m.body[pos:to])
+	}
+	for ei, e := range m.edits {
+		copyBody(e.start)
+		for pi, p := range e.pieces {
+			s := out.Len()
+			out.WriteString(p.text)
+			spans[ei] = append(spans[ei], span{s, out.Len()})
+			if !p.unit {
+				gaps = append(gaps, [4]int{ei, pi, s, out.Len()})
+			}
+		}
 		pos = e.end
 	}
-	out.WriteString(m.body[pos:])
-	return out.String(), nil
+	copyBody(len(m.body))
+	text = out.String()
+
+	blockAt, endsAt := map[int]Block{}, map[int]bool{}
+	for _, bl := range Blocks(text) {
+		blockAt[bl.Start], endsAt[bl.End] = bl, true
+	}
+	mark := func(list *[][4]int, ei, pi int) {
+		s := spans[ei][pi]
+		*list = append(*list, [4]int{ei, pi, s.start, s.end})
+	}
+	for ei, e := range m.edits {
+		for pi, p := range e.pieces {
+			if !p.unit {
+				continue
+			}
+			s := spans[ei][pi]
+			if _, ok := blockAt[s.start]; !ok && pi > 0 {
+				mark(&starts, ei, pi-1)
+			}
+			if !endsAt[s.end] && pi+1 < len(e.pieces) {
+				mark(&ends, ei, pi+1)
+			}
+		}
+	}
+	blank := func(s string) bool { return strings.Trim(s, " \t\r\n") == "" }
+	for j, s := range kept {
+		if bl, ok := blockAt[s.start]; ok && bl.Kind == m.tb[j].Kind && bl.Text == m.tb[j].Text {
+			continue
+		}
+		// The gap piece before it, across only blank text; else the one
+		// after it.
+		if i := sort.Search(len(gaps), func(i int) bool { return gaps[i][3] > s.start }) - 1; i >= 0 && blank(text[gaps[i][3]:s.start]) {
+			starts = append(starts, gaps[i])
+		} else if i := sort.Search(len(gaps), func(i int) bool { return gaps[i][2] >= s.end }); i < len(gaps) && blank(text[s.end:gaps[i][2]]) {
+			ends = append(ends, gaps[i])
+		}
+	}
+	return text, starts, ends
+}
+
+// newlinesAround counts the line breaks in the run of blank text around
+// text[start:end].
+func newlinesAround(text string, start, end int) int {
+	for start > 0 && strings.ContainsRune(" \t\r\n", rune(text[start-1])) {
+		start--
+	}
+	for end < len(text) && strings.ContainsRune(" \t\r\n", rune(text[end])) {
+		end++
+	}
+	return strings.Count(text[start:end], "\n")
 }

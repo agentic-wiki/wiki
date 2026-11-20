@@ -157,7 +157,7 @@ type Index struct {
 	orphanGlobs []string        // wiki.toml `ignore_orphans` as bundle-path globs: matched entries stay indexed but are not reported as orphans
 	patterns    []*pattern      // every in-bundle `ignore` and `ignore_orphans` pattern, for check to name those no file matches
 	skipped     []string        // the folders Build skipped (bundle paths), which check looks inside only for a pattern still unmatched
-	outside     []Issue         // the .md links Build left out because their file is not the bundle's content, for check to name
+	walked      []Issue         // what Build left out while walking (a link out of the bundle or to nothing, a file it can't read), for check to name
 }
 
 // pattern is one in-bundle pattern of wiki.toml, as written, and whether a
@@ -171,11 +171,27 @@ type pattern struct {
 func Build(b *bundle.Bundle) (*Index, error) {
 	idx := &Index{Bundle: b, byPath: map[string]*Entry{}}
 	idx.resolveIgnore()
-	err := filepath.WalkDir(b.Dir, func(path string, d fs.DirEntry, err error) error {
+	// The walk starts from the real root: WalkDir doesn't follow a root that
+	// is itself a symlink (wiki --root ~/kb, kb a link). Folders inside that
+	// are links aren't followed, as git doesn't follow them. So an entry's
+	// root is this real folder, while Create, WriteIf and Move start from
+	// Bundle.Dir, which may be the link: only inBundle, which resolves both,
+	// may compare the two.
+	root := b.Dir
+	if real, err := filepath.EvalSymlinks(root); err == nil {
+		root = real
+	}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		rel, _ := filepath.Rel(root, path)
 		if err != nil {
-			return err
+			// A folder inside that can't be read is left out and named, rather
+			// than failing the build of the whole wiki. The root itself fails.
+			if path == root || d == nil || !d.IsDir() {
+				return err
+			}
+			idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "is a folder that can't be read: not indexed"})
+			return fs.SkipDir
 		}
-		rel, _ := filepath.Rel(b.Dir, path)
 		if d.IsDir() {
 			if idx.SkipsFolder(rel) {
 				idx.skipped = append(idx.skipped, filepath.ToSlash(rel))
@@ -190,29 +206,45 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
 		}
+		// A .md that is neither a file nor a link (a FIFO, a socket, a device)
+		// is left out: opening a FIFO would block the build forever.
+		if t := d.Type(); !t.IsRegular() && t&fs.ModeSymlink == 0 {
+			idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "isn't a file: not indexed"})
+			return nil
+		}
 		// A link to a file outside the bundle (~/.bashrc, shipped by a cloned
 		// repo) is never an entry: reading it would show that file to whoever
 		// reads the wiki. Only a link can leave, since WalkDir enters no
 		// linked folder.
 		if d.Type()&fs.ModeSymlink != 0 {
-			if _, err := inBundle(b.Dir, path); errors.Is(err, ErrOutsideBundle) {
+			if _, err := inBundle(root, path); errors.Is(err, ErrOutsideBundle) {
 				msg := "is a symlink to a file outside the bundle: not indexed"
 				if errors.Is(err, errDotPath) {
 					msg = "is a symlink to a file on a dot path (.git, a dot file): not indexed"
 				}
-				idx.outside = append(idx.outside, Issue{"warning", "/" + filepath.ToSlash(rel), msg})
+				idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), msg})
 				return nil
 			}
-			// A link to nothing (a cloned repo can ship one) is left out
-			// too, rather than failing the build of the whole wiki.
-			if _, err := os.Stat(path); err != nil {
-				idx.outside = append(idx.outside, Issue{"warning", "/" + filepath.ToSlash(rel), "is a symlink to a file that doesn't exist: not indexed"})
+			// A link to nothing, or to a folder (a cloned repo can ship
+			// either), is left out too, rather than failing the build of the
+			// whole wiki.
+			fi, err := os.Stat(path)
+			switch {
+			case err != nil:
+				idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "is a symlink to a file that doesn't exist: not indexed"})
+				return nil
+			case fi.IsDir():
+				idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "is a symlink to a folder, not a file: not indexed"})
+				return nil
+			case !fi.Mode().IsRegular():
+				idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "is a symlink to something that isn't a file: not indexed"})
 				return nil
 			}
 		}
-		e, err := parseEntry(b.Dir, path)
-		if err != nil {
-			return err
+		e, err := parseEntry(root, path)
+		if err != nil { // only reading fails: a file without read permission, say
+			idx.walked = append(idx.walked, Issue{"warning", "/" + filepath.ToSlash(rel), "can't be read: not indexed"})
+			return nil
 		}
 		idx.Entries = append(idx.Entries, e)
 		idx.byPath[e.Path] = e
@@ -930,6 +962,12 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		return nil, fmt.Errorf("destination escapes the bundle: %s", dest)
 	case idx.FileExists(dest):
 		return nil, fmt.Errorf("destination already exists: %s", dest)
+	// Where the file would no longer be an entry, the move would make it
+	// vanish from the wiki unseen.
+	case hidden(strings.TrimPrefix(dest, "/")):
+		return nil, fmt.Errorf("%w: destination %s: a file or folder name that starts with a dot is never indexed, so it would no longer be an entry", ErrOutsideBundle, dest)
+	case matchAnyGlob(idx.ignoreIn, dest) || idx.SkipsFolder(path.Dir(strings.TrimPrefix(dest, "/"))):
+		return nil, fmt.Errorf("%w: destination %s: wiki.toml's ignore leaves it out, so it would no longer be an entry", ErrBadPath, dest)
 	}
 	// Judged where it would really land: a folder of the bundle may be a link
 	// out of it (ext -> ~/Documents), and a dot path is not content.
@@ -1136,7 +1174,7 @@ func (idx *Index) Check() []Issue {
 	for _, k := range idx.Bundle.Unknown {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
 	}
-	issues = append(issues, idx.outside...)
+	issues = append(issues, idx.walked...)
 	// A pattern that matches nothing is inert, and usually a mistake: a typo,
 	// or a folder named without `/**` (`drafts` names a file, not the folder).
 	for _, pat := range idx.unmatched() {
@@ -1544,18 +1582,31 @@ func validTimestamp(s string) bool {
 	return ok
 }
 
-// nonISODateLayouts are common date spellings the log lint flags in favor of ISO.
-var nonISODateLayouts = []string{"2006/01/02", "01/02/2006", "2006-1-2", "January 2, 2006", "Jan 2, 2006", "2 Jan 2006"}
+// nonISODateLayouts are common date spellings the log lint flags in favor of
+// ISO: year-first with slashes, month-first and day-first (US and European),
+// unpadded, and in words.
+var nonISODateLayouts = []string{
+	"2006/01/02", "2006/1/2", "01/02/2006", "1/2/2006", "02/01/2006", "2/1/2006", "2006-1-2",
+	"January 2, 2006", "Jan 2, 2006", "2 January 2006", "2 Jan 2006",
+}
 
-// looksLikeNonISODate reports whether heading parses as a date in a common
-// non-ISO format (and not already as ISO YYYY-MM-DD).
+// looksLikeNonISODate reports whether heading starts with a date in a common
+// non-ISO form, alone or followed by text (`## 2026/06/24 Deploy`). A heading
+// that starts with an ISO YYYY-MM-DD date doesn't.
 func looksLikeNonISODate(heading string) bool {
-	h := strings.TrimSpace(heading)
-	if _, err := time.Parse("2006-01-02", h); err == nil {
+	words := strings.Fields(heading)
+	if len(words) == 0 {
+		return false
+	}
+	if _, err := time.Parse("2006-01-02", strings.TrimRight(words[0], ":,.")); err == nil {
 		return false // already ISO
 	}
 	for _, l := range nonISODateLayouts {
-		if _, err := time.Parse(l, h); err == nil {
+		n := len(strings.Fields(l))
+		if len(words) < n {
+			continue
+		}
+		if _, err := time.Parse(l, strings.TrimRight(strings.Join(words[:n], " "), ":,.")); err == nil {
 			return true
 		}
 	}

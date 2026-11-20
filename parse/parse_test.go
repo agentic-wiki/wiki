@@ -2,6 +2,7 @@ package parse
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -271,6 +272,31 @@ func TestCheckboxesSkipAFenceInAQuote(t *testing.T) {
 		if got := strings.Join(texts, " | "); got != c.want {
 			t.Errorf("%s: got %q, want %q", name, got, c.want)
 		}
+	}
+}
+
+// An ordered to-do is a to-do too, with either delimiter, quoted or not; a
+// number with no delimiter isn't a list marker.
+func TestCheckboxesOrdered(t *testing.T) {
+	body := "1. [ ] first\n2) [x] second\n> 10. [ ] quoted\n3 [ ] no delimiter\n1.[ ] no space\n"
+	var got []string
+	for _, c := range Checkboxes(body) {
+		got = append(got, fmt.Sprintf("%d:%v:%s", c.Line, c.Done, c.Text))
+	}
+	if want := "1:false:first 2:true:second 3:false:quoted"; strings.Join(got, " ") != want {
+		t.Errorf("got %q, want %q", strings.Join(got, " "), want)
+	}
+}
+
+// A to-do follows the splitter's rule for an item under a paragraph: an
+// ordered one not starting at 1 there is paragraph text, not a to-do.
+func TestCheckboxesFollowTheInterruptRule(t *testing.T) {
+	var got []string
+	for _, c := range Checkboxes("Para\n2. [ ] not a to-do\n\n2. [ ] a to-do\n\nPara\n1. [ ] also one\n") {
+		got = append(got, c.Text)
+	}
+	if strings.Join(got, " | ") != "a to-do | also one" {
+		t.Errorf("got %q", got)
 	}
 }
 

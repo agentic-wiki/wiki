@@ -244,3 +244,16 @@ func TestRowsDisarmFormulas(t *testing.T) {
 		}
 	}
 }
+
+// json, like jsonl, writes `<`, `>` and `&` as they are: results are data,
+// not HTML.
+func TestJSONDoesNotEscapeHTML(t *testing.T) {
+	v := []sample{{Path: "/a&b.md", Tags: []string{"<x>"}}}
+	var b bytes.Buffer
+	if err := Emit(&b, "json", nil, v); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(b.String(), `\u00`) || !strings.Contains(b.String(), `"/a&b.md"`) || !strings.Contains(b.String(), `"<x>"`) {
+		t.Errorf("json:\n%s", b.String())
+	}
+}

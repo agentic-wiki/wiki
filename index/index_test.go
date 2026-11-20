@@ -188,6 +188,29 @@ func TestCheckTimestamp(t *testing.T) {
 	}
 }
 
+// A heading that starts with a date in another form warns, day-first and
+// followed by text included; one that starts with an ISO date doesn't.
+func TestLogHeadingDates(t *testing.T) {
+	for heading, want := range map[string]bool{
+		"24/06/2026":            true,
+		"4/6/2026":              true,
+		"06/24/2026":            true,
+		"2026/06/24 Deploy":     true,
+		"2 Jan 2026: release":   true,
+		"January 2, 2026 notes": true,
+		"2026-06-24":            false,
+		"2026-06-24 Deploy":     false,
+		"2026-06-24: Deploy":    false,
+		"Notes":                 false,
+		"2026 plans":            false,
+		"":                      false,
+	} {
+		if got := looksLikeNonISODate(heading); got != want {
+			t.Errorf("%q: %v, want %v", heading, got, want)
+		}
+	}
+}
+
 func TestCheckLogDateHeadings(t *testing.T) {
 	bad := build(t, map[string]string{"log.md": "# Log\n## 01/02/2026\nnote\n## Notes\nfine\n"})
 	if !hasWarning(bad.Check(), "/log.md", "ISO YYYY-MM-DD") {
@@ -1206,6 +1229,29 @@ func TestLinkGraph(t *testing.T) {
 	}
 	if bl := idx.Backlinks("/nope.md"); len(bl) != 1 || bl[0].From != "/a.md" {
 		t.Errorf("backlinks /nope.md = %+v (a.md links to it)", bl)
+	}
+}
+
+// A move to where the file would no longer be an entry (a dot name, a dot
+// folder, or a path wiki.toml's ignore leaves out) is refused, saying why,
+// and nothing moves: it would make the entry vanish from the wiki unseen.
+func TestMoveRefusesALeavingDestination(t *testing.T) {
+	idx := build(t, map[string]string{"a.md": "---\ntype: note\n---\nx\n"})
+	os.WriteFile(filepath.Join(idx.Bundle.Dir, "wiki.toml"), []byte("spec=\"0.1\"\ntypes=[\"note\"]\nignore=[\"drafts/**\"]\n"), 0o644)
+	b, _ := bundle.Discover(idx.Bundle.Dir)
+	idx, _ = Build(b)
+	for dest, why := range map[string]string{
+		"/.a.md":              "starts with a dot",
+		"/notes/.drafts/a.md": "starts with a dot",
+		"/drafts/a.md":        "ignore",
+	} {
+		_, err := idx.Move("/a.md", dest, false, false)
+		if err == nil || !strings.Contains(err.Error(), why) || !strings.Contains(err.Error(), "no longer be an entry") {
+			t.Errorf("%s: %v", dest, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(idx.Bundle.Dir, "a.md")); err != nil {
+		t.Errorf("a.md moved: %v", err)
 	}
 }
 

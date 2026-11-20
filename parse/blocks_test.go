@@ -74,6 +74,29 @@ func checkRebuild(t *testing.T, name, body string) {
 	}
 }
 
+// A list item interrupts a paragraph only when it isn't empty and, if
+// ordered, starts at 1 (CommonMark); otherwise its line is paragraph text
+// (an empty `-` under a paragraph is a setext underline).
+func TestAnItemInterruptsAParagraphOnlyByCommonMarksRule(t *testing.T) {
+	for body, want := range map[string]string{
+		"Para\n2. one\n":   "paragraph",
+		"Para\n1. one\n":   "paragraph item",
+		"Para\n01) one\n":  "paragraph item",
+		"Para\n- one\n":    "paragraph item",
+		"Para\n-\n":        "heading",
+		"Para\n*\n":        "paragraph",
+		"Para\n\n2. one\n": "paragraph item",
+	} {
+		var kinds []string
+		for _, b := range Blocks(body) {
+			kinds = append(kinds, b.Kind)
+		}
+		if got := strings.Join(kinds, " "); got != want {
+			t.Errorf("%q: %s, want %s", body, got, want)
+		}
+	}
+}
+
 func TestBlocksRebuildThePage(t *testing.T) {
 	for name, body := range map[string]string{
 		"empty":       "",
