@@ -1753,3 +1753,71 @@ func TestZeroIndexSkipsOnlyHiddenFolders(t *testing.T) {
 		}
 	}
 }
+
+// check warns on an ignore or ignore_orphans pattern inside the bundle that
+// matches no file, and suggests the folder form when the pattern names a
+// folder. A file counts wherever it is: in a folder Build skips (ignored,
+// hidden), and whatever its extension. An out-of-bundle path keeps its own rule.
+func TestCheckWarnsOnAPatternThatMatchesNothing(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml": "spec = \"0.1\"\n" +
+			"ignore = [\"drafts\", \"AGENTS.md\", \"archive/**\", \"typo.md\", \"assets/*.png\", \"archive/old/x.md\", \".obsidian/**\", \".obsidian\", \"**/node_mod/**\", \"../outside.md\"]\n" +
+			"ignore_orphans = [\"parked/**\", \"nope/**\", \"archive/**\"]\n",
+		"drafts/a.md":        "---\ntype: note\n---\n",
+		"AGENTS.md":          "agents\n",
+		"archive/old/x.md":   "---\ntype: note\n---\n",
+		"assets/logo.png":    "png",
+		".obsidian/app.json": "{}",
+		"parked/p.md":        "---\ntype: note\n---\n",
+		"kept.md":            "---\ntype: note\n---\n",
+	})
+	var got []string
+	for _, i := range idx.Check() {
+		if i.Entry == "wiki.toml" {
+			got = append(got, i.Level+": "+i.Msg)
+		}
+	}
+	want := []string{
+		`warning: ignore pattern "drafts" matches no file; to leave out the folder, write "drafts/**"`,
+		`warning: ignore pattern "typo.md" matches no file`,
+		`warning: ignore pattern ".obsidian" matches no file; to leave out the folder, write ".obsidian/**"`,
+		`warning: ignore pattern "**/node_mod/**" matches no file`,
+		`warning: ignore_orphans pattern "nope/**" matches no file`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("wiki.toml issues:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A bundle whose patterns all match says nothing about them.
+func TestCheckIsQuietWhenEveryPatternMatches(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml":   "spec = \"0.1\"\nignore = [\"AGENTS.md\", \"drafts/**\"]\nignore_orphans = [\"drafts/**\"]\n",
+		"AGENTS.md":   "agents\n",
+		"drafts/a.md": "---\ntype: note\n---\n",
+	})
+	for _, i := range idx.Check() {
+		if i.Entry == "wiki.toml" {
+			t.Errorf("unexpected: %s", i.Msg)
+		}
+	}
+}
+
+// The folder in the suggestion is cleaned: a pattern written with a trailing
+// slash still suggests "drafts/**", not "drafts//**".
+func TestTheFolderSuggestionIsCleaned(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml":   "spec = \"0.1\"\nignore_orphans = [\"drafts/\"]\n",
+		"drafts/a.md": "---\ntype: note\n---\n",
+	})
+	want := `ignore_orphans pattern "drafts/" matches no file; to leave out the folder, write "drafts/**"`
+	for _, i := range idx.Check() {
+		if i.Entry == "wiki.toml" {
+			if i.Msg != want {
+				t.Errorf("got %q, want %q", i.Msg, want)
+			}
+			return
+		}
+	}
+	t.Errorf("no warning, want %q", want)
+}

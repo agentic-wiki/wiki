@@ -155,6 +155,15 @@ type Index struct {
 	ignoreIn    []string        // wiki.toml `ignore` patterns resolving inside: bundle-path globs; a match is not indexed as an entry
 	ignoreOut   map[string]bool // wiki.toml `ignore` entries climbing above the root, by climbing path (../PRD.md): silence that out-of-bundle advisory
 	orphanGlobs []string        // wiki.toml `ignore_orphans` as bundle-path globs: matched entries stay indexed but are not reported as orphans
+	patterns    []*pattern      // every in-bundle `ignore` and `ignore_orphans` pattern, for check to name those no file matches
+	skipped     []string        // the folders Build skipped (bundle paths), which check looks inside only for a pattern still unmatched
+}
+
+// pattern is one in-bundle pattern of wiki.toml, as written, and whether a
+// file matched it.
+type pattern struct {
+	key, written, glob string
+	matched            bool
 }
 
 // Build scans the bundle directory and parses every .md file.
@@ -165,17 +174,18 @@ func Build(b *bundle.Bundle) (*Index, error) {
 		if err != nil {
 			return err
 		}
+		rel, _ := filepath.Rel(b.Dir, path)
 		if d.IsDir() {
-			rel, _ := filepath.Rel(b.Dir, path)
 			if idx.SkipsFolder(rel) {
+				idx.skipped = append(idx.skipped, filepath.ToSlash(rel))
 				return fs.SkipDir
 			}
 			return nil
 		}
+		idx.markMatches("/" + filepath.ToSlash(rel))
 		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
-		rel, _ := filepath.Rel(b.Dir, path)
 		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
 		}
@@ -254,11 +264,55 @@ func (idx *Index) resolveIgnore() {
 			idx.ignoreOut[rel] = true
 		} else {
 			idx.ignoreIn = append(idx.ignoreIn, "/"+rel)
+			idx.patterns = append(idx.patterns, &pattern{key: "ignore", written: s, glob: "/" + rel})
 		}
 	}
 	for _, pat := range idx.Bundle.IgnoreOrphans {
-		idx.orphanGlobs = append(idx.orphanGlobs, "/"+strings.TrimPrefix(filepath.ToSlash(pat), "/"))
+		glob := "/" + strings.TrimPrefix(filepath.ToSlash(pat), "/")
+		idx.orphanGlobs = append(idx.orphanGlobs, glob)
+		idx.patterns = append(idx.patterns, &pattern{key: "ignore_orphans", written: pat, glob: glob})
 	}
+}
+
+// markMatches records the patterns the bundle path p of a file matches. Build
+// alone calls it, while it walks.
+func (idx *Index) markMatches(p string) {
+	for _, pat := range idx.patterns {
+		if !pat.matched && matchGlob(pat.glob, p) {
+			pat.matched = true
+		}
+	}
+}
+
+// unmatched lists the patterns no file matches, in wiki.toml order. Build has
+// already tested every file it walked; the folders it skipped are looked
+// inside only now, and only while a pattern is still unmatched, so a healthy
+// bundle pays nothing for this. It changes nothing on the index, so readers
+// sharing one stay safe.
+func (idx *Index) unmatched() []*pattern {
+	var left []*pattern
+	for _, pat := range idx.patterns {
+		if !pat.matched {
+			left = append(left, pat)
+		}
+	}
+	for _, folder := range idx.skipped {
+		if len(left) == 0 {
+			break
+		}
+		_ = filepath.WalkDir(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(folder)), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil // look at what can be read
+			}
+			rel, _ := filepath.Rel(idx.Bundle.Dir, p)
+			left = slices.DeleteFunc(left, func(pat *pattern) bool { return matchGlob(pat.glob, "/"+filepath.ToSlash(rel)) })
+			if len(left) == 0 {
+				return fs.SkipAll
+			}
+			return nil
+		})
+	}
+	return left
 }
 
 func parseEntry(root, abs string) (*Entry, error) {
@@ -1044,6 +1098,18 @@ func (idx *Index) Check() []Issue {
 	// assume it took effect.
 	for _, k := range idx.Bundle.Unknown {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
+	}
+	// A pattern that matches nothing is inert, and usually a mistake: a typo,
+	// or a folder named without `/**` (`drafts` names a file, not the folder).
+	for _, pat := range idx.unmatched() {
+		msg := fmt.Sprintf("%s pattern %q matches no file", pat.key, pat.written)
+		folder := path.Clean(strings.TrimPrefix(pat.glob, "/"))
+		if !strings.ContainsAny(folder, "*?[") {
+			if fi, err := os.Stat(filepath.Join(idx.Bundle.Dir, filepath.FromSlash(folder))); err == nil && fi.IsDir() {
+				msg += fmt.Sprintf("; to leave out the folder, write %q", folder+"/**")
+			}
+		}
+		issues = append(issues, Issue{"warning", "wiki.toml", msg})
 	}
 	for _, e := range idx.Entries {
 		raw, err := e.Raw()

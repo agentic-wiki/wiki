@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.19.0
+
+### Added
+
+- **`check` warns on an `ignore` or `ignore_orphans` pattern that matches no file.** Such a pattern does nothing, and is usually a typo or a folder named without `/**`: `ignore = ["drafts"]` names a file called `drafts`, not the folder. The warning names the pattern as written and, when a folder of that name exists, suggests `drafts/**`. A file counts wherever it is, of any type, inside an ignored or hidden folder too. A pattern climbing above the bundle (`../PRD.md`) keeps its own rule and is not checked.
+
 ## v0.18.1
 
 ### Added

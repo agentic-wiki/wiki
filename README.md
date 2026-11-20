@@ -241,7 +241,7 @@ The Markdown is data at rest and stands alone; the tool is a swappable engine ov
 | `unresolved` / `orphans` | Broken links / entries with nothing linking in |
 | `move <src> <dst>` | Relocate or rename, rewriting every link to it (`--include-frontmatter` also rewrites matching frontmatter values) |
 | `tidy` | Canonicalize the base: `--links`, `--slug`, `--wikilinks`, `--all` (bare previews) |
-| `check` | Health lint, including YAML syntax, duplicate frontmatter keys and the shape of values (`--fix` repairs safe issues, e.g. version drift) |
+| `check` | Health lint, including YAML syntax, duplicate frontmatter keys, the shape of values and `ignore` patterns that match no file (`--fix` repairs safe issues, e.g. version drift) |
 | `version` | Print the version |
 
 File arguments are **bundle paths**, not filesystem paths: a root-absolute `/finance/income.md`, or a bare `income.md` when it is unambiguous. They mean the same thing wherever you run from, and whatever `--root <dir>` points at (a global flag, accepted before or after the command: `wiki --root kb dump` and `wiki dump --root kb` are the same). `--prefix` takes the same form to scope a listing to a subtree.
