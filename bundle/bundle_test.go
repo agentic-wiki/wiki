@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -86,10 +88,10 @@ func TestToolNamespaceIsOpaque(t *testing.T) {
 spec = "0.1"
 types = ["task", "note"]
 
-[tool.wikiview]
+[tool.wikishell]
 default_board = "/backlog"
 
-[[tool.wikiview.board]]
+[[tool.wikishell.board]]
 path = "/backlog"
 columns = ["todo", "done"]
 
@@ -104,7 +106,7 @@ types = ["this", "must", "not", "leak"]
 	if !reflect.DeepEqual(b.Types, []string{"task", "note"}) {
 		t.Errorf("a tool table leaked into bundle config: types=%#v", b.Types)
 	}
-	if got := b.Tools(); !reflect.DeepEqual(got, []string{"other", "wikiview"}) {
+	if got := b.Tools(); !reflect.DeepEqual(got, []string{"other", "wikishell"}) {
 		t.Errorf("Tools() = %v", got)
 	}
 }
@@ -113,10 +115,10 @@ func TestDecodeTool(t *testing.T) {
 	b := mustLoad(t, `
 spec = "0.1"
 
-[tool.wikiview]
+[tool.wikishell]
 default_board = "/backlog"
 
-[[tool.wikiview.board]]
+[[tool.wikishell.board]]
 path = "/backlog"
 where = ["type=task"]
 columns = ["todo", "done"]
@@ -129,7 +131,7 @@ columns = ["todo", "done"]
 			Columns []string `toml:"columns"`
 		} `toml:"board"`
 	}
-	found, err := b.DecodeTool("wikiview", &cfg)
+	found, err := b.DecodeTool("wikishell", &cfg)
 	if err != nil || !found {
 		t.Fatalf("DecodeTool: found=%v err=%v", found, err)
 	}
@@ -145,6 +147,162 @@ columns = ["todo", "done"]
 	if found, err := b.DecodeTool("absent", &cfg); found || err != nil {
 		t.Errorf("absent tool: found=%v err=%v", found, err)
 	}
+}
+
+// [[board]] and [[graph]] belong to the apps that show them. wiki sets them
+// aside, as it does [tool.*]: no warning, and nothing leaks into its own config.
+func TestBoardAndGraphAreOpaque(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+types = ["task"]
+
+[[board]]
+id = "backlog"
+path = "/backlog"
+types = ["this", "must", "not", "leak"]
+
+[[graph]]
+id = "map"
+path = "/"
+neighbours = true
+`)
+	if len(b.Unknown) != 0 {
+		t.Errorf("[[board]] and [[graph]] must not warn, got %#v", b.Unknown)
+	}
+	if !reflect.DeepEqual(b.Types, []string{"task"}) {
+		t.Errorf("a board table leaked into bundle config: types=%#v", b.Types)
+	}
+}
+
+// A wrong type is the reading app's problem to report. wiki loads the bundle
+// and stays quiet; the decode is where the error shows.
+func TestBoardOfWrongTypeIsNotWikisProblem(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+board = "x"
+graph = 1
+`)
+	if len(b.Unknown) != 0 {
+		t.Errorf("a mistyped board must not warn, got %#v", b.Unknown)
+	}
+	var boards []struct {
+		ID string `toml:"id"`
+	}
+	found, err := b.DecodeBoards(&boards)
+	if !found || err == nil || !strings.Contains(err.Error(), "wiki.toml [[board]]") {
+		t.Errorf("DecodeBoards: found=%v err=%v, want true and an error naming [[board]]", found, err)
+	}
+	var graphs []struct {
+		ID string `toml:"id"`
+	}
+	found, err = b.DecodeGraphs(&graphs)
+	if !found || err == nil || !strings.Contains(err.Error(), "wiki.toml [[graph]]") {
+		t.Errorf("DecodeGraphs: found=%v err=%v, want true and an error naming [[graph]]", found, err)
+	}
+}
+
+func TestDecodeBoardsAndGraphs(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+
+[[board]]
+id = "backlog"
+path = "/backlog"
+where = ["type=task"]
+
+[[board]]
+id = "bugs"
+path = "/backlog"
+lane = "priority"
+
+[[graph]]
+id = "map"
+path = "/"
+neighbours = true
+`)
+	var boards []struct {
+		ID    string   `toml:"id"`
+		Path  string   `toml:"path"`
+		Where []string `toml:"where"`
+		Lane  string   `toml:"lane"`
+	}
+	found, err := b.DecodeBoards(&boards)
+	if err != nil || !found {
+		t.Fatalf("DecodeBoards: found=%v err=%v", found, err)
+	}
+	if len(boards) != 2 || boards[0].ID != "backlog" || boards[1].Lane != "priority" ||
+		!reflect.DeepEqual(boards[0].Where, []string{"type=task"}) {
+		t.Errorf("boards = %+v", boards)
+	}
+
+	// A slice of maps works too, for an app that wants to see every key written.
+	var graphs []map[string]any
+	found, err = b.DecodeGraphs(&graphs)
+	if err != nil || !found {
+		t.Fatalf("DecodeGraphs: found=%v err=%v", found, err)
+	}
+	if len(graphs) != 1 || graphs[0]["id"] != "map" || graphs[0]["neighbours"] != true {
+		t.Errorf("graphs = %#v", graphs)
+	}
+}
+
+// No tables is not an error: it is a bundle that declares no views.
+func TestDecodeBoardsAndGraphsAbsent(t *testing.T) {
+	b := mustLoad(t, "spec = \"0.1\"\n")
+	var v []map[string]any
+	if found, err := b.DecodeBoards(&v); found || err != nil {
+		t.Errorf("DecodeBoards: found=%v err=%v", found, err)
+	}
+	if found, err := b.DecodeGraphs(&v); found || err != nil {
+		t.Errorf("DecodeGraphs: found=%v err=%v", found, err)
+	}
+}
+
+// A decode writes to the metadata it reads from. Without the lock, two decodes
+// at once on one bundle are a concurrent map write, which ends the process.
+// Apps share one bundle across requests, so every decode must be safe to run
+// in parallel. Run with -race to see a missing lock.
+func TestDecodesRunInParallel(t *testing.T) {
+	b := mustLoad(t, `
+spec = "0.1"
+
+[[board]]
+id = "backlog"
+path = "/backlog"
+
+[[graph]]
+id = "map"
+path = "/"
+
+[tool.app]
+name = "x"
+`)
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			var v []map[string]any
+			if _, err := b.DecodeBoards(&v); err != nil {
+				t.Error(err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			var v []map[string]any
+			if _, err := b.DecodeGraphs(&v); err != nil {
+				t.Error(err)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			var v map[string]any
+			if _, err := b.DecodeTool("app", &v); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestUnknownKeysReportFullPath(t *testing.T) {

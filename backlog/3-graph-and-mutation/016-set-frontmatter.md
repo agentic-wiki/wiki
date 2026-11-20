@@ -10,7 +10,7 @@ A `wiki set <file> <key>=<value>` command, writing through `index.SetFields`.
 
 ## Why it survived the library work
 
-The public API made this look redundant, and for Go consumers it is: `SetField` and `SetFields` are the surface, and `wikiview` calls them directly. It stays open because **the CLI's constituency is agents**, and an agent is not a Go program.
+The public API made this look redundant, and for Go consumers it is: `SetField` and `SetFields` are the surface, and WikiShell calls them directly. It stays open because **the CLI's constituency is agents**, and an agent is not a Go program.
 
 `wiki` is described as "built for agents to call". An agent moving a task from `todo` to `in-progress` today opens the file and edits the frontmatter with its own text tools — hand-rolling the exact surgical edit `SetFields` exists to prevent, with none of its guarantees: no quoting rule, no block-list handling, no atomic write, no "change this key's lines and nothing else". That is the second-implementation failure the retro names, relocated outside the module where the guard test cannot see it.
 
