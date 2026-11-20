@@ -48,6 +48,11 @@ test-v:
 test-race:
     go test -race -timeout 120s ./...
 
+# Re-run the block model and the block merge over local git repos (comma-separated); given foreman, wiki-cli and wiki-shell, it checks the editor ADR's counts
+[group('test')]
+test-corpus repos:
+    WIKI_BLOCKS_REPOS={{repos}} go test -v -timeout 600s -run 'TestMergeBlocksOnRealConcurrentEdits|TestBlocksRebuildEveryPage' ./parse
+
 # Generate coverage report
 [group('test')]
 coverage:

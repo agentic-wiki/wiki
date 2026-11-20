@@ -3,6 +3,7 @@ package index
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -93,6 +94,59 @@ func writeFile(root, abs string, content []byte) error {
 	}
 	return rename(name, abs)
 }
+
+// createFile writes content to a new file at abs, the way writeFile replaces
+// one: through a temp file, so a reader never sees it half written. It is
+// linked into place rather than renamed, because a link fails where a file
+// already is (fs.ErrExist), even one that appeared a moment ago: it never
+// overwrites.
+//
+// A filesystem without hard links (exFAT, some FUSE and SMB mounts) refuses
+// the link; then the file is created exclusively and written in place, which
+// still never overwrites, though a reader may see it half written.
+func createFile(root, abs string, content []byte) error {
+	if _, err := inBundle(root, abs); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(abs), ".wiki-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name) // the link stays, the temp name goes
+	if _, err := tmp.Write(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(name, 0o644); err != nil {
+		return err
+	}
+	err = link(name, abs)
+	if !errors.Is(err, fs.ErrPermission) && !errors.Is(err, errors.ErrUnsupported) {
+		return err
+	}
+	f, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		os.Remove(abs)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(abs)
+		return err
+	}
+	return nil
+}
+
+// link is os.Link, a variable so a test can play a filesystem without hard
+// links.
+var link = os.Link
 
 // inBundle returns abs's real path (realPath), or ErrOutsideBundle when that
 // path is not the bundle's content: outside the bundle's real root, or hidden

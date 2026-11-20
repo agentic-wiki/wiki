@@ -368,10 +368,18 @@ func TestNoDirectWritesOutsideWriteFile(t *testing.T) {
 		{
 			// No home: writeFile builds on os.CreateTemp, which these patterns
 			// deliberately do not match, so nothing in the package needs these.
-			regexp.MustCompile(`os\.(WriteFile|Create|OpenFile|Truncate)\(`),
+			regexp.MustCompile(`os\.(WriteFile|Create|Truncate)\(`),
 			"", "writeFile",
 			"it renames a temp file into place, so a reader never sees a partial entry " +
 				"and a process killed mid-write cannot truncate one",
+		},
+		{
+			// createFile's fallback, for a filesystem without hard links, and
+			// nowhere else.
+			regexp.MustCompile(`os\.OpenFile\(`),
+			"write.go", "createFile",
+			"it writes a new entry through a temp file linked into place, and only " +
+				"falls back to an exclusive create where links are refused",
 		},
 		{
 			// The reason this needs enforcing: os.Rename works on every developer

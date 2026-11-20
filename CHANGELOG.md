@@ -2,6 +2,20 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.21.0
+
+A guarded write of a page's body, block by block, so every app edits pages one way: only the blocks that changed are written, what the disk changed meanwhile is kept, and a page saved unchanged stays byte-identical.
+
+### Added
+
+- **`parse.Blocks`** splits a body into blocks (headings, paragraphs, code, rules, quotes, HTML, list items, a table's head and rows), each an exact span: blocks plus the gaps between them are the body, byte for byte. A block's version is `parse.BlockHash`, 128 bits.
+- **`parse.DiffBlocks`** lists what changed between two versions of a page, as replace, insert, delete and move operations anchored to the old one, matching blocks by content with Myers' diff in linear space.
+- **`parse.MergeBlocks`** merges an app's operations into the page on disk, three ways, by block: what doesn't conflict is written onto the disk's version, and a block both sides changed comes back as a conflict (`both-changed`, `deleted-outside`, `changed-outside`), the disk's text kept. A page with no block left of the base was rewritten: nothing is applied. On the 75 real concurrent edits measured for the editor, 55 of the 60 that git merged cleanly come out identical to what was kept, and 13 conflict.
+- **`index.FileVersion` and `Entry.Version`**: a file's version, 128 bits. **`Entry.Blocks`**: the entry's blocks.
+- **`Entry.ApplyBlocks(base, baseBlocks, ops)`** reads the page, merges and writes once, re-reading the entry as `SetFields` does. It refuses (`parse.ErrRefused`, nothing written) an operation anchored to a block that isn't the base's, operations out of order, text that isn't UTF-8, a change that would give a header-less page a frontmatter fence (a byte order mark before it included), more than 1,000 operations, and a page of more than 20,000 blocks, before or after the merge.
+- **`Entry.SetFieldsIf(old, set, unset)`** writes each frontmatter key only if it still has the value the caller read; a key changed on disk comes back with its value there. A list may come as JSON decodes it, a `[]any` of strings.
+- **`Index.Create(path, content)`** writes a new entry, never over a file (`ErrExists`). The path must be a `.md` bundle path with no empty, `.` or `..` segment, none starting with `.`, and no `\\`, `:` or control character in a segment, outside what `ignore` leaves out (`ErrBadPath`), and inside the bundle where it would really land (`ErrOutsideBundle`). A page over 20,000 blocks is refused. On a filesystem without hard links the file is created exclusively in place, still never over a file.
+
 ## v0.20.0
 
 ### Security
