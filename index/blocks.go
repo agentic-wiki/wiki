@@ -5,14 +5,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
-	"os"
-	"path"
-	"path/filepath"
 	"slices"
 	"strings"
-	"unicode"
 
 	"github.com/agentic-wiki/wiki/parse"
 )
@@ -246,65 +241,4 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
-}
-
-// ErrExists refuses to create a file where one already is.
-var ErrExists = errors.New("a file exists at that path")
-
-// ErrBadPath refuses a path to create: not a .md bundle path, or one with an
-// empty, `.` or `..` segment, a segment starting with `.`, or a `\`, `:` or
-// control character in a segment (not portable: a Windows stream name).
-var ErrBadPath = errors.New("not a path for a new entry")
-
-// Create writes a new entry at the bundle path p ("/notes/x.md") with content,
-// the whole file, making the folders it needs. It never overwrites: a file
-// already there is ErrExists. p must be a .md path with no empty, `.` or `..`
-// segment and none starting with `.` (ErrBadPath), and is judged where the
-// file would really land: through a folder linked out of the bundle it is
-// ErrOutsideBundle. A path the bundle's `ignore` leaves out is ErrBadPath too,
-// since the file would not be an entry.
-//
-// The index isn't changed (rebuild it to list the entry, as after Move): the
-// entry is returned, read from the new file.
-func (idx *Index) Create(p string, content []byte) (*Entry, error) {
-	rel := strings.TrimPrefix(p, "/")
-	if !strings.HasSuffix(rel, ".md") || path.Base(rel) == ".md" {
-		return nil, fmt.Errorf("%w: %q is not a .md path", ErrBadPath, p)
-	}
-	for _, seg := range strings.Split(rel, "/") {
-		if seg == "" || seg == "." || seg == ".." || strings.HasPrefix(seg, ".") {
-			return nil, fmt.Errorf("%w: %q has an empty, dot or dot-dot segment", ErrBadPath, p)
-		}
-		if strings.ContainsFunc(seg, func(r rune) bool { return r == '\\' || r == ':' || unicode.IsControl(r) }) {
-			return nil, fmt.Errorf("%w: %q has a \\, : or control character", ErrBadPath, p)
-		}
-	}
-	if n := len(parse.Blocks(parse.Body(string(content)))); n > parse.MaxBlocks {
-		return nil, fmt.Errorf("%w: the page has %d blocks, more than %d", parse.ErrRefused, n, parse.MaxBlocks)
-	}
-	if matchAnyGlob(idx.ignoreIn, "/"+rel) || idx.SkipsFolder(path.Dir(rel)) {
-		return nil, fmt.Errorf("%w: wiki.toml's ignore leaves %q out", ErrBadPath, p)
-	}
-	abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel))
-	if _, err := inBundle(idx.Bundle.Dir, abs); err != nil {
-		return nil, err
-	}
-	made := missingDirs(filepath.Dir(abs))
-	undo := func() {
-		for _, d := range made {
-			os.Remove(d) // only an empty folder goes
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
-		undo()
-		return nil, err
-	}
-	if err := createFile(idx.Bundle.Dir, abs, content); err != nil {
-		undo()
-		if errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("%w: %s", ErrExists, p)
-		}
-		return nil, err
-	}
-	return parseEntry(idx.Bundle.Dir, abs)
 }

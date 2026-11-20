@@ -6,10 +6,12 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/agentic-wiki/wiki/parse"
 )
@@ -142,6 +144,124 @@ func createFile(root, abs string, content []byte) error {
 		return err
 	}
 	return nil
+}
+
+// pagePath checks a bundle path to write a page at, and the page: a .md path
+// with no empty, `.` or `..` segment, none starting with `.`, and no `\`, `:`
+// or control character in a segment (ErrBadPath), and no more than
+// parse.MaxBlocks blocks (parse.ErrRefused). It returns the path without its
+// leading slash.
+func pagePath(p string, content []byte) (string, error) {
+	rel := strings.TrimPrefix(p, "/")
+	if !strings.HasSuffix(rel, ".md") || path.Base(rel) == ".md" {
+		return "", fmt.Errorf("%w: %q is not a .md path", ErrBadPath, p)
+	}
+	for _, seg := range strings.Split(rel, "/") {
+		if seg == "" || seg == "." || seg == ".." || strings.HasPrefix(seg, ".") {
+			return "", fmt.Errorf("%w: %q has an empty, dot or dot-dot segment", ErrBadPath, p)
+		}
+		if strings.ContainsFunc(seg, func(r rune) bool { return r == '\\' || r == ':' || unicode.IsControl(r) }) {
+			return "", fmt.Errorf("%w: %q has a \\, : or control character", ErrBadPath, p)
+		}
+	}
+	if n := len(parse.Blocks(parse.Body(string(content)))); n > parse.MaxBlocks {
+		return "", fmt.Errorf("%w: the page has %d blocks, more than %d", parse.ErrRefused, n, parse.MaxBlocks)
+	}
+	return rel, nil
+}
+
+// ErrChanged refuses a guarded write: the file no longer has the version
+// the caller read (or is gone).
+var ErrChanged = errors.New("the file changed since it was read")
+
+// WriteIf replaces the page at the bundle path p ("/notes/x.md") with
+// content, the whole file, only if it still has version: the bytes the caller
+// read and worked the new ones out from. Otherwise it is ErrChanged and
+// nothing is written. So a write built from one read is all or nothing, where
+// ApplyBlocks would merge. The path follows Create's rules (ErrBadPath, and
+// ErrOutsideBundle where the file really is), except that a page `ignore`
+// leaves out can be written, as can one inside a nested bundle (SkipsFolder
+// isn't checked): it is still a page of this bundle. The write is
+// writeFile's: through a temp file, keeping the file's permissions.
+//
+// As for every write in wiki, a write landing between WriteIf's read and its
+// rename is lost (the editor ADR's known limit L-2): the version check is not
+// atomic with the write.
+//
+// The index isn't changed: rebuild it.
+func (idx *Index) WriteIf(p, version string, content []byte) error {
+	rel, err := pagePath(p, content)
+	if err != nil {
+		return err
+	}
+	abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel))
+	real, err := inBundle(idx.Bundle.Dir, abs)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("%w: %s is gone", ErrChanged, p)
+		}
+		return err
+	}
+	b, err := os.ReadFile(real)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return fmt.Errorf("%w: %s is gone", ErrChanged, p)
+	case err != nil:
+		return err
+	case FileVersion(b) != version:
+		return fmt.Errorf("%w: %s", ErrChanged, p)
+	}
+	return writeFile(idx.Bundle.Dir, abs, content)
+}
+
+// ErrExists refuses to create a file where one already is.
+var ErrExists = errors.New("a file exists at that path")
+
+// ErrBadPath refuses a path to create: not a .md bundle path, or one with an
+// empty, `.` or `..` segment, a segment starting with `.`, or a `\`, `:` or
+// control character in a segment (not portable: a Windows stream name).
+var ErrBadPath = errors.New("not a path for a new entry")
+
+// Create writes a new entry at the bundle path p ("/notes/x.md") with content,
+// the whole file, making the folders it needs. It never overwrites: a file
+// already there is ErrExists. p must be a .md path with no empty, `.` or `..`
+// segment and none starting with `.` (ErrBadPath), and is judged where the
+// file would really land: through a folder linked out of the bundle it is
+// ErrOutsideBundle. A path the bundle's `ignore` leaves out is ErrBadPath too,
+// since the file would not be an entry.
+//
+// The index isn't changed (rebuild it to list the entry, as after Move): the
+// entry is returned, read from the new file.
+func (idx *Index) Create(p string, content []byte) (*Entry, error) {
+	rel, err := pagePath(p, content)
+	if err != nil {
+		return nil, err
+	}
+	if matchAnyGlob(idx.ignoreIn, "/"+rel) || idx.SkipsFolder(path.Dir(rel)) {
+		return nil, fmt.Errorf("%w: wiki.toml's ignore leaves %q out", ErrBadPath, p)
+	}
+	abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel))
+	if _, err := inBundle(idx.Bundle.Dir, abs); err != nil {
+		return nil, err
+	}
+	made := missingDirs(filepath.Dir(abs))
+	undo := func() {
+		for _, d := range made {
+			os.Remove(d) // only an empty folder goes
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		undo()
+		return nil, err
+	}
+	if err := createFile(idx.Bundle.Dir, abs, content); err != nil {
+		undo()
+		if errors.Is(err, fs.ErrExist) {
+			return nil, fmt.Errorf("%w: %s", ErrExists, p)
+		}
+		return nil, err
+	}
+	return parseEntry(idx.Bundle.Dir, abs)
 }
 
 // link is os.Link, a variable so a test can play a filesystem without hard

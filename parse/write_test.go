@@ -639,3 +639,56 @@ func TestSetFieldListQuestionMark(t *testing.T) {
 		t.Errorf("%q: %v", out, err)
 	}
 }
+
+// CopyField puts a key back exactly as another version of the file writes
+// it, whatever its value: empty, a nested map, a list with a comment. A key
+// that version lacks is removed; one the content lacks is added.
+func TestCopyField(t *testing.T) {
+	const src = "---\ntype: note\nz:\nmeta:\n  owner: a\n  team: b\ntags: # sorted\n  - x\n  - y\n---\nbody\n"
+	for _, c := range []struct{ name, content, key, want string }{
+		{"an empty value", "---\ntype: note\nz: x\n---\nbody\n", "z", "---\ntype: note\nz:\n---\nbody\n"},
+		{"a nested map", "---\ntype: note\nmeta: {owner: c}\n---\nbody\n", "meta", "---\ntype: note\nmeta:\n  owner: a\n  team: b\n---\nbody\n"},
+		{"a list with a comment", "---\ntype: note\ntags: [x]\n---\nbody\n", "tags", "---\ntype: note\ntags: # sorted\n  - x\n  - y\n---\nbody\n"},
+		{"a key the content lacks", "---\ntype: note\n---\nbody\n", "z", "---\ntype: note\nz:\n---\nbody\n"},
+		{"a key the source lacks", "---\ntype: note\nnew: 1\n---\nbody\n", "new", "---\ntype: note\n---\nbody\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := CopyField(c.content, src, c.key)
+			if err != nil || got != c.want {
+				t.Errorf("got %q, %v; want %q", got, err, c.want)
+			}
+		})
+	}
+	// A key the content lacks lands where src has it: after the nearest key
+	// before it that the content has, else first. So a header restored one
+	// field at a time, in any order, comes back byte for byte.
+	const head = "---\ntitle: T\nz:\nstatus: todo\ntags:\n  - a\n---\nbody\n"
+	if got, err := CopyField("---\ntitle: T\nz:\ntags:\n  - a\n---\nbody\n", head, "status"); err != nil || got != head {
+		t.Errorf("a deleted key: got %q, %v", got, err)
+	}
+	keys := []string{"title", "z", "status", "tags"}
+	var permute func(done, left []string)
+	permute = func(done, left []string) {
+		if len(left) == 0 {
+			got := "body\n"
+			for _, k := range done {
+				var err error
+				if got, err = CopyField(got, head, k); err != nil {
+					t.Fatalf("%v: %v", done, err)
+				}
+			}
+			if got != head {
+				t.Errorf("restored in the order %v: %q", done, got)
+			}
+			return
+		}
+		for i := range left {
+			rest := append(append([]string{}, left[:i]...), left[i+1:]...)
+			permute(append(append([]string{}, done...), left[i]), rest)
+		}
+	}
+	permute(nil, keys)
+	if _, err := CopyField("---\ntype: note\n---\n", "---\n{a: 1}\n---\n", "a"); err == nil {
+		t.Error("copied from a header wiki can't edit safely")
+	}
+}

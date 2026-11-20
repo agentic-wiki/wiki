@@ -53,7 +53,10 @@ func refuse(format string, a ...any) error {
 //	after X
 //
 // Gaps: an inserted block keeps the gap given at the start of its text, or
-// takes the page's gap there. A deleted run between two blocks that stay
+// takes the page's gap there; but an item right after an item, or a row
+// right after a row, continues that list or table with the gap it already
+// uses (one line break for a row, and for a tight list), and the page's gap
+// then follows the inserted run. A deleted run between two blocks that stay
 // takes the narrower of the gaps around it with it, so the wider one separates
 // them now (at the start of the page, the gap after it; at the end, the gap
 // before it). And a gap new text meets is never narrower than the two kinds
@@ -448,6 +451,40 @@ func defaultGap(a, b string) string {
 	return "\n\n"
 }
 
+// continues is "item" when a block of kind b after one of kind a continues a
+// list, "row" when it continues a table, and "" otherwise.
+func continues(a, b string) string {
+	switch {
+	case a == "item" && b == "item":
+		return "item"
+	case (a == "row" || a == "table-head") && b == "row":
+		return "row"
+	}
+	return ""
+}
+
+// sameList reports two items of one list: the same bullet (-, * or +), or
+// both ordered with the same delimiter (. or )).
+func sameList(a, b Block) bool {
+	return a.Kind == "item" && b.Kind == "item" && listMarker(a.Text) == listMarker(b.Text)
+}
+
+// listMarker is what tells an item's list apart: its bullet, or the
+// delimiter after its number.
+func listMarker(text string) string {
+	t := strings.TrimLeft(text, " \t>")
+	if t == "" {
+		return ""
+	}
+	if strings.ContainsRune("-*+", rune(t[0])) {
+		return t[:1]
+	}
+	if d := strings.TrimLeft(t, "0123456789"); d != t && d != "" && (d[0] == '.' || d[0] == ')') {
+		return d[:1]
+	}
+	return ""
+}
+
 // kindsOf is the kinds of the first and last blocks of text, where it follows
 // a block of kind before. Rows are the one kind that depends on where they
 // are: after a row or a table's head, lines that all hold a pipe are rows,
@@ -648,14 +685,31 @@ func (m *merger) write() (string, error) {
 		if len(ins[j]) == 0 {
 			continue
 		}
+		// An item after an item, or a row after a row, continues that list or
+		// table, with the gap it already uses: the one after the anchor when
+		// the next block is an item of the same list, else the one before it
+		// when the block before is, else one line break. The page's gap after
+		// the anchor then comes after the inserted run.
+		listGap := nl
+		switch {
+		case j+1 < len(m.tb) && !m.gone[j+1] && sameList(m.tb[j], m.tb[j+1]):
+			listGap = gapAfter(j)
+		case j > 0 && !m.gone[j-1] && sameList(m.tb[j-1], m.tb[j]):
+			listGap = gapBefore(j)
+		}
 		var sb strings.Builder
 		for i, t := range ins[j] {
 			gap, t := splitGap(t)
 			tf, tl := kindsOf(t, prevKind)
 			if gap == "" {
-				if i == 0 {
+				switch family := continues(prevKind, tf); {
+				case family == "item":
+					gap = listGap
+				case family == "row":
+					gap = nl
+				case i == 0:
 					gap = m.gapAfter(j, tf)
-				} else {
+				default:
 					gap = defaultGap(prevKind, tf)
 				}
 			}

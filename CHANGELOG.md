@@ -2,6 +2,17 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.21.1
+
+### Added
+
+- **`Index.WriteIf(path, version, content)`** replaces a page only while it still has the version the caller read, all or nothing (`ErrChanged` otherwise, nothing written): for a write worked out from one read, where `ApplyBlocks` would merge. The path follows `Create`'s rules, except that a page `ignore` leaves out, or one inside a nested bundle, can be written. As for every write in `wiki`, a write landing between its read and its rename is lost: the check isn't atomic with the write. WikiShell's changes view undoes a page's hunk with it.
+- **`parse.CopyField(content, src, key)`** sets a key to the lines another version of the file gives it, byte for byte, so any value comes back exactly: empty, a nested map, a list with its comments. A key that version lacks is removed, and one the content lacks goes where that version has it, so a header restored one key at a time comes back byte for byte. WikiShell's changes view puts a field back as HEAD has it with it.
+
+### Fixed
+
+- **An item or a row added at the end of a list or a table continues it.** `parse.MergeBlocks` gave an inserted item (or row) with no leading line breaks the page's gap after its anchor, so after the last item of a list followed by a paragraph it came with a blank line: the list turned loose, and a table's new row became a paragraph of pipes. An item right after an item, or a row right after a row, now takes the gap the list or table already uses (one line break for a row, and for a tight list; a loose list keeps its blank lines), and the page's gap comes after the inserted run. This is the editor's Enter at the end of a list, and its new row.
+
 ## v0.21.0
 
 A guarded write of a page's body, block by block, so every app edits pages one way: only the blocks that changed are written, what the disk changed meanwhile is kept, and a page saved unchanged stays byte-identical.

@@ -93,6 +93,44 @@ func TestMergeBlocksGaps(t *testing.T) {
 	}
 }
 
+// An item inserted right after an item, or a row right after a row, with no
+// gap given, continues that list or table with the gap it already uses; the
+// page's gap after the anchor moves to after the inserted run. (The editor's
+// Enter at the end of a list, and its new row.)
+func TestAnInsertContinuesItsListOrTable(t *testing.T) {
+	for _, c := range []struct {
+		name, page string
+		after      int
+		texts      []string
+		want       string
+	}{
+		{"an item at the end of a tight list", "- a\n- b\n\nPara\n", 1, []string{"- new"}, "- a\n- b\n- new\n\nPara\n"},
+		{"a row at the end of a table", "| h |\n|---|\n| 1 |\n\nPara\n", 1, []string{"| 2 |"}, "| h |\n|---|\n| 1 |\n| 2 |\n\nPara\n"},
+		{"two items, one operation each", "- a\n- b\n\nPara\n", 1, []string{"- n1", "- n2"}, "- a\n- b\n- n1\n- n2\n\nPara\n"},
+		{"two items in one operation", "- a\n- b\n\nPara\n", 1, []string{"- n1\n- n2"}, "- a\n- b\n- n1\n- n2\n\nPara\n"},
+		{"a loose list keeps its blank lines", "- a\n\n- b\n\nPara\n", 1, []string{"- new"}, "- a\n\n- b\n\n- new\n\nPara\n"},
+		{"two items in a loose list", "- a\n\n- b\n\nPara\n", 1, []string{"- n1", "- n2"}, "- a\n\n- b\n\n- n1\n\n- n2\n\nPara\n"},
+		{"a list of one item", "Intro\n\n- a\n\nPara\n", 1, []string{"- b"}, "Intro\n\n- a\n- b\n\nPara\n"},
+		{"the first row of a table", "| h |\n|---|\n\nPara\n", 0, []string{"| 1 |"}, "| h |\n|---|\n| 1 |\n\nPara\n"},
+		{"after a loose list's first item", "- a\n\n- b\n", 0, []string{"- new"}, "- a\n\n- new\n\n- b\n"},
+		{"after a loose list's first item, the list after a paragraph", "Para\n\n- a\n\n- b\n", 1, []string{"- new"}, "Para\n\n- a\n\n- new\n\n- b\n"},
+		{"another list's gap doesn't count", "- a\n\n1. x\n\nPara\n", 1, []string{"2. y"}, "- a\n\n1. x\n2. y\n\nPara\n"},
+		{"a paragraph after an item keeps the page's gap", "- a\n- b\n\nPara\n", 1, []string{"New"}, "- a\n- b\n\nNew\n\nPara\n"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			bs := Blocks(c.page)
+			var ops []Op
+			for _, text := range c.texts {
+				ops = append(ops, Op{Op: "insert", After: c.after, Hash: bs[c.after].Hash, Text: text})
+			}
+			got, _, conflicts, _, err := MergeBlocks(hashes(bs), ops, c.page)
+			if err != nil || len(conflicts) > 0 || got != c.want {
+				t.Errorf("got %q %v %v, want %q", got, conflicts, err, c.want)
+			}
+		})
+	}
+}
+
 // When the page is still the base, nothing can conflict: the operations
 // apply as sent, and the result is exactly mine.
 func TestMergeBlocksOntoTheBaseIsMine(t *testing.T) {

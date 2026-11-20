@@ -305,6 +305,50 @@ func TestCreate(t *testing.T) {
 	})
 }
 
+// WriteIf replaces a page only while it still has the version the caller
+// read: all of the new bytes or nothing. It writes a page the index leaves
+// out too, and keeps the file's permissions.
+func TestWriteIf(t *testing.T) {
+	idx := build(t, map[string]string{"wiki.toml": "spec = \"0.1\"\nignore = [\"drafts/**\"]\n", "a.md": "---\ntype: note\n---\nshown\n", "drafts/d.md": "draft\n"})
+	shown := FileVersion([]byte("---\ntype: note\n---\nshown\n"))
+	abs := filepath.Join(idx.Bundle.Dir, "a.md")
+	os.Chmod(abs, 0o600)
+	if err := idx.WriteIf("/a.md", shown, []byte("---\ntype: note\n---\nundone\n")); err != nil {
+		t.Fatal(err)
+	}
+	if fi, _ := os.Stat(abs); fileOf(t, idx, "/a.md") != "---\ntype: note\n---\nundone\n" || fi.Mode().Perm() != 0o600 {
+		t.Errorf("file %q, mode %v", fileOf(t, idx, "/a.md"), fi.Mode())
+	}
+	if err := idx.WriteIf("/a.md", shown, []byte("again\n")); !errors.Is(err, ErrChanged) {
+		t.Errorf("at a stale version: %v, want ErrChanged", err)
+	}
+	if fileOf(t, idx, "/a.md") != "---\ntype: note\n---\nundone\n" {
+		t.Error("written at a stale version")
+	}
+	if err := idx.WriteIf("/gone.md", shown, []byte("x\n")); !errors.Is(err, ErrChanged) {
+		t.Errorf("a missing file: %v, want ErrChanged", err)
+	}
+	if err := idx.WriteIf("/drafts/d.md", FileVersion([]byte("draft\n")), []byte("draft 2\n")); err != nil || fileOf(t, idx, "/drafts/d.md") != "draft 2\n" {
+		t.Errorf("a page ignore leaves out: %v", err)
+	}
+	for _, p := range []string{"/../x.md", "/a//x.md", "/.git/x.md", "/x.txt", "/a:b.md"} {
+		if err := idx.WriteIf(p, shown, []byte("x\n")); !errors.Is(err, ErrBadPath) {
+			t.Errorf("%s: %v, want ErrBadPath", p, err)
+		}
+	}
+	if err := idx.WriteIf("/a.md", FileVersion([]byte("---\ntype: note\n---\nundone\n")), []byte(strings.Repeat("- x\n", parse.MaxBlocks+1))); !errors.Is(err, parse.ErrRefused) {
+		t.Errorf("over the cap: %v, want ErrRefused", err)
+	}
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "x.md"), []byte("outside\n"), 0o644)
+	if err := os.Symlink(outside, filepath.Join(idx.Bundle.Dir, "ext")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := idx.WriteIf("/ext/x.md", FileVersion([]byte("outside\n")), []byte("x\n")); !errors.Is(err, ErrOutsideBundle) {
+		t.Errorf("through a folder linked out: %v, want ErrOutsideBundle", err)
+	}
+}
+
 // On a filesystem without hard links (exFAT, some FUSE and SMB mounts), Create
 // still writes the entry and still never overwrites, and leaves no temp file.
 func TestCreateWithoutHardLinks(t *testing.T) {

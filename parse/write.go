@@ -59,6 +59,41 @@ func UnsetField(content, key string) (string, error) {
 	return edit(content, key, func(f *field) []string { return nil })
 }
 
+// CopyField sets key in content to the lines src gives it, byte for byte, so
+// any value comes back exactly as src writes it: empty, a nested map, a list
+// with its comments. A key src lacks is removed from content; one content
+// lacks goes where src has it, after the nearest key before it that content
+// has, else first in the header. src's header
+// must be one wiki can edit safely, as content's must; the refusals are
+// SetField's.
+func CopyField(content, src, key string) (string, error) {
+	h, d, unreadable, err := scanDecoded(src)
+	if err != nil {
+		return "", notRead(err)
+	}
+	var lines []string
+	before := []string{} // the keys src has before key, nearest first
+	if h.open >= 0 {
+		if err := editable(d, unreadable); err != nil {
+			return "", err
+		}
+		all := strings.Split(src, "\n")
+		for _, f := range h.fields {
+			if f.key == key {
+				if lines != nil {
+					return "", &EditError{Reason: fmt.Sprintf("has key %q twice in the version copied from", key)}
+				}
+				for _, l := range all[f.line : f.end+1] {
+					lines = append(lines, strings.TrimSuffix(l, "\r"))
+				}
+			} else if lines == nil {
+				before = append([]string{f.key}, before...)
+			}
+		}
+	}
+	return editAt(content, key, func(*field) []string { return lines }, before)
+}
+
 // EditError is why a write refused a header. Its message is "frontmatter
 // <Reason>", or "frontmatter of <Path> <Reason>" once index.Entry has set the
 // file's path.
@@ -88,7 +123,14 @@ func notRead(err error) *EditError {
 // it, a budget passed), or when any key but the edited one would change value
 // (an alias that now names another anchor).
 func edit(content, key string, render func(f *field) []string) (string, error) {
-	out, before, err := splice(content, key, render)
+	return editAt(content, key, render, nil)
+}
+
+// editAt is edit placing an absent key after the first of the keys in after
+// that the header has, or first in the header when it has none of them. With
+// after nil, it goes at the end, as for edit.
+func editAt(content, key string, render func(f *field) []string, after []string) (string, error) {
+	out, before, err := splice(content, key, render, after)
 	if err != nil || out == content {
 		return out, err
 	}
@@ -126,9 +168,9 @@ func readBack(before header, after string, edited ...string) (header, error) {
 	return now, nil
 }
 
-// splice is edit without the read-back. It also returns the header's decode
-// from before the write, for the read-back to compare against.
-func splice(content, key string, render func(f *field) []string) (string, header, error) {
+// splice is editAt without the read-back. It also returns the header's
+// decode from before the write, for the read-back to compare against.
+func splice(content, key string, render func(f *field) []string, after []string) (string, header, error) {
 	if err := validKey(key); err != nil {
 		return "", header{}, err
 	}
@@ -162,6 +204,18 @@ func splice(content, key string, render func(f *field) []string) (string, header
 		return "---\n" + strings.Join(repl, "\n") + "\n---\n" + content, d, nil
 	}
 	start, end := h.close, h.close-1 // absent: insert before the closing fence
+	if after != nil {
+		start, end = h.open+1, h.open // or first, unless a key of after is there
+	place:
+		for _, k := range after {
+			for _, g := range h.fields {
+				if g.key == k {
+					start, end = g.end+1, g.end
+					break place
+				}
+			}
+		}
+	}
 	if f != nil {
 		start, end = f.line, f.end
 	}
