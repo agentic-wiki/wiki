@@ -321,6 +321,27 @@ func TestHeadings(t *testing.T) {
 // Slug is GitHub's anchor rule: an underscore is a word character and stays
 // (where most sluggers turn it into a hyphen), punctuation goes, and a
 // heading with no letter or digit has an empty slug.
+// A file name from a title: its Slug, with runs of hyphens made one and
+// none at either end; "" for a title with no letter or digit.
+func TestFileSlug(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"Settlement rules", "settlement-rules"},
+		{"  Spaced   out  ", "spaced-out"},
+		{"A - B -- C", "a-b-c"},
+		{"Q3: plan, v2!", "q3-plan-v2"},
+		{"snake_case title", "snake_case-title"},
+		{"Élan vital", "élan-vital"},
+		{"---", ""},
+		{"__", ""},
+		{"!!!", ""},
+		{"", ""},
+	} {
+		if got := FileSlug(tc.in); got != tc.want {
+			t.Errorf("FileSlug(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestSlug(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"Simple", "simple"},

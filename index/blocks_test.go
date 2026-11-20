@@ -305,6 +305,34 @@ func TestCreate(t *testing.T) {
 	})
 }
 
+// CheckNewEntry says whether Create would take a path, before anything is
+// written: the same rules, ignore and where the file would land included,
+// and whether a file is already there.
+func TestCheckNewEntry(t *testing.T) {
+	idx := build(t, map[string]string{"wiki.toml": "spec = \"0.1\"\nignore = [\"drafts/**\"]\n", "a.md": "---\ntype: note\n---\n"})
+	if err := idx.CheckNewEntry("/notes/deep/new.md"); err != nil {
+		t.Errorf("a new path: %v", err)
+	}
+	if err := idx.CheckNewEntry("/a.md"); !errors.Is(err, ErrExists) {
+		t.Errorf("a taken path: %v, want ErrExists", err)
+	}
+	for _, p := range []string{"/../x.md", "/a//x.md", "/.git/x.md", "/notes/.x.md", "/x.txt", "/drafts/x.md", "/a:b.md"} {
+		if err := idx.CheckNewEntry(p); !errors.Is(err, ErrBadPath) {
+			t.Errorf("%s: %v, want ErrBadPath", p, err)
+		}
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(idx.Bundle.Dir, "ext")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := idx.CheckNewEntry("/ext/x.md"); !errors.Is(err, ErrOutsideBundle) {
+		t.Errorf("through a folder linked out: %v, want ErrOutsideBundle", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(idx.Bundle.Dir, "notes")); entries != nil {
+		t.Error("the check made a folder")
+	}
+}
+
 // WriteIf replaces a page only while it still has the version the caller
 // read: all of the new bytes or nothing. It writes a page the index leaves
 // out too, and keeps the file's permissions.

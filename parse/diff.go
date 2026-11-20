@@ -18,10 +18,13 @@ import (
 //	delete   At, Hash: the block
 //	move     At, Hash: the block, unchanged; After: the block it now follows
 //
-// Operations are in key order: (At, 0) for a replace or delete, (After, 1) for
-// an insert, so at one block its replace or delete comes first, then what is
-// inserted after it. A block takes at most one replace or delete; several
-// inserts after one block keep their order.
+// The operations MergeBlocks takes are in key order: (At, 0) for a replace or
+// delete, (After, 1) for an insert, so at one block its replace or delete
+// comes first, then what is inserted after it. A block takes at most one
+// replace or delete; several inserts after one block keep their order.
+// DiffBlocks returns its operations in the new page's order instead, a move
+// listed where its block lands: what follows one block (inserts and moves)
+// comes in the order listed.
 type Op struct {
 	Op     string  // replace | insert | delete | move
 	At     int     // replace, delete, move

@@ -435,6 +435,24 @@ func Slug(text string) string {
 	return b.String()
 }
 
+// FileSlug is a title made a file name, without its `.md`: its Slug, with
+// each run of hyphens made one and none at either end. It is "" for a title
+// with no letter or digit, which names no file.
+func FileSlug(title string) string {
+	var b strings.Builder
+	for _, r := range Slug(title) {
+		if r == '-' && (b.Len() == 0 || strings.HasSuffix(b.String(), "-")) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	slug := strings.TrimSuffix(b.String(), "-")
+	if !strings.ContainsFunc(slug, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }) {
+		return ""
+	}
+	return slug
+}
+
 // maskedLines returns body split into lines with fenced code blocks blanked
 // (line numbers preserved) so block-scanning parsers skip code. Fences follow
 // CommonMark: a line read past its `>` quote markers opens one with three or

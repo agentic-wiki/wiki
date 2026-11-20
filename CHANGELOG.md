@@ -2,6 +2,13 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.24.0
+
+### Added
+
+- **`parse.FileSlug(title)`** makes a title a file name: its `Slug` (lower case, spaces to hyphens, letters, digits, `-` and `_` kept), each run of hyphens made one and none at either end, or `""` for a title with no letter or digit. WikiShell's new-entry draft names files with it.
+- **`Index.CheckNewEntry(path)`** says why `Create` couldn't write a new entry at a path, writing nothing: the same rules (`ErrBadPath`, a path `ignore` leaves out included; `ErrOutsideBundle` where the file would really land), and `ErrExists` when a file is already there. `Create` runs the same check, so an app's draft and the create can't disagree.
+
 ## v0.23.1
 
 ### Fixed

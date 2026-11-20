@@ -152,6 +152,18 @@ func createFile(root, abs string, content []byte) error {
 // parse.MaxBlocks blocks (parse.ErrRefused). It returns the path without its
 // leading slash.
 func pagePath(p string, content []byte) (string, error) {
+	rel, err := pathRules(p)
+	if err != nil {
+		return "", err
+	}
+	if n := len(parse.Blocks(parse.Body(string(content)))); n > parse.MaxBlocks {
+		return "", fmt.Errorf("%w: the page has %d blocks, more than %d", parse.ErrRefused, n, parse.MaxBlocks)
+	}
+	return rel, nil
+}
+
+// pathRules is pagePath's rules for the path alone.
+func pathRules(p string) (string, error) {
 	rel := strings.TrimPrefix(p, "/")
 	if !strings.HasSuffix(rel, ".md") || path.Base(rel) == ".md" {
 		return "", fmt.Errorf("%w: %q is not a .md path", ErrBadPath, p)
@@ -163,9 +175,6 @@ func pagePath(p string, content []byte) (string, error) {
 		if strings.ContainsFunc(seg, func(r rune) bool { return r == '\\' || r == ':' || unicode.IsControl(r) }) {
 			return "", fmt.Errorf("%w: %q has a \\, : or control character", ErrBadPath, p)
 		}
-	}
-	if n := len(parse.Blocks(parse.Body(string(content)))); n > parse.MaxBlocks {
-		return "", fmt.Errorf("%w: the page has %d blocks, more than %d", parse.ErrRefused, n, parse.MaxBlocks)
 	}
 	return rel, nil
 }
@@ -222,6 +231,41 @@ var ErrExists = errors.New("a file exists at that path")
 // control character in a segment (not portable: a Windows stream name).
 var ErrBadPath = errors.New("not a path for a new entry")
 
+// CheckNewEntry reports why Create couldn't write a new entry at the bundle
+// path p, or nil, writing nothing: the same rules (ErrBadPath, a path
+// `ignore` leaves out included, and ErrOutsideBundle where the file would
+// really land), and ErrExists when a file is already there. An app drafting
+// a new page checks its path with it, so the draft and the create can't
+// disagree; Create still refuses a file that appears in between.
+func (idx *Index) CheckNewEntry(p string) error {
+	rel, err := pathRules(p)
+	if err != nil {
+		return err
+	}
+	abs, err := idx.newEntryAt(p, rel)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(abs); !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("%w: %s", ErrExists, p)
+	}
+	return nil
+}
+
+// newEntryAt is where a new entry at rel (p as given, for messages) would
+// be written, or why it can't: a path ignore leaves out, or one outside the
+// bundle once its folders' links are followed.
+func (idx *Index) newEntryAt(p, rel string) (string, error) {
+	if matchAnyGlob(idx.ignoreIn, "/"+rel) || idx.SkipsFolder(path.Dir(rel)) {
+		return "", fmt.Errorf("%w: wiki.toml's ignore leaves %q out", ErrBadPath, p)
+	}
+	abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel))
+	if _, err := inBundle(idx.Bundle.Dir, abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
 // Create writes a new entry at the bundle path p ("/notes/x.md") with content,
 // the whole file, making the folders it needs. It never overwrites: a file
 // already there is ErrExists. p must be a .md path with no empty, `.` or `..`
@@ -237,11 +281,8 @@ func (idx *Index) Create(p string, content []byte) (*Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	if matchAnyGlob(idx.ignoreIn, "/"+rel) || idx.SkipsFolder(path.Dir(rel)) {
-		return nil, fmt.Errorf("%w: wiki.toml's ignore leaves %q out", ErrBadPath, p)
-	}
-	abs := filepath.Join(idx.Bundle.Dir, filepath.FromSlash(rel))
-	if _, err := inBundle(idx.Bundle.Dir, abs); err != nil {
+	abs, err := idx.newEntryAt(p, rel)
+	if err != nil {
 		return nil, err
 	}
 	made := missingDirs(filepath.Dir(abs))
