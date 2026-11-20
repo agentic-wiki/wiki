@@ -2,6 +2,13 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.23.1
+
+### Fixed
+
+- **A block moved next to a changed one is a move.** `parse.DiffBlocks` found a move only when the block landed alone, so one moved with a new block written right after it, or landing after a replaced block, or whose old place was replaced, came back as a delete and an insert (or inside a replace). An app then showed two changes, and undoing one of them alone duplicated the block. Now a block of the old version that the new one adds once elsewhere, unchanged, is a `move` wherever it lands.
+- **What follows a block comes in the order listed.** `DiffBlocks` lists its operations in the new version's order, a move where its block lands: the inserts and moves after one block of the old version come in the order listed. An app that placed a block's inserts before its moves should follow the list instead.
+
 ## v0.23.0
 
 ### Breaking

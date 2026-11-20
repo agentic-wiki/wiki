@@ -98,8 +98,12 @@ type Conflict struct {
 // DiffBlocks lists the operations that turn the blocks of a into those of b,
 // anchored to a: replaces, inserts and deletes between the blocks the two
 // share, and a move for a block deleted once and inserted once elsewhere,
-// unchanged. Only the hashes of a are read, so a can be a version known only
-// by its hashes.
+// unchanged, wherever it lands (next to new blocks too). Only the hashes of a
+// are read, so a can be a version known only by its hashes.
+//
+// The operations come in the order of b: what follows one block of a (its
+// inserts and moves) comes in the order listed, and a move is listed where
+// its block lands.
 //
 // Blocks are matched by hash with Myers' diff in linear space, which pairs
 // identical blocks in order: between two blocks of one content, position
@@ -107,6 +111,33 @@ type Conflict struct {
 func DiffBlocks(a, b []Block) []Op {
 	ah, bh := hashes(a), hashes(b)
 	pairs := lcsPairs(ah, bh)
+
+	// A block of a no pair keeps, whose content b adds once where no pair
+	// keeps it, and no other, moved.
+	paired := make([]bool, len(a))
+	pairedB := make([]bool, len(b))
+	for _, p := range pairs {
+		paired[p[0]], pairedB[p[1]] = true, true
+	}
+	gone, added := map[string][]int{}, map[string][]int{}
+	for i, h := range ah {
+		if !paired[i] {
+			gone[h] = append(gone[h], i)
+		}
+	}
+	for j, h := range bh {
+		if !pairedB[j] {
+			added[h] = append(added[h], j)
+		}
+	}
+	movedFrom := map[int]int{} // b index -> the a index it moved from
+	movedA := make([]bool, len(a))
+	for h, g := range gone {
+		if len(g) == 1 && len(added[h]) == 1 {
+			movedFrom[added[h][0]], movedA[g[0]] = g[0], true
+		}
+	}
+
 	var ops []Op
 	anchor := func(i int) string {
 		if i < 0 {
@@ -117,55 +148,71 @@ func DiffBlocks(a, b []Block) []Op {
 	pi, pj := 0, 0
 	for _, p := range append(pairs, [2]int{len(a), len(b)}) {
 		f, t, jf, jt := pi, p[0], pj, p[1]
-		k, m := t-f, jt-jf
-		switch {
-		case k == 0 && m > 0:
-			ops = append(ops, Op{Op: "insert", After: f - 1, Hash: anchor(f - 1), Blocks: b[jf:jt]})
-		case k > 0:
-			// Paired one to one, the last of a taking what is left of b; what
-			// is left of a goes.
-			for x := 0; x < k; x++ {
-				switch {
-				case x < m && (x < k-1 || m == k):
-					ops = append(ops, Op{Op: "replace", At: f + x, Hash: ah[f+x], Blocks: b[jf+x : jf+x+1]})
-				case x < m:
-					ops = append(ops, Op{Op: "replace", At: f + x, Hash: ah[f+x], Blocks: b[jf+x : jt]})
-				default:
-					ops = append(ops, Op{Op: "delete", At: f + x, Hash: ah[f+x]})
-				}
+		var rest []int // the gap's blocks of a that didn't move
+		for i := f; i < t; i++ {
+			if !movedA[i] {
+				rest = append(rest, i)
 			}
+		}
+		// The gap's blocks of b, in runs of new blocks split by moved ones.
+		type run struct {
+			from, to int // new blocks b[from:to]
+			moved    int // the b index of the moved block after the run, or -1
+		}
+		var runs []run
+		start := jf
+		for j := jf; j < jt; j++ {
+			if _, ok := movedFrom[j]; ok {
+				runs = append(runs, run{start, j, j})
+				start = j + 1
+			}
+		}
+		runs = append(runs, run{start, jt, -1})
+
+		// The first run of new blocks pairs with the blocks of a that stay in
+		// the gap (as replaces and deletes); moved blocks before it land right
+		// after the block before the gap, and everything after it, after the
+		// gap's last block of a, in b's order.
+		after := f - 1
+		paired := false
+		emitMove := func(j int) {
+			ops = append(ops, Op{Op: "move", At: movedFrom[j], Hash: bh[j], After: after})
+		}
+		for _, r := range runs {
+			if !paired && (r.to > r.from || r.moved < 0) && len(rest) > 0 {
+				ops = append(ops, replaces(ah, b, rest, r.from, r.to)...)
+				paired, after = true, t-1
+			} else if r.to > r.from {
+				ops = append(ops, Op{Op: "insert", After: after, Hash: anchor(after), Blocks: b[r.from:r.to]})
+			}
+			if r.moved >= 0 {
+				emitMove(r.moved)
+			}
+		}
+		if !paired && len(rest) > 0 {
+			ops = append(ops, replaces(ah, b, rest, jt, jt)...)
 		}
 		pi, pj = p[0]+1, p[1]+1
 	}
-	return withMoves(ops)
+	return ops
 }
 
-// withMoves turns a delete and a one-block insert of the same block, each of
-// that content the only one, into a move.
-func withMoves(ops []Op) []Op {
-	del, ins := map[string][]int{}, map[string][]int{}
-	for i, o := range ops {
+// replaces pairs the blocks of a at rest with b[from:to], one to one, the
+// last of a taking what is left of b; what is left of a goes.
+func replaces(ah []string, b []Block, rest []int, from, to int) []Op {
+	var ops []Op
+	k, m := len(rest), to-from
+	for x, at := range rest {
 		switch {
-		case o.Op == "delete":
-			del[o.Hash] = append(del[o.Hash], i)
-		case o.Op == "insert" && len(o.Blocks) == 1:
-			ins[o.Blocks[0].Hash] = append(ins[o.Blocks[0].Hash], i)
+		case x < m && (x < k-1 || m == k):
+			ops = append(ops, Op{Op: "replace", At: at, Hash: ah[at], Blocks: b[from+x : from+x+1]})
+		case x < m:
+			ops = append(ops, Op{Op: "replace", At: at, Hash: ah[at], Blocks: b[from+x : to]})
+		default:
+			ops = append(ops, Op{Op: "delete", At: at, Hash: ah[at]})
 		}
 	}
-	drop := map[int]bool{}
-	for h, d := range del {
-		if len(d) == 1 && len(ins[h]) == 1 {
-			ops[d[0]] = Op{Op: "move", At: ops[d[0]].At, Hash: h, After: ops[ins[h][0]].After}
-			drop[ins[h][0]] = true
-		}
-	}
-	out := ops[:0]
-	for i, o := range ops {
-		if !drop[i] {
-			out = append(out, o)
-		}
-	}
-	return out
+	return ops
 }
 
 func hashes(bs []Block) []string {

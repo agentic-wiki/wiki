@@ -344,11 +344,110 @@ func TestDiffBlocks(t *testing.T) {
 		{"A\n\nB\n\nC\n", "A\n\nB1\n\nB2\n\nC\n", "replace at=1 after=0 B1 B2"},
 		{"A\n\nB\n\nC\n\nD\n\nE\n", "A\n\nC\n\nD\n\nE\n\nB\n", "move at=1 after=4"},
 		{"A\n", "A\n", ""},
+		// A block deleted once and inserted once elsewhere, unchanged, is a
+		// move wherever it lands: next to an inserted block (Dessy's case: the
+		// move first, then the insert after the same block, in the new page's
+		// order), after a replaced one, or where its old place was replaced.
+		{"## Goals\n\nShip it.\n\nKeep the files plain Markdown.\n\n## Risks\n\nScope creep.\n",
+			"## Goals\n\nShip it.\n\n## Risks\n\nScope creep.\n\nKeep the files plain Markdown.\n\nA new risk.\n",
+			"move at=2 after=4; insert at=0 after=4 A new risk."},
+		{"A\n\nB\n\nC\n\nD\n", "A\n\nC\n\nD2\n\nB\n", "replace at=3 after=0 D2; move at=1 after=3"},
+		{"A\n\nB\n\nC\n", "A\n\nX\n\nC\n\nB\n", "insert at=0 after=0 X; move at=2 after=0"},
+		{"A\n\nB\n\nC\n", "A\n\nC\n\nB\n\nNew\n", "move at=2 after=0; insert at=0 after=1 New"},
 	} {
 		if got := diff(c.a, c.b); got != c.want {
 			t.Errorf("%q -> %q:\n%s\nwant:\n%s", c.a, c.b, got, c.want)
 		}
 	}
+}
+
+// replayOps applies DiffBlocks' operations to a's hashes, by the rule they
+// follow: what comes after one block of a (inserts and moves) comes in the
+// order listed.
+func replayOps(a []string, ops []Op) []string {
+	at := map[int]Op{}
+	after := map[int][]Op{}
+	for _, o := range ops {
+		switch o.Op {
+		case "insert":
+			after[o.After] = append(after[o.After], o)
+		case "move":
+			at[o.At] = o
+			after[o.After] = append(after[o.After], o)
+		default:
+			at[o.At] = o
+		}
+	}
+	var out []string
+	tail := func(i int) {
+		for _, o := range after[i] {
+			if o.Op == "move" {
+				out = append(out, a[o.At])
+				continue
+			}
+			out = append(out, hashes(o.Blocks)...)
+		}
+	}
+	tail(-1)
+	for i, h := range a {
+		switch o, ok := at[i]; {
+		case !ok:
+			out = append(out, h)
+		case o.Op == "replace":
+			out = append(out, hashes(o.Blocks)...)
+		}
+		tail(i)
+	}
+	return out
+}
+
+// DiffBlocks' operations, replayed on the old version, give the new one
+// exactly: over every pair of versions of the recorded merges, and each page
+// with one block moved to just before a new block.
+func TestDiffBlocksReplaysToTheNewVersion(t *testing.T) {
+	dirs, err := os.ReadDir(filepath.Join("testdata", "merges"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(name, a, b string) {
+		t.Helper()
+		ab, bb := Blocks(a), Blocks(b)
+		if got, want := replayOps(hashes(ab), DiffBlocks(ab, bb)), hashes(bb); !slices.Equal(got, want) {
+			t.Errorf("%s: replayed %d blocks, want %d", name, len(got), len(want))
+		}
+	}
+	n := 0
+	for _, d := range dirs {
+		v := map[string]string{}
+		for _, f := range []string{"base", "mine", "theirs", "kept"} {
+			raw, err := os.ReadFile(filepath.Join("testdata", "merges", d.Name(), f+".md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			v[f] = Body(string(raw))
+		}
+		for _, x := range []string{"mine", "theirs", "kept"} {
+			check(d.Name()+" base->"+x, v["base"], v[x])
+			n++
+		}
+		bs := Blocks(v["base"])
+		if len(bs) > 3 {
+			// The second block moved to the end, with a new block after it.
+			moved := v["base"][:bs[1].Start] + v["base"][bs[2].Start:] + "\n\n" + bs[1].Text + "\n\nA block written just now.\n"
+			check(d.Name()+" a move next to an insert", v["base"], moved)
+			n++
+			unique := 0
+			for _, x := range bs {
+				if x.Hash == bs[1].Hash {
+					unique++
+				}
+			}
+			if unique == 1 && !slices.ContainsFunc(DiffBlocks(bs, Blocks(moved)), func(o Op) bool { return o.Op == "move" && o.Hash == bs[1].Hash }) {
+				t.Errorf("%s: the moved block isn't a move", d.Name())
+			}
+		}
+	}
+	t.Logf("%d diffs replayed", n)
 }
 
 // An operation travels as JSON with only the fields its kind has.
