@@ -2,6 +2,12 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.18.1
+
+### Added
+
+- **`Index.SkipsFolder(folder)`** reports whether `Build` never indexes anything below a folder: a hidden folder, or one `ignore` covers. `Build` skips folders by this very check, and no longer walks into them at all (it used to walk an ignored folder and leave out its files one by one), so a tool that follows the bundle's files, such as a watcher, can skip the same ones without copying the rules. `archive/**`, `**/tmp/**` and `archive/*/**` cover a folder. `archive/*` and `docs/**/*.md` match only some of its files, so they don't: those files are left out one by one. A zero `Index` skips hidden folders and nothing else, so a tool can ask it while a bundle can't be read.
+
 ## v0.18.0
 
 `[[board]]` and `[[graph]]` tables in `wiki.toml`, defined by the standard for the apps that show boards and graphs. `wiki` sets them aside and never reads inside them.

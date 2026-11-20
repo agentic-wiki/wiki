@@ -81,3 +81,40 @@ func TestMatchAnyGlob(t *testing.T) {
 		t.Error("no patterns must match nothing")
 	}
 }
+
+// A pattern covers a folder when it matches every path below it, at any depth.
+// One that matches only some of them (its direct files, its .md files) does not.
+func TestCoversGlob(t *testing.T) {
+	cases := []struct {
+		pattern, folder string
+		want            bool
+	}{
+		{"/archive/**", "/archive", true},
+		{"/archive/**", "/archive/old", true},
+		{"/archive/**", "/arch", false},
+		{"/archive/**", "/", false},
+		{"/a*/**", "/archive", true},
+		{"/**/tmp/**", "/tmp", true},
+		{"/**/tmp/**", "/a/b/tmp", true},
+		{"/**/tmp/**", "/a/tmp/x", true},
+		{"/**/tmp/**", "/a", false},
+		{"/**", "/", true},
+		{"/**", "/anything", true},
+		{"/archive/*/**", "/archive", true},    // `**` matches zero names, so its direct files too
+		{"/archive/*/*/**", "/archive", false}, // not its direct files
+		{"/**/*/**", "/", true},
+		{"/archive/*/**", "/archive/x", true},
+		{"/archive/**/**", "/archive", true},
+
+		// Files, never the whole folder: entries deeper down are still indexed.
+		{"/archive", "/archive", false},
+		{"/archive/*", "/archive", false},
+		{"/docs/**/*.md", "/docs", false},
+		{"/archive/**/x", "/archive", false},
+	}
+	for _, c := range cases {
+		if got := coversGlob(c.pattern, c.folder); got != c.want {
+			t.Errorf("coversGlob(%q, %q) = %v, want %v", c.pattern, c.folder, got, c.want)
+		}
+	}
+}

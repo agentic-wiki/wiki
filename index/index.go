@@ -166,7 +166,8 @@ func Build(b *bundle.Bundle) (*Index, error) {
 			return err
 		}
 		if d.IsDir() {
-			if path != b.Dir && strings.HasPrefix(d.Name(), ".") {
+			rel, _ := filepath.Rel(b.Dir, path)
+			if idx.SkipsFolder(rel) {
 				return fs.SkipDir
 			}
 			return nil
@@ -665,6 +666,41 @@ func (idx *Index) Orphans() []*Entry {
 		}
 	}
 	return out
+}
+
+// SkipsFolder reports whether Build never indexes anything below folder, a
+// bundle path ("/archive"; the leading slash is optional): a hidden folder
+// below the root (.git, .wiki), or one wiki.toml's `ignore` covers whole. Build
+// skips a folder by this very check, so a tool that follows the bundle's
+// files, such as a watcher, can skip the same folders.
+//
+// A pattern covers a folder when it matches every path below it (`archive/**`,
+// `**/tmp/**`, `archive/*/**`). One that matches only some (`archive/*`,
+// `docs/**/*.md`) does not: those files are left out one by one, and the
+// folder is still walked. A path climbing above the root is never a folder of
+// the bundle.
+//
+// A zero Index, with no bundle behind it, skips hidden folders and nothing
+// else. That is a promise: a tool can ask it while a bundle can't be read, and
+// any check added later that needs the bundle passes over a zero Index.
+func (idx *Index) SkipsFolder(folder string) bool {
+	rel := path.Clean(strings.TrimPrefix(filepath.ToSlash(folder), "/"))
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+	if rel != "." {
+		for _, name := range strings.Split(rel, "/") {
+			if strings.HasPrefix(name, ".") {
+				return true
+			}
+		}
+	}
+	for _, pattern := range idx.ignoreIn {
+		if coversGlob(pattern, "/"+rel) {
+			return true
+		}
+	}
+	return false
 }
 
 // orphanExempt reports whether p is covered by a wiki.toml `ignore_orphans`

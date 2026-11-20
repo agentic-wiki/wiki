@@ -37,6 +37,63 @@ func matchAnyGlob(patterns []string, p string) bool {
 	return false
 }
 
+// coversGlob reports whether pattern matches every path below the folder dir,
+// at any depth, by matchGlob's rules. Once dir's segments are matched, what
+// remains must match any one or more names: at least one `**`, plus at most
+// one segment that matches any name (`*`). So `archive/**`, `**/tmp/**` and
+// `archive/*/**` cover a folder, while `archive/*` (its direct files),
+// `archive/*/*/**` (not its direct files) and `docs/**/*.md` (its .md files)
+// do not.
+func coversGlob(pattern, dir string) bool {
+	if dir != "" {
+		dir = path.Clean(dir)
+	}
+	return coversSegs(splitSlash(pattern), splitSlash(dir))
+}
+
+func coversSegs(pat, dir []string) bool {
+	if len(dir) == 0 {
+		return matchesAnyNames(pat)
+	}
+	if len(pat) == 0 {
+		return false
+	}
+	if pat[0] == "**" {
+		if matchesAnyNames(pat) {
+			return true // this `**` takes the rest of dir, and what follows matches anything below
+		}
+		for i := 0; i <= len(dir); i++ {
+			if coversSegs(pat[1:], dir[i:]) {
+				return true
+			}
+		}
+		return false
+	}
+	if ok, err := path.Match(pat[0], dir[0]); err != nil || !ok {
+		return false
+	}
+	return coversSegs(pat[1:], dir[1:])
+}
+
+// matchesAnyNames reports whether pat matches every sequence of one or more
+// names: at least one `**` (zero or more names), and at most one segment that
+// matches any single name (`*`). A lone `*` matches exactly one name, so it
+// does not.
+func matchesAnyNames(pat []string) bool {
+	globstar, single := false, 0
+	for _, s := range pat {
+		switch {
+		case s == "**":
+			globstar = true
+		case strings.Trim(s, "*") == "":
+			single++ // `*`: any one name
+		default:
+			return false
+		}
+	}
+	return globstar && single <= 1
+}
+
 func splitSlash(s string) []string {
 	if s = strings.Trim(s, "/"); s == "" {
 		return nil

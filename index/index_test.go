@@ -3,7 +3,9 @@ package index
 import (
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -1641,5 +1643,113 @@ func TestMoveIncludeFrontmatterRewritesWholeSpan(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(idx.Bundle.Dir, "deps.md"))
 	if want := "related:\n  - /index.md\n\n# later ones\n  - /epics/authn.md\nother: /epics/auth.md.bak\n"; !strings.Contains(string(b), want) {
 		t.Errorf("deps.md = %q, want it to contain %q", b, want)
+	}
+}
+
+// Build skips a hidden folder and one wiki.toml's ignore covers whole, and
+// SkipsFolder says which: no entry is ever indexed below one. A climbing path
+// names an outside file exactly, never a folder of the bundle.
+func TestSkipsFolder(t *testing.T) {
+	idx := build(t, map[string]string{
+		"wiki.toml":        "spec = \"0.1\"\nignore = [\"archive/**\", \"/**/tmp/**\", \"drafts/*\", \"docs/**/*.md\", \"notes\", \"../outside/**\", \"outside/**\"]\n",
+		"archive/old/a.md": "---\ntype: note\n---\n",
+		"x/tmp/b.md":       "---\ntype: note\n---\n",
+		"drafts/c.md":      "---\ntype: note\n---\n",
+		"drafts/deep/d.md": "---\ntype: note\n---\n",
+		"docs/e.md":        "---\ntype: note\n---\n",
+		"notes/f.md":       "---\ntype: note\n---\n",
+		"kept/g.md":        "---\ntype: note\n---\n",
+	})
+	for folder, want := range map[string]bool{
+		"/archive":      true,
+		"/archive/old":  true,
+		"archive/old":   true, // the leading slash is optional
+		"/x/tmp":        true,
+		"/drafts":       false, // only its direct files
+		"/drafts/deep":  false,
+		"/docs":         false, // only its .md files
+		"/notes":        false, // an exact path names a file
+		"/kept":         false,
+		"/":             false,
+		"/.git":         true, // hidden, below the root
+		"/kept/.cache":  true,
+		"/.git/objects": true,
+		"../outside":    false, // outside the bundle, though outside/** is ignored inside it
+		"/outside":      true,
+	} {
+		if got := idx.SkipsFolder(folder); got != want {
+			t.Errorf("SkipsFolder(%q) = %v, want %v", folder, got, want)
+		}
+	}
+	// The same rules as Build: nothing indexed lives under an ignored folder.
+	for _, e := range idx.Entries {
+		for f := path.Dir(e.Path); f != "/"; f = path.Dir(f) {
+			if idx.SkipsFolder(f) {
+				t.Errorf("%s is indexed under %s, which SkipsFolder says Build skips", e.Path, f)
+			}
+		}
+	}
+	if !slices.ContainsFunc(idx.Entries, func(e *Entry) bool { return e.Path == "/drafts/deep/d.md" }) {
+		t.Error("/drafts/deep/d.md is not indexed: drafts/* must leave deeper entries in")
+	}
+}
+
+// Build never walks a folder it skips: an ignored or hidden folder it cannot
+// even read does not stop the build, as it would if Build went in.
+func TestBuildNeverWalksASkippedFolder(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a folder this user cannot read")
+	}
+	root := t.TempDir()
+	for rel, content := range map[string]string{
+		"wiki.toml":        "spec = \"0.1\"\nignore = [\"archive/**\"]\n",
+		"a.md":             "---\ntype: note\n---\n",
+		"archive/old/b.md": "---\ntype: note\n---\n",
+		".cache/c.md":      "---\ntype: note\n---\n",
+		"kept/d.md":        "---\ntype: note\n---\n",
+	} {
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{"archive", ".cache"} {
+		p := filepath.Join(root, dir)
+		if err := os.Chmod(p, 0o000); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { os.Chmod(p, 0o755) })
+	}
+	b, err := bundle.Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx, err := Build(b)
+	if err != nil {
+		t.Fatalf("Build went into a skipped folder: %v", err)
+	}
+	if len(idx.Entries) != 2 {
+		t.Errorf("entries = %d, want a.md and kept/d.md", len(idx.Entries))
+	}
+}
+
+// A zero Index, with no bundle, skips hidden folders and nothing else: a
+// promise tools rely on while a bundle can't be read.
+func TestZeroIndexSkipsOnlyHiddenFolders(t *testing.T) {
+	var idx Index
+	for folder, want := range map[string]bool{
+		"/.git":         true,
+		"/notes/.cache": true,
+		"/":             false,
+		"/notes":        false,
+		"/archive/old":  false,
+		"../outside":    false,
+	} {
+		if got := idx.SkipsFolder(folder); got != want {
+			t.Errorf("zero Index: SkipsFolder(%q) = %v, want %v", folder, got, want)
+		}
 	}
 }
