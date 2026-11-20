@@ -157,6 +157,7 @@ type Index struct {
 	orphanGlobs []string        // wiki.toml `ignore_orphans` as bundle-path globs: matched entries stay indexed but are not reported as orphans
 	patterns    []*pattern      // every in-bundle `ignore` and `ignore_orphans` pattern, for check to name those no file matches
 	skipped     []string        // the folders Build skipped (bundle paths), which check looks inside only for a pattern still unmatched
+	outside     []Issue         // the .md links Build left out because their file is not the bundle's content, for check to name
 }
 
 // pattern is one in-bundle pattern of wiki.toml, as written, and whether a
@@ -183,11 +184,31 @@ func Build(b *bundle.Bundle) (*Index, error) {
 			return nil
 		}
 		idx.markMatches("/" + filepath.ToSlash(rel))
-		if !strings.HasSuffix(d.Name(), ".md") {
-			return nil
+		if !strings.HasSuffix(d.Name(), ".md") || hidden(filepath.ToSlash(rel)) {
+			return nil // only markdown is content, and a dot file never is
 		}
 		if matchAnyGlob(idx.ignoreIn, "/"+filepath.ToSlash(rel)) {
 			return nil // wiki.toml `ignore`: a declared non-entry, excluded from the content index
+		}
+		// A link to a file outside the bundle (~/.bashrc, shipped by a cloned
+		// repo) is never an entry: reading it would show that file to whoever
+		// reads the wiki. Only a link can leave, since WalkDir enters no
+		// linked folder.
+		if d.Type()&fs.ModeSymlink != 0 {
+			if _, err := inBundle(b.Dir, path); errors.Is(err, ErrOutsideBundle) {
+				msg := "is a symlink to a file outside the bundle: not indexed"
+				if errors.Is(err, errDotPath) {
+					msg = "is a symlink to a file on a dot path (.git, a dot file): not indexed"
+				}
+				idx.outside = append(idx.outside, Issue{"warning", "/" + filepath.ToSlash(rel), msg})
+				return nil
+			}
+			// A link to nothing (a cloned repo can ship one) is left out
+			// too, rather than failing the build of the whole wiki.
+			if _, err := os.Stat(path); err != nil {
+				idx.outside = append(idx.outside, Issue{"warning", "/" + filepath.ToSlash(rel), "is a symlink to a file that doesn't exist: not indexed"})
+				return nil
+			}
 		}
 		e, err := parseEntry(b.Dir, path)
 		if err != nil {
@@ -722,6 +743,21 @@ func (idx *Index) Orphans() []*Entry {
 	return out
 }
 
+// hidden reports whether a path below the root (slash-separated, relative to
+// it) has a segment starting with `.`: a dot folder (.git, .wiki) or a dot
+// file (.notes.md). Neither is content: Build skips both by this one rule.
+func hidden(rel string) bool {
+	if rel == "." {
+		return false
+	}
+	for _, name := range strings.Split(rel, "/") {
+		if strings.HasPrefix(name, ".") {
+			return true
+		}
+	}
+	return false
+}
+
 // SkipsFolder reports whether Build never indexes anything below folder, a
 // bundle path ("/archive"; the leading slash is optional): a hidden folder
 // below the root (.git, .wiki), or one wiki.toml's `ignore` covers whole. Build
@@ -742,12 +778,8 @@ func (idx *Index) SkipsFolder(folder string) bool {
 	if rel == ".." || strings.HasPrefix(rel, "../") {
 		return false
 	}
-	if rel != "." {
-		for _, name := range strings.Split(rel, "/") {
-			if strings.HasPrefix(name, ".") {
-				return true
-			}
-		}
+	if hidden(rel) {
+		return true
 	}
 	for _, pattern := range idx.ignoreIn {
 		if coversGlob(pattern, "/"+rel) {
@@ -899,6 +931,11 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 	case idx.FileExists(dest):
 		return nil, fmt.Errorf("destination already exists: %s", dest)
 	}
+	// Judged where it would really land: a folder of the bundle may be a link
+	// out of it (ext -> ~/Documents), and a dot path is not content.
+	if _, err := inBundle(idx.Bundle.Dir, destAbs); err != nil {
+		return nil, fmt.Errorf("destination %s: %w", dest, err)
+	}
 	res := &MoveResult{From: src.Path, To: dest, DryRun: dryRun}
 
 	// Plan the frontmatter rewrites first, before any file is written (dry run
@@ -1031,7 +1068,7 @@ func (idx *Index) Move(srcArg, dest string, dryRun, includeFrontmatter bool) (*M
 		if w.e == src {
 			abs = movedAbs
 		}
-		if err := writeFile(abs, []byte(w.text)); err != nil {
+		if err := writeFile(w.e.root, abs, []byte(w.text)); err != nil {
 			errs = append(errs, fmt.Errorf("moved %s to %s, but %s was not rewritten (run wiki unresolved): %w", src.Path, dest, w.e.Path, err))
 		}
 	}
@@ -1099,6 +1136,7 @@ func (idx *Index) Check() []Issue {
 	for _, k := range idx.Bundle.Unknown {
 		issues = append(issues, Issue{"warning", "wiki.toml", "unknown wiki.toml key: " + k})
 	}
+	issues = append(issues, idx.outside...)
 	// A pattern that matches nothing is inert, and usually a mistake: a typo,
 	// or a folder named without `/**` (`drafts` names a file, not the folder).
 	for _, pat := range idx.unmatched() {
@@ -1288,7 +1326,7 @@ func (idx *Index) fixOKFVersion(apply bool) (*Fix, error) {
 		return nil, root.named(err)
 	}
 	if apply {
-		if err := writeFile(root.abs, []byte(updated)); err != nil {
+		if err := writeFile(root.root, root.abs, []byte(updated)); err != nil {
 			return nil, err
 		}
 	}
@@ -1369,7 +1407,7 @@ func (idx *Index) ConvertWikilinks(apply bool) ([]Fix, error) {
 		}
 		lines := strings.Split(raw, "\n")
 		if applyWikilinkRewrites(lines, rws) {
-			if err := writeFile(e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
+			if err := writeFile(e.root, e.abs, []byte(strings.Join(lines, "\n"))); err != nil {
 				return nil, err
 			}
 		}
@@ -1479,7 +1517,7 @@ func (idx *Index) normalizeEntryLinks(e *Entry, apply bool) ([]Fix, error) {
 	})
 	slices.Reverse(changes) // MapInternalLinks visits the links last to first
 	if apply && len(changes) > 0 {
-		if err := writeFile(e.abs, []byte(head+body)); err != nil {
+		if err := writeFile(e.root, e.abs, []byte(head+body)); err != nil {
 			return nil, err
 		}
 	}

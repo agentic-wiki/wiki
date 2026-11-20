@@ -22,6 +22,17 @@ var ErrNoFrontmatter = errors.New("reserved file carries no frontmatter")
 // file to write.
 var ErrNotInBundle = errors.New("entry is not a file in a bundle")
 
+// ErrOutsideBundle refuses a file whose real path, symlinks resolved, is not
+// the bundle's content: outside the bundle (a symlinked entry pointing at
+// ~/.bashrc, which a cloned repo can ship), or on a dot path inside it (a link
+// to .git/config). Writing through it would let whoever edits the wiki rewrite
+// that file; reading it would show it.
+var ErrOutsideBundle = errors.New("file is outside the bundle's content")
+
+// errDotPath tells, within ErrOutsideBundle, a real path on a dot path inside
+// the bundle from one outside it.
+var errDotPath = errors.New("on a dot path")
+
 // writeFile replaces a file's contents atomically: a temp file in the same
 // directory, then a rename over the target.
 //
@@ -45,14 +56,18 @@ var ErrNotInBundle = errors.New("entry is not a file in a bundle")
 // No fsync: the risk being closed here is a concurrent reader seeing a torn
 // file, not power loss. Durability across a crash would need the temp file and
 // its directory synced, which costs real time on every write.
-func writeFile(abs string, content []byte) error {
+//
+// Only a file inside the bundle is written: root is the bundle's folder, and
+// a file whose real path (symlinks resolved) is outside it is refused with
+// ErrOutsideBundle. A link that stays inside the bundle is written through.
+func writeFile(root, abs string, content []byte) error {
 	// Resolve first: a rename replaces whatever name it is given, so writing to
 	// a symlinked entry would swap the link for a regular file and silently
 	// fork it into two diverging copies. Writing through to the target is what
-	// a plain write did. A broken or unresolvable link falls back to the path
-	// as given, which then fails the same way a plain write would.
-	if real, err := filepath.EvalSymlinks(abs); err == nil {
-		abs = real
+	// a plain write did, as long as the target is in the bundle.
+	abs, err := inBundle(root, abs)
+	if err != nil {
+		return err
 	}
 	dir := filepath.Dir(abs)
 	tmp, err := os.CreateTemp(dir, ".wiki-*.tmp")
@@ -77,6 +92,53 @@ func writeFile(abs string, content []byte) error {
 		return err
 	}
 	return rename(name, abs)
+}
+
+// inBundle returns abs's real path (realPath), or ErrOutsideBundle when that
+// path is not the bundle's content: outside the bundle's real root, or hidden
+// relative to it (a segment starting with ., as Build skips). The one
+// containment rule: writes and moves refuse such a path, and Build leaves it
+// out.
+func inBundle(root, abs string) (string, error) {
+	real, err := realPath(abs)
+	if err != nil {
+		return "", err
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%w: %s", ErrOutsideBundle, real)
+	}
+	if hidden(filepath.ToSlash(rel)) {
+		return "", fmt.Errorf("%w: %s is %w", ErrOutsideBundle, real, errDotPath)
+	}
+	return real, nil
+}
+
+// realPath is abs with every symlink resolved. A path that can't be resolved
+// (not there yet, or a broken link) is its deepest existing folder resolved,
+// plus the rest as written: a write then replaces that name itself, never a
+// file it points to, and a move's new folders are judged where they would
+// really be made.
+func realPath(abs string) (string, error) {
+	if real, err := filepath.EvalSymlinks(abs); err == nil {
+		return real, nil
+	}
+	dir, rest := filepath.Dir(abs), filepath.Base(abs)
+	for {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest), nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("no existing folder above %s", abs)
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
 }
 
 // SetField writes key: value into the entry's frontmatter, preserving every
@@ -220,7 +282,7 @@ func (e *Entry) commit(before, after string) error {
 	if after == before {
 		return nil
 	}
-	if err := writeFile(e.abs, []byte(after)); err != nil {
+	if err := writeFile(e.root, e.abs, []byte(after)); err != nil {
 		return err
 	}
 	return e.refresh()

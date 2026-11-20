@@ -1821,3 +1821,22 @@ func TestTheFolderSuggestionIsCleaned(t *testing.T) {
 	}
 	t.Errorf("no warning, want %q", want)
 }
+
+// A dot file is not content, as a dot folder isn't: one rule for both, so
+// `.notes.md` and `a/.hidden.md` are never entries, while their neighbours are.
+func TestBuildSkipsDotFiles(t *testing.T) {
+	idx := build(t, map[string]string{
+		".notes.md":    "---\ntype: note\n---\n",
+		"a/.hidden.md": "---\ntype: note\n---\n",
+		"a/seen.md":    "---\ntype: note\n---\n",
+		"kept.md":      "---\ntype: note\n---\n",
+	})
+	var paths []string
+	for _, e := range idx.Entries {
+		paths = append(paths, e.Path)
+	}
+	slices.Sort(paths)
+	if want := []string{"/a/seen.md", "/kept.md"}; !slices.Equal(paths, want) {
+		t.Errorf("entries %v, want %v", paths, want)
+	}
+}

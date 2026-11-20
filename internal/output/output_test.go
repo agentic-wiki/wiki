@@ -122,12 +122,10 @@ func TestCell(t *testing.T) {
 }
 
 func TestTable(t *testing.T) {
-	header := []string{"date", "amount"}
-	rows := [][]string{{"2026-01", "100"}, {"2026-02", "200"}}
-	values := [][]any{{"2026-01", json.Number("100")}, {"2026-02", json.Number("200")}}
+	tb := parse.Table{Header: []string{"date", "amount"}, Rows: [][]string{{"2026-01", "100"}, {"2026-02", "200"}}}
 
 	var csvb bytes.Buffer
-	if err := Table(&csvb, "csv", header, rows, values); err != nil {
+	if err := Table(&csvb, "csv", tb); err != nil {
 		t.Fatal(err)
 	}
 	if got := csvb.String(); !strings.Contains(got, "date,amount\n") || !strings.Contains(got, "2026-01,100\n") {
@@ -135,14 +133,14 @@ func TestTable(t *testing.T) {
 	}
 
 	var tsvb bytes.Buffer
-	Table(&tsvb, "tsv", header, rows, values)
+	Table(&tsvb, "tsv", tb)
 	if got := tsvb.String(); !strings.Contains(got, "date\tamount\n") {
 		t.Errorf("tsv = %q", got)
 	}
 
 	// json: array of row objects with keys in HEADER order, not alphabetical
 	var jsb bytes.Buffer
-	Table(&jsb, "json", header, rows, values)
+	Table(&jsb, "json", tb)
 	js := jsb.String()
 	if !strings.Contains(js, `"date": "2026-01"`) || !strings.Contains(js, `"amount": 100`) {
 		t.Errorf("json = %q", js)
@@ -153,7 +151,7 @@ func TestTable(t *testing.T) {
 
 	// text: aligned columns, values present
 	var txt bytes.Buffer
-	Table(&txt, "text", header, rows, values)
+	Table(&txt, "text", tb)
 	if got := txt.String(); !strings.Contains(got, "date") || !strings.Contains(got, "2026-02") {
 		t.Errorf("text = %q", got)
 	}
@@ -222,6 +220,27 @@ func TestRowsOfOmitempty(t *testing.T) {
 	for i, want := range []bool{true, true, true, true, false, false} {
 		if _, isMissing := got[i].(missing); isMissing != want {
 			t.Errorf("%s: Missing = %v, want %v (value %#v)", rows.Header[i], isMissing, want, got[i])
+		}
+	}
+}
+
+// Every CSV and TSV wiki prints follows the spreadsheet rule, list and query
+// too: a frontmatter value an agent copied in can hold a formula.
+func TestRowsDisarmFormulas(t *testing.T) {
+	rows := Rows{
+		Header: []string{"_path", "title", "n"},
+		Values: [][]any{{"/a.md", `=HYPERLINK("https://evil.example","x")`, json.Number("-3")}},
+	}
+	for format, want := range map[string]string{
+		"csv": "_path,title,n\n/a.md,\"'=HYPERLINK(\"\"https://evil.example\"\",\"\"x\"\")\",-3\n",
+		"tsv": "_path\ttitle\tn\n/a.md\t\"'=HYPERLINK(\"\"https://evil.example\"\",\"\"x\"\")\"\t-3\n",
+	} {
+		var b bytes.Buffer
+		if err := EmitRows(&b, format, nil, nil, rows); err != nil {
+			t.Fatal(err)
+		}
+		if b.String() != want {
+			t.Errorf("%s:\n%q\nwant:\n%q", format, b.String(), want)
 		}
 	}
 }

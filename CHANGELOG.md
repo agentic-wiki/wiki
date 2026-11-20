@@ -2,6 +2,22 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.20.0
+
+### Security
+
+- **A write or a move never leaves the bundle's content.** Every write (`SetField`, `SetFields`, checkboxes, `move`, `tidy`, `check --fix`) refuses a file whose real path, symlinks resolved, is outside the bundle or on a dot path inside it, with `index.ErrOutsideBundle`. A cloned repo could ship `notes/setup.md` as a link to `~/.bashrc`, or to `../.git/config`, and a field write then rewrote that file (setting `core.hooksPath`, say). `move` judges its destination the same way, where it would really land: through a folder linked out of the bundle (`ext -> ~/Documents`), or onto a dot path, it is refused before any folder is made. A link that stays inside the bundle, to a file that is content, is still written through.
+- **A link to a file that isn't content is not an entry.** A `.md` link whose real file is outside the bundle or on a dot path is left out of the index (not listed, read or searched), so an app never shows that file to whoever reads the wiki, and `check` warns on it (`is a symlink to a file outside the bundle: not indexed`, or `… on a dot path`). The same rule as for writes decides. A link to a file that doesn't exist is left out and named the same way, instead of failing the build of the whole wiki.
+
+### Breaking
+
+- **A dot file is not an entry**, as a dot folder already isn't: `.notes.md` and `a/.hidden.md` stop being entries, by the same rule (any path segment starting with `.`). Rename such a file to keep it in the index.
+- **Every CSV and TSV `wiki` prints disarms formulas**: `wiki table`, `wiki list` and every other command's `--format csv|tsv`. A cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return, and isn't a plain number, gets a leading `'`, the header included, so Excel and Sheets show it as text instead of running it: a dataset or a frontmatter value an agent filled from an email could hold `=HYPERLINK(…)`. A byte order mark, spaces or no-break spaces before the first character don't hide it. Plain numbers such as `-3`, `+1.5` and `-0.5e3` keep their sign. So CSV and TSV bytes change for such cells. `--format json` (and `jsonl`) is the exact form, with every value as written.
+
+### Added
+
+- **`parse.Table.WriteCSV`, `WriteTSV` and `WriteJSON`** write a dataset's table exactly as `wiki table --format csv`, `tsv` and `json` print it, because the CLI now prints through them. An app that exports a dataset gives the CLI's bytes without copying its writer.
+
 ## v0.19.0
 
 ### Added

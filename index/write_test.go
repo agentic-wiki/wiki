@@ -218,7 +218,7 @@ func TestWriteIsAtomicAndKeepsMode(t *testing.T) {
 	if err := os.WriteFile(abs, []byte("old\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeFile(abs, []byte("new\n")); err != nil {
+	if err := writeFile(dir, abs, []byte("new\n")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := os.ReadFile(abs); string(got) != "new\n" {
@@ -336,7 +336,7 @@ func TestWriteFollowsSymlinks(t *testing.T) {
 	if err := os.Symlink("real.md", link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := writeFile(link, []byte("after\n")); err != nil {
+	if err := writeFile(dir, link, []byte("after\n")); err != nil {
 		t.Fatal(err)
 	}
 	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {

@@ -800,7 +800,7 @@ func cmdTable(args []string) int {
 		return 1 // no such table, like search with no match
 	}
 	tb := tables[sel-1]
-	if err := output.Table(os.Stdout, *format, tb.Header, tb.Rows, tb.TypedRows()); err != nil {
+	if err := output.Table(os.Stdout, *format, tb); err != nil {
 		fmt.Fprintln(os.Stderr, "wiki:", err)
 		return 2
 	}

@@ -15,6 +15,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/agentic-wiki/wiki/internal/sheet"
 	"github.com/agentic-wiki/wiki/parse"
 )
 
@@ -185,18 +186,19 @@ func compactJSON(v any) ([]byte, error) {
 }
 
 // write prints the rows as csv or tsv, through encoding/csv: a cell holding the
-// separator, a quote or a line break is wrapped in double quotes. With no
-// rows, the header alone is printed.
+// separator, a quote or a line break is wrapped in double quotes, and one a
+// spreadsheet would run as a formula gets a leading ' (internal/sheet). With
+// no rows, the header alone is printed.
 func (r Rows) write(w io.Writer, comma rune) error {
 	cw := csv.NewWriter(w)
 	cw.Comma = comma
-	cw.Write(r.Header)
+	cw.Write(sheet.Safe(r.Header))
 	for _, row := range r.Values {
 		cells := make([]string, len(row))
 		for i, v := range row {
 			cells[i] = Cell(v)
 		}
-		cw.Write(cells)
+		cw.Write(sheet.Safe(cells))
 	}
 	cw.Flush()
 	return cw.Error()
@@ -263,69 +265,23 @@ func structColumns(t reflect.Type) []column {
 }
 
 // Table renders a dataset's extracted table, whose columns are dynamic (named
-// by the header). text prints the cells as written in aligned columns, and csv
-// and tsv print them as written too. json and jsonl give the typed values
-// instead (values, aligned with cells): json an array of row objects keyed by
-// the header in column order, jsonl one such object per line.
-func Table(w io.Writer, format string, header []string, cells [][]string, values [][]any) error {
+// by the header). text prints the cells as written in aligned columns. csv,
+// tsv and json are the table's own writers (parse.Table.WriteCSV, WriteTSV and
+// WriteJSON), which apps call too, so they give the CLI's bytes. jsonl gives
+// one typed object per line.
+func Table(w io.Writer, format string, t parse.Table) error {
 	switch format {
 	case "json":
-		objs := make([]orderedObj, len(values))
-		for i, r := range values {
-			objs[i] = orderedObj{header, r}
-		}
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(objs)
+		return t.WriteJSON(w)
+	case "csv":
+		return t.WriteCSV(w)
 	case "jsonl":
-		return Rows{header, values}.writeJSONL(w)
-	case "csv", "tsv":
-		t := Rows{Header: header}
-		for _, r := range cells {
-			row := make([]any, len(r))
-			for i, c := range r {
-				row[i] = c
-			}
-			t.Values = append(t.Values, row)
-		}
-		return EmitRows(w, format, nil, nil, t)
+		return Rows{t.Header, t.TypedRows()}.writeJSONL(w)
+	case "tsv":
+		return t.WriteTSV(w)
 	default:
-		return alignedTable(w, header, cells)
+		return alignedTable(w, t.Header, t.Rows)
 	}
-}
-
-// orderedObj marshals to a JSON object preserving key order (a table's column
-// order), which encoding/json's sorted-key map handling would not.
-type orderedObj struct {
-	keys []string
-	vals []any
-}
-
-func (o orderedObj) MarshalJSON() ([]byte, error) {
-	var b bytes.Buffer
-	b.WriteByte('{')
-	for i, k := range o.keys {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		var val any
-		if i < len(o.vals) {
-			val = o.vals[i]
-		}
-		kb, err := json.Marshal(k)
-		if err != nil {
-			return nil, err
-		}
-		vb, err := json.Marshal(val)
-		if err != nil {
-			return nil, err
-		}
-		b.Write(kb)
-		b.WriteByte(':')
-		b.Write(vb)
-	}
-	b.WriteByte('}')
-	return b.Bytes(), nil
 }
 
 // alignedTable prints the table as space-padded columns, for human reading.
