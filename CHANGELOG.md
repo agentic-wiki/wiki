@@ -2,6 +2,20 @@
 
 All notable changes to `wiki` are documented here. This project follows [semantic versioning](https://semver.org); while pre-1.0, breaking changes bump the minor version.
 
+## v0.22.0
+
+### Breaking
+
+- **Every CSV field is quoted** (`--format csv` of every command, and `parse.Table.WriteCSV`): `"date","amount"`, not `date,amount`. The records are the same, and any CSV reader reads them the same, but a script that compares bytes or splits lines on `,` sees new output. TSV is unchanged.
+
+### Security
+
+- **A `;` can no longer split a CSV cell into a live formula.** Excel splits a CSV on the locale's list separator, `;` in most of Europe, and wiki quoted only cells holding a comma, a quote or a line break, so `x;=WEBSERVICE(B9&B10)` opened as `x` and a formula that sends other cells away. The `'` guard looks at a cell's first character only, so it couldn't see this one. Quoting every field keeps the cell whole. TSV keeps its quoting: readers split it on tabs alone.
+
+### Fixed
+
+- **A to-do inside a quote or a callout is a to-do.** `parse.Checkboxes` (an entry's `Checkboxes`, and `wiki checkboxes`) now lists `> - [ ] call the bank`, under any depth of `>`, with its text without the quote markers, and `Entry.SetCheckbox` ticks it. Before, such an item was left out, so an app couldn't tick it. Fenced code follows CommonMark for every scan: a fence inside a quote is code too, read past its `>` markers and ending with its quote, and an open fence is closed only by a fence line at its quote depth, of its character and at least its length. So a to-do, a heading or a link in such code isn't one, and a ``` shown inside a `~~~` block no longer ends it.
+
 ## v0.21.1
 
 ### Added

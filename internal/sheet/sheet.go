@@ -3,6 +3,9 @@
 package sheet
 
 import (
+	"bufio"
+	"encoding/csv"
+	"io"
 	"regexp"
 	"strings"
 )
@@ -35,4 +38,34 @@ func Safe(cells []string) []string {
 		out[i] = c
 	}
 	return out
+}
+
+// Write prints rows, the header first, as CSV (comma ',') or TSV ('\t'),
+// every cell through Safe. Every CSV field is quoted, a `"` in it doubled:
+// Excel splits a CSV on the locale's list separator, `;` in most of Europe,
+// and an unquoted `x;=WEBSERVICE(…)` would open as `x` plus a live formula
+// that Safe, looking at the first character, can't see. TSV is quoted as
+// encoding/csv does (only a field holding a tab, a quote or a line break),
+// since readers split it on tabs alone.
+func Write(w io.Writer, comma rune, rows [][]string) error {
+	if comma != ',' {
+		cw := csv.NewWriter(w)
+		cw.Comma = comma
+		for _, row := range rows {
+			cw.Write(Safe(row))
+		}
+		cw.Flush()
+		return cw.Error()
+	}
+	bw := bufio.NewWriter(w)
+	for _, row := range rows {
+		for i, c := range Safe(row) {
+			if i > 0 {
+				bw.WriteByte(',')
+			}
+			bw.WriteString(`"` + strings.ReplaceAll(c, `"`, `""`) + `"`)
+		}
+		bw.WriteByte('\n')
+	}
+	return bw.Flush()
 }

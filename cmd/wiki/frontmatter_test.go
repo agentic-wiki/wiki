@@ -197,9 +197,9 @@ func writeCSVBundle(t *testing.T) {
 func TestCmdListCSVColumns(t *testing.T) {
 	writeCSVBundle(t)
 	out, errOut, code := captureAll(t, func() int { return cmdList([]string{"--format", "csv"}) })
-	want := "_path,type,b,d,l,n,s,x,z\n" +
+	want := quotedCSV("_path,type,b,d,l,n,s,x,z\n" +
 		"/a.md,entry,true,,\"[1, \"\"a,b\"\", \"\"<i>\"\"]\",10,7372,0.2,\n" +
-		"/b.md,entry,,2026-06-30,,7,,,\n"
+		"/b.md,entry,,2026-06-30,,7,,,\n")
 	if code != 0 || out != want || errOut != "" {
 		t.Errorf("list --format csv: exit %d, stderr %q\n got %q\nwant %q", code, errOut, out, want)
 	}
@@ -222,7 +222,7 @@ func TestCmdListCSVFields(t *testing.T) {
 		{"type,n", "_path,type,n\n/a.md,entry,10\n/b.md,entry,7\n"},
 	} {
 		out, errOut, code := captureAll(t, func() int { return cmdList([]string{"--format", "csv", "--fields", tc.fields}) })
-		if code != 0 || out != tc.want || errOut != "" {
+		if code != 0 || out != quotedCSV(tc.want) || errOut != "" {
 			t.Errorf("--fields %q: exit %d, stderr %q\n got %q\nwant %q", tc.fields, code, errOut, out, tc.want)
 		}
 	}
@@ -256,7 +256,7 @@ func TestCmdListFieldsErrors(t *testing.T) {
 func TestCmdListFieldsMissingKeys(t *testing.T) {
 	writeCSVBundle(t)
 	out, errOut, code := captureAll(t, func() int { return cmdList([]string{"--format", "csv", "--fields", "roe,n,pe"}) })
-	if want := "_path,roe,n,pe\n/a.md,,10,\n/b.md,,7,\n"; code != 0 || out != want {
+	if want := quotedCSV("_path,roe,n,pe\n/a.md,,10,\n/b.md,,7,\n"); code != 0 || out != want {
 		t.Errorf("exit %d\n got %q\nwant %q", code, out, want)
 	}
 	wantErr := "wiki: warning: --fields: no listed entry has \"roe\"\nwiki: warning: --fields: no listed entry has \"pe\"\n"
@@ -267,7 +267,7 @@ func TestCmdListFieldsMissingKeys(t *testing.T) {
 	out, errOut, code = captureAll(t, func() int {
 		return cmdList([]string{"--format", "csv", "--fields", "roe", "--where", "type=none"})
 	})
-	if code != 0 || out != "_path,roe\n" || errOut != "" {
+	if code != 0 || out != quotedCSV("_path,roe\n") || errOut != "" {
 		t.Errorf("no entries: exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 }

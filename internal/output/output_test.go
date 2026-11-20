@@ -57,7 +57,7 @@ func TestEmitCSV(t *testing.T) {
 	if err := Emit(&b, "csv", nil, rows); err != nil {
 		t.Fatal(err)
 	}
-	want := "path,count,done,tags\n/a.md,2,true,\"[x, \"\"<y>\"\"]\"\n\"has,comma\",0,false,\n" // a list is its Flow
+	want := "\"path\",\"count\",\"done\",\"tags\"\n\"/a.md\",\"2\",\"true\",\"[x, \"\"<y>\"\"]\"\n\"has,comma\",\"0\",\"false\",\"\"\n" // a list is its Flow
 	if b.String() != want {
 		t.Errorf("csv:\n got %q\nwant %q", b.String(), want)
 	}
@@ -75,7 +75,7 @@ func TestEmitRowsEdges(t *testing.T) {
 	// an empty typed slice still yields the header (column type is known)
 	var b bytes.Buffer
 	Emit(&b, "csv", nil, []sample{})
-	if b.String() != "path,count,done,tags\n" {
+	if b.String() != "\"path\",\"count\",\"done\",\"tags\"\n" {
 		t.Errorf("empty slice should be header only, got %q", b.String())
 	}
 	// a single struct is one row, never the text lines
@@ -84,7 +84,7 @@ func TestEmitRowsEdges(t *testing.T) {
 		X int    `json:"x"`
 		Y string `json:"y"`
 	}{1, "a\nb"})
-	if want := "x,y\n1,\"a\nb\"\n"; b.String() != want {
+	if want := "\"x\",\"y\"\n\"1\",\"a\nb\"\n"; b.String() != want {
 		t.Errorf("struct csv: got %q, want %q", b.String(), want)
 	}
 	// anything else has no rows: an error, not a fallback
@@ -128,7 +128,7 @@ func TestTable(t *testing.T) {
 	if err := Table(&csvb, "csv", tb); err != nil {
 		t.Fatal(err)
 	}
-	if got := csvb.String(); !strings.Contains(got, "date,amount\n") || !strings.Contains(got, "2026-01,100\n") {
+	if got := csvb.String(); !strings.Contains(got, "\"date\",\"amount\"\n") || !strings.Contains(got, "\"2026-01\",\"100\"\n") {
 		t.Errorf("csv = %q", got)
 	}
 
@@ -179,7 +179,7 @@ func TestEmitJSONL(t *testing.T) {
 	// csv of the same rows: Missing and nil are both empty cells
 	b.Reset()
 	EmitRows(&b, "csv", nil, nil, rows)
-	if want := "_path,n,tags,z\n/a.md,10,\"[x, \"\"<y>\"\"]\",\n/b.md,,,s\n"; b.String() != want {
+	if want := "\"_path\",\"n\",\"tags\",\"z\"\n\"/a.md\",\"10\",\"[x, \"\"<y>\"\"]\",\"\"\n\"/b.md\",\"\",\"\",\"s\"\n"; b.String() != want {
 		t.Errorf("csv:\n got %q\nwant %q", b.String(), want)
 	}
 	// an empty result is nothing in jsonl, the header alone in csv
@@ -232,7 +232,7 @@ func TestRowsDisarmFormulas(t *testing.T) {
 		Values: [][]any{{"/a.md", `=HYPERLINK("https://evil.example","x")`, json.Number("-3")}},
 	}
 	for format, want := range map[string]string{
-		"csv": "_path,title,n\n/a.md,\"'=HYPERLINK(\"\"https://evil.example\"\",\"\"x\"\")\",-3\n",
+		"csv": "\"_path\",\"title\",\"n\"\n\"/a.md\",\"'=HYPERLINK(\"\"https://evil.example\"\",\"\"x\"\")\",\"-3\"\n",
 		"tsv": "_path\ttitle\tn\n/a.md\t\"'=HYPERLINK(\"\"https://evil.example\"\",\"\"x\"\")\"\t-3\n",
 	} {
 		var b bytes.Buffer

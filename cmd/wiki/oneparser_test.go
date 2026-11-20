@@ -137,7 +137,7 @@ func TestNoValueAgrees(t *testing.T) {
 		if got := strings.Contains(matched, " /"+name+" "); got != empty {
 			t.Errorf("%s: --where k= matched %v, want %v", name, got, empty)
 		}
-		if got := strings.Contains(out, "/"+name+",\n"); got != empty {
+		if got := strings.Contains(out, `"/`+name+`",""`+"\n"); got != empty {
 			t.Errorf("%s: empty csv cell %v, want %v\n%s", name, got, empty, out)
 		}
 	}
@@ -152,11 +152,11 @@ func TestPropertyCountsItems(t *testing.T) {
 		"b.md":      "---\ntype: note\ntags: [x]\nraw:\n  - {path: a.pdf}\n  - {}\n---\n",
 	})
 	out, code := capture(t, func() int { return cmdProperty([]string{"tags", "--counts", "--format", "csv"}) })
-	if want := "name,count\nx,2\ny,1\n"; code != 0 || out != want {
+	if want := quotedCSV("name,count\nx,2\ny,1\n"); code != 0 || out != want {
 		t.Errorf("property tags:\n got %q\nwant %q", out, want)
 	}
 	out, code = capture(t, func() int { return cmdProperty([]string{"raw", "--counts", "--format", "csv"}) })
-	if want := "name,count\n{path: a.pdf},2\n{path: b.pdf},1\n"; code != 0 || out != want {
+	if want := quotedCSV("name,count\n{path: a.pdf},2\n{path: b.pdf},1\n"); code != 0 || out != want {
 		t.Errorf("property raw:\n got %q\nwant %q", out, want)
 	}
 }
@@ -196,8 +196,8 @@ func TestListJSONNested(t *testing.T) {
 func TestListCSVNested(t *testing.T) {
 	writeFiles(t, nestedBundle)
 	out, code := capture(t, func() int { return cmdList([]string{"--format", "csv"}) })
-	want := "_path,type,data_as_of,raw,tags,title\n" +
-		`/acme.md,dataset,"{income: 2025-12-31, balance: 2025-09-30}","[{path: a.pdf, pages: 40, meta: {form: 10-K, year: 2015}}]","[finance, 10-K, ""yes""]",Acme's filings` + "\n"
+	want := quotedCSV("_path,type,data_as_of,raw,tags,title\n" +
+		`/acme.md,dataset,"{income: 2025-12-31, balance: 2025-09-30}","[{path: a.pdf, pages: 40, meta: {form: 10-K, year: 2015}}]","[finance, 10-K, ""yes""]",Acme's filings` + "\n")
 	if code != 0 || out != want {
 		t.Errorf("csv:\n got %q\nwant %q", out, want)
 	}
@@ -215,7 +215,7 @@ func TestCSVListCellIsFlowYAML(t *testing.T) {
 		t.Errorf("list tsv:\n got %q\nwant %q", out, want)
 	}
 	out, code = capture(t, func() int { return cmdTable([]string{"n.md", "--format", "csv"}) })
-	if want := "x,y\nyes,[a]\n"; code != 0 || out != want {
+	if want := quotedCSV("x,y\nyes,[a]\n"); code != 0 || out != want {
 		t.Errorf("table csv:\n got %q\nwant %q", out, want)
 	}
 	t.Chdir(t.TempDir())

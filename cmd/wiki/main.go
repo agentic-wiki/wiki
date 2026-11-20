@@ -53,7 +53,8 @@ Two filters, available wherever a set of entries is narrowed (list, search, dump
 list and orphans --format json give unquoted numbers, true/false and null as JSON values (quoted
   values stay strings); csv/tsv add one column per frontmatter key (choose them with --fields).
   Only _path and type have fixed positions: scripts should name their columns with --fields
-tsv quotes like csv: a cell with a quote, tab or newline is wrapped in double quotes
+csv quotes every field; tsv quotes a cell with a quote, tab or newline. A cell a spreadsheet
+  would run as a formula starts with ' in both
 Exit codes: 0 ok, 1 no match or check errors, 2 error
 `
 

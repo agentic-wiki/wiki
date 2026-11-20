@@ -232,7 +232,7 @@ func TestInitExampleFolders(t *testing.T) {
 		}
 	}
 	t.Chdir(dir)
-	if out, code := capture(t, func() int { return cmdTable([]string{"data/expenses.md", "--format", "csv"}) }); code != 0 || out != "date,amount,currency,category,note\n" {
+	if out, code := capture(t, func() int { return cmdTable([]string{"data/expenses.md", "--format", "csv"}) }); code != 0 || out != quotedCSV("date,amount,currency,category,note\n") {
 		t.Errorf("table: exit %d, %q", code, out)
 	}
 	if out, errOut, code := captureAll(t, func() int { return cmdCheck(nil) }); code != 0 || errOut != "" || out != "ok: no issues found\n" {

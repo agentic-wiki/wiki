@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/csv"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -66,6 +68,29 @@ func capture(t *testing.T, f func() int) (string, int) {
 	code := f()
 	os.Stdout = old
 	return read(), code
+}
+
+// quotedCSV is a CSV written with only the needed quotes, as wiki wrote it
+// before v0.22.0, with every field quoted, as wiki writes it now: an expected
+// output kept readable, compared as the bytes the command must print.
+func quotedCSV(s string) string {
+	r := csv.NewReader(strings.NewReader(s))
+	r.FieldsPerRecord = -1
+	records, err := r.ReadAll()
+	if err != nil {
+		panic(fmt.Sprintf("quotedCSV(%q): %v", s, err))
+	}
+	var b strings.Builder
+	for _, rec := range records {
+		for i, f := range rec {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(`"` + strings.ReplaceAll(f, `"`, `""`) + `"`)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
 
 func TestCmdRead(t *testing.T) {
@@ -738,7 +763,7 @@ func TestCmdListJSONFrontmatter(t *testing.T) {
 	// csv carries the same frontmatter: _path, type, then every other key; the
 	// frontmatter name:/path: are columns of their own
 	out, _ = capture(t, func() int { return cmdList([]string{"--format", "csv"}) })
-	if want := "_path,type,name,path,status,tags,title\n/dana.md,person,Dana Smith,/custom,active,staff,A\n"; out != want {
+	if want := quotedCSV("_path,type,name,path,status,tags,title\n/dana.md,person,Dana Smith,/custom,active,staff,A\n"); out != want {
 		t.Errorf("csv = %q, want %q", out, want)
 	}
 }
@@ -904,7 +929,7 @@ func TestCmdTable(t *testing.T) {
 
 	// a lone table needs no flag: csv
 	out, code := capture(t, func() int { return cmdTable([]string{"--format", "csv", "one.md"}) })
-	if code != 0 || !strings.Contains(out, "date,amt") || !strings.Contains(out, "2026-01,100") {
+	if code != 0 || !strings.Contains(out, `"date","amt"`) || !strings.Contains(out, `"2026-01","100"`) {
 		t.Errorf("csv table: %q (code %d)", out, code)
 	}
 
@@ -920,7 +945,7 @@ func TestCmdTable(t *testing.T) {
 
 	// --n selects (opt-in)
 	out, code = capture(t, func() int { return cmdTable([]string{"--n", "2", "--format", "csv", "multi.md"}) })
-	if code != 0 || !strings.Contains(out, "c,d") || !strings.Contains(out, "3,4") {
+	if code != 0 || !strings.Contains(out, `"c","d"`) || !strings.Contains(out, `"3","4"`) {
 		t.Errorf("--n 2: %q (code %d)", out, code)
 	}
 

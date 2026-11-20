@@ -493,9 +493,10 @@ func (e *Entry) refresh() error {
 	return nil
 }
 
-// checkboxMark matches a GFM checkbox's mark, capturing the single character
-// between the brackets so exactly that character can be replaced.
-var checkboxMark = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]`)
+// checkboxMark matches a GFM checkbox's mark, in a quote or callout too,
+// capturing the single character between the brackets so exactly that
+// character can be replaced.
+var checkboxMark = regexp.MustCompile(`^[ \t]*(?:>[ \t]*)*[-*+] \[([ xX])\]`)
 
 // reserved reports whether the entry is one of the two filenames the format
 // defines as carrying no frontmatter.

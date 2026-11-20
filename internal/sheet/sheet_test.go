@@ -2,6 +2,7 @@ package sheet
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +39,26 @@ func TestSafe(t *testing.T) {
 	in := []string{"=a", "b"}
 	if out := Safe(in); !slices.Equal(in, []string{"=a", "b"}) || out[0] != "'=a" {
 		t.Errorf("Safe changed its input or missed a cell: in %q, out %q", in, out)
+	}
+}
+
+// Every CSV field is quoted, so a `;` can't split a cell for Excel in a
+// locale whose list separator is `;` (most of Europe): `x;=WEBSERVICE(…)`
+// stays one cell of text, never `x` plus a live formula. TSV keeps
+// encoding/csv's quoting: that split is Excel's rule for CSV.
+func TestWriteQuotesEveryCSVField(t *testing.T) {
+	rows := [][]string{{"a", "b"}, {"x;=WEBSERVICE(B9&B10)", "-3"}, {`say "hi"`, ""}}
+	var csv, tsv strings.Builder
+	if err := Write(&csv, ',', rows); err != nil {
+		t.Fatal(err)
+	}
+	if want := "\"a\",\"b\"\n\"x;=WEBSERVICE(B9&B10)\",\"-3\"\n\"say \"\"hi\"\"\",\"\"\n"; csv.String() != want {
+		t.Errorf("csv:\n%q\nwant\n%q", csv.String(), want)
+	}
+	if err := Write(&tsv, '\t', [][]string{{"a", "=1"}, {"x;y", "-3"}}); err != nil {
+		t.Fatal(err)
+	}
+	if want := "a\t'=1\nx;y\t-3\n"; tsv.String() != want {
+		t.Errorf("tsv:\n%q\nwant\n%q", tsv.String(), want)
 	}
 }

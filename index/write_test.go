@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agentic-wiki/wiki/bundle"
+	"github.com/agentic-wiki/wiki/parse"
 )
 
 // The contract the write API exists to keep: setting a field changes that
@@ -191,6 +192,38 @@ func TestSetCheckbox(t *testing.T) {
 	}
 	if err := e.SetCheckbox(9999, true); err == nil {
 		t.Error("expected an error for a line past the end")
+	}
+}
+
+// A to-do inside a callout is listed, and ticks both ways: by its line
+// (SetCheckbox) and as the editor does, by replacing its block (ApplyBlocks).
+func TestACheckboxInACalloutTicks(t *testing.T) {
+	const doc = "---\ntype: note\n---\n> [!todo]\n> - [ ] call the bank\n\nprose\n"
+	idx := build(t, map[string]string{"index.md": "---\nokf_version: \"0.1\"\n---\n", "a.md": doc})
+	e, _ := idx.Resolve("/a.md")
+	if len(e.Checkboxes) != 1 || e.Checkboxes[0].Text != "call the bank" {
+		t.Fatalf("checkboxes %+v", e.Checkboxes)
+	}
+	if err := e.SetCheckbox(e.Checkboxes[0].Line, true); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := e.Raw(); !strings.Contains(raw, "> - [x] call the bank\n") || !e.Checkboxes[0].Done {
+		t.Errorf("by line:\n%s", raw)
+	}
+
+	raw, _ := e.Raw()
+	blocks, _ := e.Blocks()
+	var hashes []string
+	for _, b := range blocks {
+		hashes = append(hashes, b.Hash)
+	}
+	at := 0 // the callout is the first block
+	ticked := strings.Replace(blocks[at].Text, "[x]", "[ ]", 1)
+	if _, err := e.ApplyBlocks(FileVersion([]byte(raw)), hashes, []parse.Op{{Op: "replace", At: at, Hash: blocks[at].Hash, Text: ticked}}); err != nil {
+		t.Fatal(err)
+	}
+	if raw, _ := e.Raw(); !strings.Contains(raw, "> - [ ] call the bank\n") || e.Checkboxes[0].Done {
+		t.Errorf("by block:\n%s", raw)
 	}
 }
 

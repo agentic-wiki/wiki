@@ -111,8 +111,8 @@ contains "$($BIN list --where type=concept)" "/finance/income.md"
 contains "$($BIN list --where type=dataset)" "/finance/expenses.md"
 
 echo "--- table extracts a dataset's markdown table (csv) ---"
-contains "$($BIN table /finance/expenses.md --format csv)" "month,category,amount_eur"
-contains "$($BIN table /finance/expenses.md --format csv)" "2026-01,rent,900"
+contains "$($BIN table /finance/expenses.md --format csv)" '"month","category","amount_eur"'
+contains "$($BIN table /finance/expenses.md --format csv)" '"2026-01","rent","900"'
 
 echo "--- list --where tags=out-of-pocket ---"
 contains "$($BIN list --where tags=out-of-pocket)" "/finance/expenses.md"
@@ -154,7 +154,7 @@ echo "--- json output ---"
 contains "$($BIN list --where type=concept --format json)" '"type": "concept"'
 
 echo "--- csv output: header row from json fields ---"
-contains "$($BIN list --where type=concept --format csv)" "_path,type"
+contains "$($BIN list --where type=concept --format csv)" '"_path","type"'
 
 echo "--- tsv output: tab-separated header ---"
 contains "$($BIN property type --format tsv)" "$(printf 'name\tcount')"

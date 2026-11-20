@@ -169,8 +169,9 @@ func stringsOf(v any) []string {
 }
 
 var (
-	linkRe       = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
-	checkboxRe   = regexp.MustCompile(`^\s*[-*+] \[([ xX])\]\s+(.*)$`)
+	linkRe = regexp.MustCompile(`\[([^\]]*)\]\(([^)]+)\)`)
+	// A to-do may sit in a quote or a callout, under any depth of `>`.
+	checkboxRe   = regexp.MustCompile(`^[ \t]*(?:>[ \t]*)*[-*+] \[([ xX])\]\s+(.*)$`)
 	headingRe    = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
 	inlineCodeRe = regexp.MustCompile("`[^`]*`")
 	// tableDelimRe matches a GFM table's delimiter row: dash cells with optional
@@ -396,24 +397,70 @@ func Slug(text string) string {
 }
 
 // maskedLines returns body split into lines with fenced code blocks blanked
-// (line numbers preserved) so block-scanning parsers skip code. Inline code
-// spans are left intact: task and heading text keeps them verbatim, and the one
-// caller that must ignore inline code (link scanning) blanks it itself.
+// (line numbers preserved) so block-scanning parsers skip code. Fences follow
+// CommonMark: a line read past its `>` quote markers opens one with three or
+// more backticks or tildes, and while it is open, only a line at the same
+// quote depth of the same character, at least as long and with nothing after
+// it, closes it. A fence inside a quote also ends where its quote does,
+// closed or not. Inline code spans are left intact: task and heading text
+// keeps them verbatim, and the one caller that must ignore inline code (link
+// scanning) blanks it itself.
 func maskedLines(body string) []string {
 	lines := strings.Split(body, "\n")
-	inFence := false
+	var open fence // the fence open now, if any
 	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			inFence = !inFence
-			lines[i] = ""
-			continue
+		depth, rest := unquote(line)
+		if open.n > 0 && depth < open.depth {
+			open = fence{} // the quote holding the fence ended, and the fence with it
 		}
-		if inFence {
-			lines[i] = ""
+		f := fenceOf(rest, depth)
+		switch {
+		case open.n == 0 && f.n > 0:
+			open = f
+		case open.n > 0 && f.closes(open):
+			open = fence{}
+		case open.n == 0:
+			continue // not code
 		}
+		lines[i] = ""
 	}
 	return lines
+}
+
+// fence is a code fence line: its character, how many of it, and its quote
+// depth; bare says nothing follows the run. n is 0 for a line that isn't one.
+type fence struct {
+	char     byte
+	n, depth int
+	bare     bool
+}
+
+// fenceOf reads a line, past its quote markers, as a fence.
+func fenceOf(rest string, depth int) fence {
+	t := strings.TrimSpace(rest)
+	if !strings.HasPrefix(t, "```") && !strings.HasPrefix(t, "~~~") {
+		return fence{}
+	}
+	n := len(t) - len(strings.TrimLeft(t, t[:1]))
+	return fence{char: t[0], n: n, depth: depth, bare: n == len(t)}
+}
+
+// closes reports whether f closes the open fence.
+func (f fence) closes(open fence) bool {
+	return f.n >= open.n && f.char == open.char && f.depth == open.depth && f.bare
+}
+
+// unquote is how many `>` quote markers a line starts with, and the line
+// after them.
+func unquote(line string) (depth int, rest string) {
+	rest = line
+	for {
+		t := strings.TrimLeft(rest, " \t")
+		if !strings.HasPrefix(t, ">") {
+			return depth, rest
+		}
+		depth, rest = depth+1, t[1:]
+	}
 }
 
 // Tables returns the GitHub-flavored markdown tables in body, in document order,

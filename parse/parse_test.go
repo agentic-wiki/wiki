@@ -3,6 +3,7 @@ package parse
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -224,6 +225,52 @@ func TestCheckboxes(t *testing.T) {
 	}
 	if ts[0].Text != "a" || ts[0].Done || !ts[1].Done || ts[3].Text != "d" {
 		t.Errorf("tasks = %+v", ts)
+	}
+}
+
+// A to-do inside a quote or a callout is a to-do too, at any depth of
+// quote; its text is the item's, without the quote markers.
+func TestCheckboxesInAQuoteOrCallout(t *testing.T) {
+	body := "> [!note]\n> - [ ] call the bank\n> - [x] pay rent\n\n> > * [ ] nested\n>- [ ] tight\n> [x] no list marker\n"
+	ts := Checkboxes(body)
+	want := []Checkbox{{false, "call the bank", 2}, {true, "pay rent", 3}, {false, "nested", 5}, {false, "tight", 6}}
+	if len(ts) != len(want) {
+		t.Fatalf("got %+v, want %+v", ts, want)
+	}
+	for i := range want {
+		if ts[i] != want[i] {
+			t.Errorf("checkbox %d: %+v, want %+v", i, ts[i], want[i])
+		}
+	}
+}
+
+// A fence inside a quote is code too: a to-do in it isn't listed. The fence
+// ends with its quote, closed or not, so what follows the quote is read.
+func TestCheckboxesSkipAFenceInAQuote(t *testing.T) {
+	body := "> ```\n> - [ ] in code\n> ```\n> - [ ] real\n\n> ~~~\n> - [ ] unclosed code\n\n- [ ] after the quote\n"
+	var texts []string
+	for _, c := range Checkboxes(body) {
+		texts = append(texts, c.Text)
+	}
+	if got := strings.Join(texts, " | "); got != "real | after the quote" {
+		t.Errorf("got %q", got)
+	}
+
+	// Inside an open fence, only a fence line at its quote depth, of its
+	// character and at least its length, closes it (CommonMark): a page
+	// showing a quoted fence in a ```markdown block, and ``` inside ~~~.
+	for name, c := range map[string]struct{ body, want string }{
+		"a quoted fence shown in a fence": {"```markdown\n> ```\n> - [ ] example\n> ```\n```\n- [ ] after\n", "after"},
+		"``` inside ~~~":                  {"~~~\n```\n- [ ] in code\n```\n~~~\n- [ ] after\n", "after"},
+		"a shorter fence doesn't close":   {"````\n```\n- [ ] in code\n````\n- [ ] after\n", "after"},
+	} {
+		var texts []string
+		for _, cb := range Checkboxes(c.body) {
+			texts = append(texts, cb.Text)
+		}
+		if got := strings.Join(texts, " | "); got != c.want {
+			t.Errorf("%s: got %q, want %q", name, got, c.want)
+		}
 	}
 }
 

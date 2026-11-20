@@ -8,7 +8,6 @@ package output
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -185,23 +184,19 @@ func compactJSON(v any) ([]byte, error) {
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
 
-// write prints the rows as csv or tsv, through encoding/csv: a cell holding the
-// separator, a quote or a line break is wrapped in double quotes, and one a
-// spreadsheet would run as a formula gets a leading ' (internal/sheet). With
-// no rows, the header alone is printed.
+// write prints the rows as csv or tsv through sheet.Write: every CSV field
+// quoted, and a cell a spreadsheet would run as a formula with a leading '.
+// With no rows, the header alone is printed.
 func (r Rows) write(w io.Writer, comma rune) error {
-	cw := csv.NewWriter(w)
-	cw.Comma = comma
-	cw.Write(sheet.Safe(r.Header))
+	rows := [][]string{r.Header}
 	for _, row := range r.Values {
 		cells := make([]string, len(row))
 		for i, v := range row {
 			cells[i] = Cell(v)
 		}
-		cw.Write(sheet.Safe(cells))
+		rows = append(rows, cells)
 	}
-	cw.Flush()
-	return cw.Error()
+	return sheet.Write(w, comma, rows)
 }
 
 // writeJSONL prints one compact JSON object per row, its keys in header order,

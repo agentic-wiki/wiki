@@ -72,7 +72,7 @@ func TestRowsPerCommand(t *testing.T) {
 		{"read", cmdRead, []string{"flat.md"}, "_path,type,body\n/flat.md,note,\"flat body, see [g](/guide.md)\n\"\n",
 			`{"_path":"/flat.md","type":"note","body":"flat body, see [g](/guide.md)\n"}` + "\n", 0},
 	} {
-		for format, want := range map[string]string{"csv": tc.csv, "jsonl": tc.jsonl} {
+		for format, want := range map[string]string{"csv": quotedCSV(tc.csv), "jsonl": tc.jsonl} {
 			if format == "jsonl" && tc.code < 0 {
 				continue // --fields is csv/tsv only
 			}
@@ -93,7 +93,7 @@ func TestRowsCheckFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	out, code := capture(t, func() int { return cmdCheck([]string{"--fix", "--format", "csv"}) })
-	want := "level,entry,field,from,to,msg\nfixed,/index.md,okf_version,0.2,0.1,\nwarning,/guide.md,,,,broken link -> /gone.md\n"
+	want := quotedCSV("level,entry,field,from,to,msg\nfixed,/index.md,okf_version,0.2,0.1,\nwarning,/guide.md,,,,broken link -> /gone.md\n")
 	if out != want || code != 0 {
 		t.Errorf("check --fix: exit %d\n got %q\nwant %q", code, out, want)
 	}
@@ -120,8 +120,8 @@ func TestRowsCheckFix(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"--format", "csv"}, "level,entry,msg\n"},
-		{[]string{"--fix", "--format", "csv"}, "level,entry,field,from,to,msg\n"},
+		{[]string{"--format", "csv"}, quotedCSV("level,entry,msg\n")},
+		{[]string{"--fix", "--format", "csv"}, quotedCSV("level,entry,field,from,to,msg\n")},
 		{[]string{"--format", "jsonl"}, ""},
 		{[]string{"--fix", "--format", "jsonl"}, ""},
 	} {
@@ -137,7 +137,7 @@ func TestRowsCheckFix(t *testing.T) {
 func TestRowsInit(t *testing.T) {
 	t.Chdir(t.TempDir())
 	out, code := capture(t, func() int { return cmdInit([]string{"--format", "csv"}) })
-	want := "dir,files\n.,\"[AGENTS.md, .gitignore, CLAUDE.md, index.md, wiki.toml]\"\n" // a list is its Flow
+	want := quotedCSV("dir,files\n.,\"[AGENTS.md, .gitignore, CLAUDE.md, index.md, wiki.toml]\"\n") // a list is its Flow
 	if out != want || code != 0 {
 		t.Errorf("init: exit %d\n got %q\nwant %q", code, out, want)
 	}
@@ -202,7 +202,7 @@ func TestTableTypedCells(t *testing.T) {
 	for format, want := range map[string]string{
 		"json":  "[\n  {\n    \"price\": 12.5,\n    \"code\": \"7372\",\n    \"quote\": \"\\\"Yes,\\\" she said, \\\"no\\\"\",\n    \"empty\": null,\n    \"nul\": null,\n    \"na\": \"n/a\",\n    \"date\": \"2026-06-30\",\n    \"big\": 12345678901234567890\n  }\n]\n",
 		"jsonl": `{"price":12.5,"code":"7372","quote":"\"Yes,\" she said, \"no\"","empty":null,"nul":null,"na":"n/a","date":"2026-06-30","big":12345678901234567890}` + "\n",
-		"csv":   "price,code,quote,empty,nul,na,date,big\n12.5,\"\"\"7372\"\"\",\"\"\"Yes,\"\" she said, \"\"no\"\"\",,~,n/a,2026-06-30,12345678901234567890\n",
+		"csv":   quotedCSV("price,code,quote,empty,nul,na,date,big\n12.5,\"\"\"7372\"\"\",\"\"\"Yes,\"\" she said, \"\"no\"\"\",,~,n/a,2026-06-30,12345678901234567890\n"),
 	} {
 		out, code := capture(t, func() int { return cmdTable([]string{"ds.md", "--format", format}) })
 		if out != want || code != 0 {
